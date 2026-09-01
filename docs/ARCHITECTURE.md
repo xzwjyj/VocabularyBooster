@@ -53,19 +53,22 @@
 | ADR-09 | TTS 无 seek → **Segment 级恢复** | Android TTS 无暂停位移 API；满足"不从头重播整词"（FR-11） | TTS 段恢复会重读当前段（已接受并写入规格） |
 | ADR-10 | iOS 用 **SwiftUI**（非 Compose Multiplatform） | 用户明确要求；原生体验 | 两套 UI，核心仍共享 |
 
-## 3. 版本矩阵（Phase 1 锁定具体小版本）
+## 3. 版本矩阵（Phase 1 已锁定，2026-09-01）
 
-| 组件 | 版本基线 | 备注 |
+| 组件 | 锁定版本 | 备注 |
 |---|---|---|
-| Kotlin | 2.x | KMP 稳定 |
-| AGP / Gradle | 8.x / 8.x（wrapper） | Phase 1 按当时稳定版锁定 |
-| Compose BOM | 最新稳定 | Material 3 |
-| SQLDelight | 2.x | schema 见 DATABASE_SCHEMA |
-| Koin | 4.x | |
-| kotlinx-coroutines / serialization / datetime | 最新稳定 | |
-| Media3 | 1.x | 仅 app 模块 |
-| detekt + 自定义 import 规则 | 1.23+ | 边界守护（§6） |
-| kotlin.test / Turbine / coroutines-test | 最新稳定 | commonTest |
+| Kotlin | 2.1.21 | KMP + compose compiler plugin 同版本 |
+| AGP / Gradle | 8.8.2 / 8.11.1（wrapper） | compileSdk 35（PROJECT_SPEC C5 定格） |
+| Compose BOM | 2025.01.00 | Material 3 |
+| SQLDelight | 2.0.2 | schema 见 DATABASE_SCHEMA |
+| Koin | 4.0.2 | |
+| kotlinx-coroutines / serialization / datetime | 1.10.1 / 1.8.0 / 0.6.1 | |
+| Media3 | 1.x | 仅 app 模块（Phase 4 引入时锁定小版本） |
+| detekt | 1.23.7 | commonMain `ForbiddenImport` + Gradle `checkPlatformBoundaries` 双门禁 |
+| kotlin.test / Turbine / coroutines-test | kotlin("test") / 1.2.0 / 1.10.1 | commonTest |
+| JDK | Temurin 21.0.12.1 | 便携安装，未入系统 PATH |
+
+升级 = 改 `gradle/libs.versions.toml` 单行 + 全量测试回归（版本目录集中管理）。
 
 ## 4. 模块边界铁律（跨平台边界）
 

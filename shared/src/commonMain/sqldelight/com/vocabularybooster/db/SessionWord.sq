@@ -1,0 +1,20 @@
+-- SessionWord（DATABASE_SCHEMA §2.9）：队列物化；分组在会话开始时固化（FR-6）
+CREATE TABLE SessionWord (
+  sessionId     INTEGER NOT NULL REFERENCES LearningSession(sessionId) ON DELETE CASCADE,
+  wordId        INTEGER NOT NULL REFERENCES Word(wordId),
+  groupIndex    INTEGER NOT NULL,
+  orderInGroup  INTEGER NOT NULL,
+  status        TEXT NOT NULL,    -- PENDING|PLAYING|MASTERED|SKIPPED
+  masteredAt    INTEGER,
+  PRIMARY KEY (sessionId, wordId)
+);
+CREATE INDEX SessionWord_queue ON SessionWord(sessionId, groupIndex, orderInGroup);
+
+insertSessionWord:
+INSERT INTO SessionWord(sessionId, wordId, groupIndex, orderInGroup, status) VALUES (?, ?, ?, ?, ?);
+
+selectSessionWords:
+SELECT * FROM SessionWord WHERE sessionId = ? ORDER BY groupIndex ASC, orderInGroup ASC;
+
+updateSessionWordStatus:
+UPDATE SessionWord SET status = ?, masteredAt = ? WHERE sessionId = ? AND wordId = ?;

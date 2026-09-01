@@ -13,7 +13,7 @@
 | 数据库名 | `vocabulary.db`（SQLDelight database name: `VocabularyDatabase`） |
 | 主键 | `INTEGER PRIMARY KEY AUTOINCREMENT`（Long） |
 | 时间 | `INTEGER` epoch **毫秒**（kotlinx-datetime `Instant.toEpochMilliseconds()`） |
-| 布尔 | `INTEGER` 0/1（SQLDelight 映射 Boolean） |
+| 布尔 | `INTEGER AS Boolean`，且 `.sq` 文件顶部需 `import kotlin.Boolean;`（SQLDelight 2.x 原生映射；SQLite 底层存 `INTEGER` 0/1） |
 | 枚举 | `TEXT`（领域枚举名，应用层映射） |
 | 外键 | **强制开启**：Android 驱动必须 `PRAGMA foreign_keys = ON`（SQLite 默认关闭，Phase 1 在 Driver 工厂中配置；iOS 驱动同样） |
 | schema 文件位置 | `shared/src/commonMain/sqldelight/com/vocabularybooster/db/*.sq`（Phase 1 引入） |
@@ -108,11 +108,13 @@ CREATE INDEX WordBookEntry_order ON WordBookEntry(wordBookId, entryOrder);
 ### 2.6 WordBookEntryDefinition（收藏时的释义选择）
 
 ```sql
+import kotlin.Boolean;
+
 CREATE TABLE WordBookEntryDefinition (
   wordBookEntryDefinitionId  INTEGER PRIMARY KEY AUTOINCREMENT,
   wordBookEntryId            INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
   definitionEntryId          INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId),
-  includeExamples            INTEGER NOT NULL DEFAULT 1
+  includeExamples            INTEGER AS Boolean NOT NULL DEFAULT 1
 );
 CREATE UNIQUE INDEX WordBookEntryDefinition_unique
   ON WordBookEntryDefinition(wordBookEntryId, definitionEntryId);
@@ -215,9 +217,17 @@ INSERT INTO WordBook(type, name, description, parentWordBookId, sourceSessionId,
 VALUES ('DERIVED', ?, ?, ?, ?, ?, ?);
 
 copyEntryRelations:
-INSERT INTO WordBookEntry (wordBookId, wordId, entryOrder, addedAt)
-SELECT :newBookId, wordId, entryOrder, :now FROM WordBookEntry WHERE wordBookId = :sourceBookId
+INSERT INTO WordBookEntry (wordBookId, wordId, entryOrder, pendingTranslation, addedAt)
+SELECT :newBookId, wordId, entryOrder, pendingTranslation, :now FROM WordBookEntry WHERE wordBookId = :sourceBookId
   AND wordId IN (SELECT wordId FROM SessionWord WHERE sessionId = :sessionId AND status != 'MASTERED');
+
+copyEntryDefinitionRelations:
+INSERT INTO WordBookEntryDefinition (wordBookEntryId, definitionEntryId, includeExamples)
+SELECT newWbe.wordBookEntryId, wed.definitionEntryId, wed.includeExamples
+FROM WordBookEntry newWbe
+JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
+JOIN WordBookEntryDefinition wed ON wed.wordBookEntryId = oldWbe.wordBookEntryId
+WHERE newWbe.wordBookId = :newBookId;
 ```
 
 ## 4. 事务规则（必须原子，违反即 bug）
@@ -263,3 +273,4 @@ SELECT :newBookId, wordId, entryOrder, :now FROM WordBookEntry WHERE wordBookId 
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：WordBook 增 type（ORIGINAL/DERIVED，CHECK 约束）、parentWordBookId（RESTRICT）、sourceSessionId；派生不复制 WordMastery |
+| 1.2 | 2026-09-01 | Phase 1 落地回写：Q5 `copyEntryRelations` 补 `pendingTranslation` 列（与 §4 事务规则对齐）；新增 `copyEntryDefinitionRelations`（Q5b，同步复制释义选择关系，D3） |

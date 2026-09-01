@@ -2,8 +2,8 @@
 
 英语单词学习 App（Android 优先，核心代码跨平台复用于未来 iOS 版本）。
 
-> **当前状态：Phase 0 已完成（规格与架构设计），尚未编写任何业务代码，Gradle 工程尚未初始化。**
-> 下一步：阅读 [docs/ROADMAP.md](docs/ROADMAP.md) 的 Phase 1——先完成开发环境安装，再初始化工程。
+> **当前状态：Phase 1（工程基础）进行中——环境已安装（JDK 21 / Gradle wrapper / Android SDK），KMP 工程骨架、SQLDelight schema v1、Compose 壳模块与测试基础设施已落地，业务功能尚未编写。**
+> 下一步：阅读 [docs/ROADMAP.md](docs/ROADMAP.md) 的 Phase 1 验收条件；阶段报告见 [docs/reports/PHASE_1_REPORT.md](docs/reports/PHASE_1_REPORT.md)。
 
 ## 文档地图
 
@@ -37,24 +37,31 @@ VocabularyBooster/
 └── iosApp/                # iOS 应用（SwiftUI，未来阶段，占位）
 ```
 
-## 开发环境要求（本机 2026-09-01 检查结果）
+## 开发环境（本机 2026-09-01 安装结果，均为用户目录安装、未改系统配置）
 
 | 工具 | 要求 | 本机状态 |
 |---|---|---|
-| JDK | 17+（推荐 21，AGP 8.x 要求） | ❌ 未安装 |
-| Android Studio | 最新稳定版（自带 JBR 与 SDK 管理器） | ❌ 未安装 |
-| Android SDK | compileSdk 36 / minSdk 26 | ❌ 未安装 |
-| Gradle | 通过 Gradle Wrapper 引入，无需全局安装 | ⏳ Phase 1 由 wrapper 提供 |
+| JDK | 17+（推荐 21） | ✅ Temurin 21.0.12.1（便携 zip 解压至 `C:\Users\zack\.jdks\`，未入系统 PATH） |
+| Android SDK | compileSdk 35 / minSdk 26 | ✅ `%LOCALAPPDATA%\Android\Sdk`（platform-35 / build-tools 35.0.0 / platform-tools，许可已接受） |
+| Gradle | 通过 Gradle Wrapper 引入，无需全局安装 | ✅ wrapper 8.11.1（`gradle/wrapper/`） |
+| Android Studio | 可选（纯 CLI 构建不需要） | ❌ 未安装 |
 | Git | 2.x | ✅ 2.46.2 |
-| iOS 构建 | macOS + Xcode 15+ | ❌ 本机为 Windows，iOS 阶段另行解决 |
+| iOS 构建 | macOS + Xcode 15+ | ❌ 本机为 Windows，iOS 阶段另行解决（`iosApp` 模块仅 macOS 宿主启用） |
 
-## 计划中的构建命令（Phase 1 工程初始化后可用）
+## 构建命令
+
+JDK 未入系统 PATH，构建前先设置 `JAVA_HOME`（Git Bash 示例）：
 
 ```bash
-./gradlew :shared:allTests      # 共享模块全平台单元测试
-./gradlew :app:assembleDebug    # Android Debug 构建
-./gradlew :app:testDebugUnitTest
-./gradlew lint detekt          # 静态检查与边界规则
+export JAVA_HOME="C:/Users/zack/.jdks/jdk-21.0.12.1+1"
+
+./gradlew :shared:jvmTest            # 核心逻辑测试（Windows 可全量跑）
+./gradlew :shared:testDebugUnitTest  # commonTest 的 Android 编译运行
+./gradlew :shared:allTests           # 含 iOS 目标（需 macOS 宿主）
+./gradlew :app:assembleDebug         # Android Debug 构建
+./gradlew :app:testDebugUnitTest     # app 模块单元测试
+./gradlew :shared:detekt :app:detekt # 静态检查（shared 含 commonMain 平台 import 禁令）
+./gradlew :shared:checkPlatformBoundaries  # 架构边界硬门禁（Gradle 任务）
 ```
 
 ---

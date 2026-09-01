@@ -1,0 +1,20 @@
+-- Achievement（DATABASE_SCHEMA §2.10）：UNIQUE(type, wordBookId) 幂等；payloadJson 快照（FR-13）
+-- SQLite UNIQUE 中 NULL 互不相等：未来全局类勋章（wordBookId=NULL）可多次授予
+CREATE TABLE Achievement (
+  achievementId  INTEGER PRIMARY KEY AUTOINCREMENT,
+  type            TEXT NOT NULL,   -- v1: BOOK_COMPLETED；预留 STREAK_DAYS / TOTAL_WORDS_MASTERED / ...
+  wordBookId      INTEGER REFERENCES WordBook(wordBookId),   -- NULL=非书本类勋章
+  payloadJson     TEXT NOT NULL,   -- {bookName, wordCount, ...} 快照
+  earnedAt        INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX Achievement_unique ON Achievement(type, wordBookId);
+
+-- 事务规则（DATABASE_SCHEMA §4）：INSERT OR IGNORE + 唯一索引兜底（幂等，FR-13）
+insertAchievement:
+INSERT OR IGNORE INTO Achievement(type, wordBookId, payloadJson, earnedAt) VALUES (?, ?, ?, ?);
+
+selectByTypeAndBook:
+SELECT * FROM Achievement WHERE type = ? AND wordBookId = ?;
+
+selectAllAchievements:
+SELECT * FROM Achievement ORDER BY earnedAt DESC;

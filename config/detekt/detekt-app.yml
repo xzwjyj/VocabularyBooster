@@ -1,0 +1,12 @@
+# :app 专用 —— Android 壳模块合法使用平台 API，禁用 ForbiddenImport，其余默认规则生效
+# Compose 惯例豁免：@Composable 函数 PascalCase；@Preview 函数仅供工具链引用
+build:
+  maxIssues: 0
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - 'Composable'
+style:
+  UnusedPrivateMember:
+    ignoreAnnotated:
+      - 'Preview'

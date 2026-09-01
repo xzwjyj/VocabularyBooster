@@ -1,0 +1,32 @@
+-- WordBook（DATABASE_SCHEMA §2.4，决策 D3）：type ∈ {ORIGINAL, DERIVED}；DERIVED 记录血缘
+-- parentWordBookId + sourceSessionId；ORIGINAL = 永久母本（D2：会话退出永不修改）
+CREATE TABLE WordBook (
+  wordBookId            INTEGER PRIMARY KEY AUTOINCREMENT,
+  type                  TEXT NOT NULL DEFAULT 'ORIGINAL',   -- ORIGINAL|DERIVED（决策 D3）
+  name                  TEXT NOT NULL,                      -- 可重名
+  description           TEXT,
+  parentWordBookId      INTEGER REFERENCES WordBook(wordBookId) ON DELETE RESTRICT,  -- 母本；仅 DERIVED 必填
+  sourceSessionId       INTEGER REFERENCES LearningSession(sessionId),               -- 来源会话；仅 DERIVED 必填
+  createdAt             INTEGER NOT NULL,
+  updatedAt             INTEGER NOT NULL,
+  CHECK (type IN ('ORIGINAL','DERIVED'))
+);
+CREATE INDEX WordBook_parent ON WordBook(parentWordBookId);   -- 血缘查询
+
+insertOriginalWordBook:
+INSERT INTO WordBook(type, name, description, parentWordBookId, sourceSessionId, createdAt, updatedAt)
+VALUES ('ORIGINAL', ?, ?, NULL, NULL, ?, ?);
+
+-- Q5a 派生 DERIVED WordBook（D1 分支 B）：type=DERIVED + 血缘一并写入
+insertDerivedWordBook:
+INSERT INTO WordBook(type, name, description, parentWordBookId, sourceSessionId, createdAt, updatedAt)
+VALUES ('DERIVED', ?, ?, ?, ?, ?, ?);
+
+selectWordBookById:
+SELECT * FROM WordBook WHERE wordBookId = ?;
+
+selectChildWordBooks:
+SELECT * FROM WordBook WHERE parentWordBookId = ? ORDER BY createdAt DESC;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

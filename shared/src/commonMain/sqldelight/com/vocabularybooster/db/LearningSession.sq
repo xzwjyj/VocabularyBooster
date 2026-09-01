@@ -1,0 +1,21 @@
+-- LearningSession（DATABASE_SCHEMA §2.8）：学习会话（FR-6/FR-11 崩溃恢复）
+CREATE TABLE LearningSession (
+  sessionId   INTEGER PRIMARY KEY AUTOINCREMENT,
+  wordBookId  INTEGER NOT NULL REFERENCES WordBook(wordBookId) ON DELETE RESTRICT, -- 先 ABANDONED 再删本
+  status      TEXT NOT NULL,      -- ACTIVE|COMPLETED|ABANDONED
+  groupSize   INTEGER NOT NULL,   -- 会话固化值
+  startedAt   INTEGER NOT NULL,
+  endedAt     INTEGER
+);
+
+insertSession:
+INSERT INTO LearningSession(wordBookId, status, groupSize, startedAt, endedAt) VALUES (?, ?, ?, ?, ?);
+
+selectSessionById:
+SELECT * FROM LearningSession WHERE sessionId = ?;
+
+updateSessionStatus:
+UPDATE LearningSession SET status = ?, endedAt = ? WHERE sessionId = ?;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

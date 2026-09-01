@@ -25,17 +25,19 @@
 | 阶段计划 | `docs/ROADMAP.md` |
 | 阶段验收报告 | `docs/reports/PHASE_N_REPORT.md` |
 
-## 开发环境（2026-09-01 检查）
+## 开发环境（2026-09-01 Phase 1 安装完成）
 
-- 本机：Windows 10，**已装 Git 2.46.2；未装 JDK / Android Studio / Android SDK / Gradle**（Phase 1 首要任务）。
-- iOS 构建需 macOS：本机没有，iOS 阶段另行解决。
+- 本机：Windows 10。JDK：Temurin 21.0.12.1 便携版 `C:\Users\zack\.jdks\`（**未入系统 PATH，构建前 `export JAVA_HOME="C:/Users/zack/.jdks/jdk-21.0.12.1+1"`**）；Android SDK：`%LOCALAPPDATA%\Android\Sdk`（platform-35 / build-tools 35.0.0 / platform-tools）；Gradle wrapper 8.11.1；Git 2.46.2。Android Studio 未装（纯 CLI 构建不需要）。
+- iOS 构建需 macOS：本机没有，iOS 阶段另行解决（`iosApp` 与 shared iOS targets 仅 macOS 宿主启用）。
 - 仓库位于 Synology Drive 同步目录：**不要把 `build/`、`.gradle/` 交给同步**（已在 .gitignore 提示）。
-- 构建命令（Phase 1 工程初始化后才可用）：
+- 构建命令：
   ```bash
-  ./gradlew :shared:jvmTest      # 核心逻辑测试（Windows 可全量跑）
-  ./gradlew :shared:allTests     # 含 iOS 目标（需 macOS）
+  ./gradlew :shared:jvmTest            # 核心逻辑测试（Windows 可全量跑）
+  ./gradlew :shared:testDebugUnitTest  # commonTest 的 Android 编译运行
+  ./gradlew :shared:allTests           # 含 iOS 目标（需 macOS 宿主）
   ./gradlew :app:assembleDebug
-  ./gradlew detekt              # 含 commonMain 边界规则
+  ./gradlew :shared:detekt :app:detekt # 静态检查 + commonMain 平台 import 禁令
+  ./gradlew :shared:checkPlatformBoundaries  # 架构边界硬门禁
   ```
 
 ## 架构铁律（违反 = 返工）

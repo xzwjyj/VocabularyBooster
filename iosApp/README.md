@@ -1,6 +1,10 @@
-# iosApp — iOS 应用（未来阶段，Phase 0 占位）
+# iosApp — iOS 应用（未来阶段，Phase 1 骨架）
 
 SwiftUI 应用层。当前开发机为 Windows（无 macOS / Xcode），本模块在 iOS 阶段另行启用。
+
+**工程门控（Phase 1 起生效）**：`settings.gradle.kts` 仅在 macOS 宿主 `include(":iosApp")`；
+`shared` 的 `iosArm64` / `iosSimulatorArm64` targets 与 `iosMain` 源集同样仅 macOS 启用
+（Kotlin/Native iOS 目标的链接需要 Apple 工具链）。Windows 构建自动跳过，无需任何配置改动。
 
 ## 规划要点（详见 docs/ARCHITECTURE.md「iOS 复用策略」）
 

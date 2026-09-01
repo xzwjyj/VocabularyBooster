@@ -1,0 +1,25 @@
+-- WordBookEntry（DATABASE_SCHEMA §2.5）：词 ↔ 生词本关系；entryOrder = 学习队列排序键（FR-6）；
+-- pendingTranslation = TXT 导入译文暂存（FR-14，IMPORT_SPEC），正式释义回填后清除
+CREATE TABLE WordBookEntry (
+  wordBookEntryId  INTEGER PRIMARY KEY AUTOINCREMENT,
+  wordBookId       INTEGER NOT NULL REFERENCES WordBook(wordBookId) ON DELETE CASCADE,
+  wordId           INTEGER NOT NULL REFERENCES Word(wordId),        -- 删本不删词
+  entryOrder       INTEGER NOT NULL,
+  pendingTranslation  TEXT,
+  addedAt          INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX WordBookEntry_unique ON WordBookEntry(wordBookId, wordId);
+CREATE INDEX WordBookEntry_order ON WordBookEntry(wordBookId, entryOrder);
+
+insertEntry:
+INSERT INTO WordBookEntry(wordBookId, wordId, entryOrder, pendingTranslation, addedAt)
+VALUES (?, ?, ?, ?, ?);
+
+selectEntriesForWordBook:
+SELECT * FROM WordBookEntry WHERE wordBookId = ? ORDER BY entryOrder ASC;
+
+selectEntryByWord:
+SELECT * FROM WordBookEntry WHERE wordBookId = ? AND wordId = ?;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

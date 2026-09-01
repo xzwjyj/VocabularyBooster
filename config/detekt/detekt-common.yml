@@ -1,0 +1,14 @@
+# :shared 专用（commonMain/commonTest）—— 平台 import 禁令 + 默认规则基线
+build:
+  maxIssues: 0
+style:
+  ForbiddenImport:
+    active: true
+    # ARCHITECTURE §4 铁律 1：commonMain 禁止平台 import。
+    # 硬性门禁另有 shared/build.gradle.kts 的 checkPlatformBoundaries 任务（双保险）。
+    imports:
+      - 'android.*'
+      - 'java.*'
+      - 'dalvik.*'
+      - 'javax.*'
+      - 'com.apple.*'

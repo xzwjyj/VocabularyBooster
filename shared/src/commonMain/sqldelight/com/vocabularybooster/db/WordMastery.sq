@@ -1,0 +1,17 @@
+-- WordMastery（DATABASE_SCHEMA §2.7）：行存在 = MASTERED，作用域（WordBook, Word）（D4）；幂等（FR-7）
+CREATE TABLE WordMastery (
+  wordBookId  INTEGER NOT NULL REFERENCES WordBook(wordBookId) ON DELETE CASCADE,
+  wordId      INTEGER NOT NULL REFERENCES Word(wordId),
+  masteredAt  INTEGER NOT NULL,
+  PRIMARY KEY (wordBookId, wordId)
+);
+
+-- 事务规则（DATABASE_SCHEMA §4）：与 SessionWord→MASTERED 同一事务；重复插入静默忽略
+markMastered:
+INSERT OR IGNORE INTO WordMastery(wordBookId, wordId, masteredAt) VALUES (?, ?, ?);
+
+isMastered:
+SELECT * FROM WordMastery WHERE wordBookId = ? AND wordId = ?;
+
+countMastered:
+SELECT COUNT(*) FROM WordMastery WHERE wordBookId = ?;

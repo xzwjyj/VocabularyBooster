@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose 无 ActionBar 基线主题（Activity 用 ComponentActivity，无需 AppCompat） -->
+    <style name="Theme.VocabularyBooster" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

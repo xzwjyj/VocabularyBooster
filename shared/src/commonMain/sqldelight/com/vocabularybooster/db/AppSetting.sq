@@ -1,0 +1,17 @@
+-- AppSetting（DATABASE_SCHEMA §2.11）：KV 存储，valueJson = kotlinx-serialization JSON（FR-15）
+CREATE TABLE AppSetting (
+  key        TEXT PRIMARY KEY,
+  valueJson  TEXT NOT NULL
+);
+
+-- 内置键：settings.groupSize(10)、settings.commandWindowMs(4000)、settings.playbackToggles、
+-- settings.ttsRate(1.0)、settings.ttsPitch(1.0)、settings.masteredAliases；
+-- playback.position（AUDIO_ENGINE_SPEC §5，PlaybackPosition 序列化）
+upsertSetting:
+INSERT OR REPLACE INTO AppSetting(key, valueJson) VALUES (?, ?);
+
+selectSetting:
+SELECT valueJson FROM AppSetting WHERE key = ?;
+
+deleteSetting:
+DELETE FROM AppSetting WHERE key = ?;

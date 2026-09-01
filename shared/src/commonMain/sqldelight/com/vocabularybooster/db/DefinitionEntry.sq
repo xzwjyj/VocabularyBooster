@@ -1,0 +1,26 @@
+-- DefinitionEntry（DATABASE_SCHEMA §2.2）：释义行；POS 分组连续 + (partOfSpeechOrder, definitionOrder) 排序（FR-2 / I-4）
+CREATE TABLE DefinitionEntry (
+  definitionEntryId  INTEGER PRIMARY KEY AUTOINCREMENT,
+  wordId             INTEGER NOT NULL REFERENCES Word(wordId) ON DELETE CASCADE,
+  partOfSpeech       TEXT NOT NULL,      -- 规范名，DOMAIN_MODEL §3.1
+  partOfSpeechOrder  INTEGER NOT NULL,   -- 词性组序（verb=0, noun=1, ...）
+  definitionOrder    INTEGER NOT NULL,   -- 组内序
+  meaningEN          TEXT NOT NULL,
+  meaningCN          TEXT NOT NULL
+);
+CREATE UNIQUE INDEX DefinitionEntry_unique
+  ON DefinitionEntry(wordId, partOfSpeech, definitionOrder);
+CREATE INDEX DefinitionEntry_displayOrder
+  ON DefinitionEntry(wordId, partOfSpeechOrder, definitionOrder);   -- 核心排序查询
+
+insertDefinitionEntry:
+INSERT INTO DefinitionEntry(wordId, partOfSpeech, partOfSpeechOrder, definitionOrder, meaningEN, meaningCN)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- Q1 词条展示排序（FR-2 排序规则，唯一入口）
+selectDefinitionsForWord:
+SELECT * FROM DefinitionEntry WHERE wordId = ?
+ORDER BY partOfSpeechOrder ASC, definitionOrder ASC;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

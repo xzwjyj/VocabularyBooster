@@ -1,0 +1,21 @@
+-- Example（DATABASE_SCHEMA §2.3）：例句原子单元（句子+译文+音频+来源+合规，FR-3 / NFR-5）
+CREATE TABLE Example (
+  exampleId          INTEGER PRIMARY KEY AUTOINCREMENT,
+  definitionEntryId  INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId) ON DELETE CASCADE,
+  sentence           TEXT NOT NULL,
+  chineseTranslation TEXT NOT NULL,
+  sourceType         TEXT NOT NULL,      -- REAL_MOVIE_TV|CELEBRITY_SPEECH|TED|AUDIOBOOK|LICENSED_OTHER|TTS
+  sourceRef          TEXT,
+  licenseNote        TEXT,                -- 合规留存（NFR-5）
+  audioUri           TEXT,                -- 原声；空则 TTS 朗读 sentence
+  audioDurationMs    INTEGER,
+  exampleOrder       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX Example_byEntry ON Example(definitionEntryId, exampleOrder);
+
+insertExample:
+INSERT INTO Example(definitionEntryId, sentence, chineseTranslation, sourceType, sourceRef, licenseNote, audioUri, audioDurationMs, exampleOrder)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectExamplesForEntry:
+SELECT * FROM Example WHERE definitionEntryId = ? ORDER BY exampleOrder ASC;

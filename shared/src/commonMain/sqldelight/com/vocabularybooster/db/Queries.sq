@@ -1,0 +1,37 @@
+-- 跨表查询（DATABASE_SCHEMA §3）：Q2–Q5 负载承载查询
+
+-- Q2 学习队列：生词本当前未掌握的词（entryOrder 升序；FR-6）
+selectStudyQueue:
+SELECT wbe.* FROM WordBookEntry wbe
+LEFT JOIN WordMastery wm ON wm.wordBookId = wbe.wordBookId AND wm.wordId = wbe.wordId
+WHERE wbe.wordBookId = ? AND wm.wordId IS NULL
+ORDER BY wbe.entryOrder ASC;
+
+-- Q3 完成度检测（=0 → BOOK_COMPLETED 事件；FR-8）
+countUnmastered:
+SELECT COUNT(*) FROM WordBookEntry wbe
+LEFT JOIN WordMastery wm ON wm.wordBookId = wbe.wordBookId AND wm.wordId = wbe.wordId
+WHERE wbe.wordBookId = ? AND wm.wordId IS NULL;
+
+-- Q4 播放用的词条选择（只播被选中的释义；FR-5）
+selectSelectedDefinitions:
+SELECT de.* FROM WordBookEntryDefinition wed
+JOIN DefinitionEntry de ON de.definitionEntryId = wed.definitionEntryId
+WHERE wed.wordBookEntryId = ?
+ORDER BY de.partOfSpeechOrder ASC, de.definitionOrder ASC;
+
+-- Q5 派生 DERIVED WordBook（D1 分支 B）：复制关系行（保留 entryOrder / pendingTranslation，D3），
+-- 只复制 SessionWord 中 status != 'MASTERED' 的词；不复制 Word / DefinitionEntry / Example / WordMastery（D2/D4）
+copyEntryRelations:
+INSERT INTO WordBookEntry(wordBookId, wordId, entryOrder, pendingTranslation, addedAt)
+SELECT :newBookId, wordId, entryOrder, pendingTranslation, :now FROM WordBookEntry WHERE wordBookId = :sourceBookId
+  AND wordId IN (SELECT wordId FROM SessionWord WHERE sessionId = :sessionId AND status != 'MASTERED');
+
+-- 派生本同步复制释义选择关系（含 includeExamples；DATABASE_SCHEMA §4 事务规则）
+copyEntryDefinitionRelations:
+INSERT INTO WordBookEntryDefinition(wordBookEntryId, definitionEntryId, includeExamples)
+SELECT newWbe.wordBookEntryId, wed.definitionEntryId, wed.includeExamples
+FROM WordBookEntry newWbe
+JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
+JOIN WordBookEntryDefinition wed ON wed.wordBookEntryId = oldWbe.wordBookEntryId
+WHERE newWbe.wordBookId = :newBookId;

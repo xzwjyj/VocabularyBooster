@@ -279,7 +279,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | C2 | **数据模型基准**：`Word → DefinitionEntry → (PartOfSpeech, MeaningEN, MeaningCN) → Example(Sentence, ChineseTranslation, Audio)` 层级不可违反 |
 | C3 | Phase 0 禁止接入第三方词典 API / AI API / 真实音频素材 / 完整播放器 |
 | C4 | 开发机为 Windows（无 macOS）：iOS 构建在 iOS 阶段另行解决（实体 Mac 或 CI macOS runner） |
-| C5 | 版本基线：minSdk 26 / compileSdk 36（Phase 1 按当时 SDK 最终确定）；iOS 15+ |
+| C5 | 版本基线：minSdk 26 / compileSdk 35（Phase 1 定格：AGP 8.8.2 稳定支持 35；升 36 需 AGP ≥8.9，与后续依赖升级一并处理）；iOS 15+ |
 
 ---
 
@@ -317,3 +317,4 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：退出三分支；WordBook.type（ORIGINAL/DERIVED）+ parentWordBookId + sourceSessionId；母本不变性；掌握作用域=（生词本,词） |
+| 1.2 | 2026-09-01 | C5 定格 compileSdk 35（Phase 1 实装；升 36 需 AGP ≥8.9 随依赖升级处理） |

@@ -1,0 +1,28 @@
+-- Word（DATABASE_SCHEMA §2.1）：全局词条母数据，normalizedText 唯一（FR-1 大小写不敏感查词 + FR-14 导入复用）
+CREATE TABLE Word (
+  wordId                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  text                   TEXT NOT NULL,
+  normalizedText         TEXT NOT NULL,
+  ipaAm                  TEXT,
+  ipaBr                  TEXT,
+  pronunciationAudioUri  TEXT,          -- 授权发音音频（预留，v1 用 TTS）
+  createdAt              INTEGER NOT NULL,
+  updatedAt              INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX Word_normalizedText ON Word(normalizedText);
+
+insertWord:
+INSERT INTO Word(text, normalizedText, ipaAm, ipaBr, pronunciationAudioUri, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectByNormalizedText:
+SELECT * FROM Word WHERE normalizedText = ?;
+
+selectById:
+SELECT * FROM Word WHERE wordId = ?;
+
+countAll:
+SELECT COUNT(*) FROM Word;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();
