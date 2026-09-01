@@ -1,0 +1,1 @@
+Phase 0 占位：iosMain platform 包（expect/actual 的 iOS 实现：AVSpeechSynthesizer / SFSpeechRecognizer / AVPlayer / DB 驱动）。见 docs/ARCHITECTURE.md
