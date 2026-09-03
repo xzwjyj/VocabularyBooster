@@ -1,27 +1,23 @@
 package com.vocabularybooster
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.vocabularybooster.db.VocabularyDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Phase 1 schema v1 基线（DATABASE_SCHEMA 全 11 表 + Q1–Q5）：
- * 在 JVM 内存 SQLite 上验证建表、排序、幂等与派生复制（决策 D1–D4 落地）。
+ * schema v2 基线（DATABASE_SCHEMA 全 12 表 + Q1–Q6）：
+ * 在 JVM 内存 SQLite 上验证建表、排序、幂等与派生复制（决策 D1–D4 落地）；
+ * v2 变更：WordBookEntryDefinition 去 includeExamples，新增 WordBookEntryExampleSelection。
  *
  * 注：JVM 驱动默认不开启外键，FK 约束行为（TC-DB-07）在 Android 驱动
  * （PRAGMA foreign_keys=ON）上于后续阶段验证。
  */
 class SchemaSmokeTest {
 
-    private fun newDatabase(): VocabularyDatabase {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VocabularyDatabase.Schema.create(driver)
-        return VocabularyDatabase(driver)
-    }
+    private fun newDatabase(): VocabularyDatabase = TestDb.inMemory().database
 
     @Test
-    fun schemaV1SupportsAllElevenTables() {
+    fun schemaV2SupportsAllTwelveTables() {
         val db = newDatabase()
         val now = 1_760_000_000_000L
 
@@ -51,16 +47,28 @@ class SchemaSmokeTest {
             null,
             0,
         )
+        val exampleId = db.exampleQueries
+            .selectExamplesForEntry(definitions.first().definitionEntryId)
+            .executeAsList().single().exampleId
 
         // 5 WordBookEntry（entryOrder 队列序 + pendingTranslation 导入暂存，FR-14）
         db.wordBookEntryQueries.insertEntry(bookId, wordId, 0, "增强器（导入暂存）", now)
 
-        // 6 WordBookEntryDefinition（释义选择 + 例句开关，FR-5）
+        // 6 WordBookEntryDefinition（释义选择，FR-5 v2：无 includeExamples）
         val entryId = db.wordBookEntryQueries.selectLastInsertRowId().executeAsOne()
         db.wordBookEntryDefinitionQueries.insertEntryDefinition(
             entryId,
             definitions.first().definitionEntryId,
-            true,
+        )
+
+        // 6b WordBookEntryExampleSelection（例句逐条选择，PROJECT_SPEC v1.3）：
+        // INSERT OR IGNORE 幂等（TC-DB-01：复合主键去重）
+        db.wordBookEntryExampleSelectionQueries.insertExampleSelection(entryId, exampleId)
+        db.wordBookEntryExampleSelectionQueries.insertExampleSelection(entryId, exampleId)
+        assertEquals(
+            1,
+            db.wordBookEntryExampleSelectionQueries
+                .selectExampleSelections(entryId).executeAsList().size,
         )
 
         // 7 LearningSession
@@ -117,7 +125,10 @@ class SchemaSmokeTest {
         }
         db.definitionEntryQueries.insertDefinitionEntry(1L, "noun", 1, 0, "meaning", "释义")
         val defId = db.definitionEntryQueries.selectLastInsertRowId().executeAsOne()
-        db.wordBookEntryDefinitionQueries.insertEntryDefinition(1L, defId, true)
+        db.exampleQueries.insertExample(defId, "a sentence", "例句", "TTS", null, null, null, null, 0)
+        val exampleId = db.exampleQueries.selectExamplesForEntry(defId).executeAsList().single().exampleId
+        db.wordBookEntryDefinitionQueries.insertEntryDefinition(1L, defId)
+        db.wordBookEntryExampleSelectionQueries.insertExampleSelection(1L, exampleId)
 
         db.learningSessionQueries.insertSession(bookId, "ACTIVE", 10, now, null)
         val sessionId = db.learningSessionQueries.selectLastInsertRowId().executeAsOne()
@@ -131,6 +142,7 @@ class SchemaSmokeTest {
         val derivedId = db.wordBookQueries.selectLastInsertRowId().executeAsOne()
         db.queriesQueries.copyEntryRelations(derivedId, now, bookId, sessionId)
         db.queriesQueries.copyEntryDefinitionRelations(bookId, derivedId)
+        db.queriesQueries.copyExampleSelections(bookId, derivedId)
 
         val derived = db.wordBookQueries.selectWordBookById(derivedId).executeAsOne()
         assertEquals("DERIVED", derived.type)
@@ -142,10 +154,12 @@ class SchemaSmokeTest {
         assertEquals(listOf(0L, 2L), entries.map { it.entryOrder })
         assertEquals(listOf("pending-0", "pending-2"), entries.map { it.pendingTranslation })
 
-        // 释义选择关系同步复制（含 includeExamples）
+        // 释义选择 + 例句选择关系同步复制（v2：逐例句选择）
         val w1Entry = entries.first { it.wordId == 1L }
         assertEquals(1, db.wordBookEntryDefinitionQueries
             .selectEntryDefinitions(w1Entry.wordBookEntryId).executeAsList().size)
+        assertEquals(1, db.wordBookEntryExampleSelectionQueries
+            .selectExampleSelections(w1Entry.wordBookEntryId).executeAsList().size)
 
         // D4：派生本不继承掌握状态；D2：母本不变
         assertEquals(0L, db.wordMasteryQueries.countMastered(derivedId).executeAsOne())

@@ -19,8 +19,9 @@
 ┌──────────────── 聚合 2：WordBook（生词本） ─────────────────────────┐
 │                                                                    │
 │  WordBook ──1:N── WordBookEntry ──1:N── WordBookEntryDefinition     │
-│     ▲              (引用 Word)          (引用 DefinitionEntry,     │
-│     │                                        includeExamples 开关)  │
+│     ▲              (引用 Word)          (引用 DefinitionEntry)     │
+│     │                    └──1:N── WordBookEntryExampleSelection    │
+│     │                                 (引用 Example，v1.2 起)      │
 │  WordBook ──1:N── WordMastery (以 生词本+词 为单位)                  │
 │  WordBook(type) ──0..1── parent → 母本（DERIVED 血缘, D2/D3）        │
 └────────────────────────────────────────────────────────────────────┘
@@ -112,9 +113,14 @@
 | `wordBookEntryDefinitionId` | Long | 主键 |
 | `wordBookEntryId` | Long | 所属生词本词条 |
 | `definitionEntryId` | Long | 选中的释义 |
-| `includeExamples` | Boolean | 是否携带该释义的 Example（默认 true） |
 
-**不变量**：`(wordBookEntryId, definitionEntryId)` 唯一；`definitionEntryId` 必须属于 `wordBookEntryId` 指向的 Word（应用层校验）；学习播放只播放被选中的释义（FR-10）。
+### 2.6b WordBookEntryExampleSelection（收藏时的例句选择，v1.2 起，PROJECT_SPEC v1.3）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `wordBookEntryId` + `exampleId` | 复合主键 | 所属词条 + 选中的例句 |
+
+**不变量**：`(wordBookEntryId, definitionEntryId)` 唯一；`definitionEntryId` 必须属于 `wordBookEntryId` 指向的 Word、`exampleId` 必须属于被选中的 `definitionEntryId`（应用层校验）；例句选择粒度 = 逐 Example 勾选（多选，可全不选 = 只保存释义）；单个 Example 仍是原子单元（FR-3）；学习播放只播放被选中的释义与例句（FR-10）。
 
 ### 2.7 WordMastery（掌握记录）
 
@@ -296,3 +302,4 @@ completion = masteredEntryCount / entryCount
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：WordBook.type（ORIGINAL/DERIVED）、parentWordBookId + sourceSessionId、母本不变性、退出三分支、掌握作用域 |
+| 1.2 | 2026-09-01 | FR-5 例句选择粒度（PROJECT_SPEC v1.3）：新增实体 WordBookEntryExampleSelection（逐 Example 勾选）；WordBookEntryDefinition 移除 includeExamples 字段 |

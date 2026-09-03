@@ -47,17 +47,18 @@
 | TC-DM-02 | 乱序入库数据 | 渲染排序仍满足连续性（排序与入库顺序无关） |
 | TC-DM-03 | EN/CN 顺序 | MeaningEN 恒先于 MeaningCN；Example 句先于译文（I-6/I-7） |
 | TC-DM-04 | 例句原子性 | 保存/取消 Example 为整体，无半选状态 |
+| TC-DM-05 | 例句选择粒度（v1.2） | 每条选中释义可勾选任意 Example 子集（含空集=仅释义）；选择的只落 `WordBookEntryExampleSelection`，底层 Example 不复制 |
 
 ### 4.2 TC-DB 数据库
 
 | ID | 用例 |
 |---|---|
-| TC-DB-01 | 唯一约束生效：normalizedText / (wordBookId,wordId) / (wordBookEntryId,definitionEntryId) / (type,wordBookId) 重复插入被拒 |
+| TC-DB-01 | 唯一约束生效：normalizedText / (wordBookId,wordId) / (wordBookEntryId,definitionEntryId) / (wordBookEntryId,exampleId) / (type,wordBookId) 重复插入被拒 |
 | TC-DB-02 | FK 级联：删 WordBook → entries/selections/mastery 级联，Word 不动 |
 | TC-DB-03 | 关键查询正确：Q1 排序 / Q2 队列 / Q3 计数 / Q4 选中释义 / Q5 派生复制 |
 | TC-DB-04 | 事务原子性：MasteryMarker 中途失败 → 两个写全回滚 |
 | TC-DB-05 | 派生一致性：派生本关系行与母本（除 bookId）逐行相等 |
-| TC-DB-06 | 迁移链：schema v1→vN 全版本 MigrationTest（Phase 1 起基线，每版迁移必加） |
+| TC-DB-06 | 迁移链：schema v1→vN 全版本 MigrationTest（Phase 1 起基线，每版迁移必加；首个迁移 v1→v2 于 Phase 2 落地：includeExamples 移除 + WordBookEntryExampleSelection 新建 + 数据保留断言） |
 | TC-DB-07 | WordBook 类型约束：`type` CHECK 生效；删除有派生子本的母本被拒（RESTRICT）；DERIVED 本 parentWordBookId/sourceSessionId 必填 |
 
 ### 4.3 TC-LE 学习引擎（含 LEARNING_ENGINE_SPEC §10 十条边界）
@@ -135,7 +136,7 @@
 | FR-1/FR-16 | TC-DB-01、TC-UI（词条页） |
 | FR-2 | TC-DM-01…03、TC-UI 词条渲染 |
 | FR-3 | TC-DM-04、TC-AE-12 |
-| FR-4/FR-5 | TC-DB-01/02、TC-UI 生词本流 |
+| FR-4/FR-5 | TC-DB-01/02、TC-DM-04/05、TC-UI 生词本流 |
 | FR-6 | TC-LE-01…03、TC-DB-03 |
 | FR-7 | TC-LE-04、TC-AE-04/05/10 |
 | FR-8 | TC-LE-05/06、TC-AC |
@@ -185,3 +186,4 @@
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：TC-LE-07/08 升级，新增 TC-LE-11（分支 C）与 TC-DB-07（type/血缘约束） |
+| 1.2 | 2026-09-01 | FR-5 粒度细化（PROJECT_SPEC v1.3）：新增 TC-DM-05；TC-DB-01 增 (wordBookEntryId,exampleId)；TC-DB-06 记 v1→v2 首迁移 |

@@ -32,3 +32,6 @@ Thumbs.db
 desktop.ini
 *conflicted*
 # Synology Drive 提示：建议在客户端排除本仓库的 build/ 与 .gradle/ 同步，避免文件锁与同步冲突
+
+# ===== Kotlin session data =====
+.kotlin/

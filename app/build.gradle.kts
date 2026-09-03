@@ -44,6 +44,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -52,12 +53,19 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.koin.android)
+    implementation(libs.koin.androidx.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.datetime)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.sqldelight.android.driver)
+    androidTestImplementation(libs.kotlinx.coroutines.core)
+    androidTestImplementation(libs.kotlinx.datetime)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 // app 模块合法使用 Android API → ForbiddenImport 关闭（detekt-common.yml 仅用于 :shared）

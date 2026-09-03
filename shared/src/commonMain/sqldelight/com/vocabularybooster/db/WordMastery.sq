@@ -15,3 +15,7 @@ SELECT * FROM WordMastery WHERE wordBookId = ? AND wordId = ?;
 
 countMastered:
 SELECT COUNT(*) FROM WordMastery WHERE wordBookId = ?;
+
+-- 从生词本移除词时清掉本内掌握行（避免悬挂的 (bookId, wordId) 记录；FR-4 移除语义）
+deleteMasteryForWordInBook:
+DELETE FROM WordMastery WHERE wordBookId = ? AND wordId = ?;

@@ -1,9 +1,17 @@
 # :app 专用 —— Android 壳模块合法使用平台 API，禁用 ForbiddenImport，其余默认规则生效
-# Compose 惯例豁免：@Composable 函数 PascalCase；@Preview 函数仅供工具链引用
+# Compose 惯例豁免：@Composable 函数 PascalCase；@Preview 函数仅供工具链引用；
+# @Composable 函数天然长参数（状态+回调）且声明式 UI 单函数行数偏长（Phase 2 起）
 build:
   maxIssues: 0
 naming:
   FunctionNaming:
+    ignoreAnnotated:
+      - 'Composable'
+complexity:
+  LongMethod:
+    ignoreAnnotated:
+      - 'Composable'
+  LongParameterList:
     ignoreAnnotated:
       - 'Composable'
 style:

@@ -28,5 +28,24 @@ SELECT * FROM WordBook WHERE wordBookId = ?;
 selectChildWordBooks:
 SELECT * FROM WordBook WHERE parentWordBookId = ? ORDER BY createdAt DESC;
 
+-- —— Phase 2 生词本管理（FR-4）——
+
+selectAllWordBooks:
+SELECT * FROM WordBook ORDER BY createdAt DESC, wordBookId DESC;
+
+renameWordBook:
+UPDATE WordBook SET name = ?, updatedAt = ? WHERE wordBookId = ?;
+
+deleteWordBook:
+DELETE FROM WordBook WHERE wordBookId = ?;
+
+-- 删除守卫（FR-4）：有完成勋章的书禁删（勋章永久性，FR-13）
+countBookCompletedMedals:
+SELECT COUNT(*) FROM Achievement WHERE wordBookId = ? AND type = 'BOOK_COMPLETED';
+
+-- 删除守卫（FR-4）：存在派生子本的书禁删（血缘完整）
+countDerivedChildren:
+SELECT COUNT(*) FROM WordBook WHERE parentWordBookId = ?;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();

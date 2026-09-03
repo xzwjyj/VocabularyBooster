@@ -24,5 +24,9 @@ SELECT * FROM Word WHERE wordId = ?;
 countAll:
 SELECT COUNT(*) FROM Word;
 
+-- 前缀搜索（Phase 2 查词 UI；repo 负责归一化与拼 %）
+searchWords:
+SELECT * FROM Word WHERE normalizedText LIKE ? ORDER BY length(normalizedText) ASC, normalizedText ASC LIMIT ?;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();

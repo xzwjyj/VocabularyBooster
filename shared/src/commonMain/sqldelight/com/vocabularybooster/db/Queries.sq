@@ -20,6 +20,11 @@ JOIN DefinitionEntry de ON de.definitionEntryId = wed.definitionEntryId
 WHERE wed.wordBookEntryId = ?
 ORDER BY de.partOfSpeechOrder ASC, de.definitionOrder ASC;
 
+-- Q6 生词本列表摘要（Phase 2 UI）：含词条数子查询
+selectWordBookSummaries:
+SELECT wb.*, (SELECT COUNT(*) FROM WordBookEntry wbe WHERE wbe.wordBookId = wb.wordBookId) AS entryCount
+FROM WordBook wb ORDER BY wb.createdAt DESC, wb.wordBookId DESC;
+
 -- Q5 派生 DERIVED WordBook（D1 分支 B）：复制关系行（保留 entryOrder / pendingTranslation，D3），
 -- 只复制 SessionWord 中 status != 'MASTERED' 的词；不复制 Word / DefinitionEntry / Example / WordMastery（D2/D4）
 copyEntryRelations:
@@ -27,11 +32,20 @@ INSERT INTO WordBookEntry(wordBookId, wordId, entryOrder, pendingTranslation, ad
 SELECT :newBookId, wordId, entryOrder, pendingTranslation, :now FROM WordBookEntry WHERE wordBookId = :sourceBookId
   AND wordId IN (SELECT wordId FROM SessionWord WHERE sessionId = :sessionId AND status != 'MASTERED');
 
--- 派生本同步复制释义选择关系（含 includeExamples；DATABASE_SCHEMA §4 事务规则）
+-- 派生本同步复制释义选择关系（schema v2：不含 includeExamples；DATABASE_SCHEMA §4 事务规则）
 copyEntryDefinitionRelations:
-INSERT INTO WordBookEntryDefinition(wordBookEntryId, definitionEntryId, includeExamples)
-SELECT newWbe.wordBookEntryId, wed.definitionEntryId, wed.includeExamples
+INSERT INTO WordBookEntryDefinition(wordBookEntryId, definitionEntryId)
+SELECT newWbe.wordBookEntryId, wed.definitionEntryId
 FROM WordBookEntry newWbe
 JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
 JOIN WordBookEntryDefinition wed ON wed.wordBookEntryId = oldWbe.wordBookEntryId
+WHERE newWbe.wordBookId = :newBookId;
+
+-- 派生本同步复制例句选择关系（PROJECT_SPEC v1.3；Q5c）
+copyExampleSelections:
+INSERT INTO WordBookEntryExampleSelection(wordBookEntryId, exampleId)
+SELECT newWbe.wordBookEntryId, wes.exampleId
+FROM WordBookEntry newWbe
+JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
+JOIN WordBookEntryExampleSelection wes ON wes.wordBookEntryId = oldWbe.wordBookEntryId
 WHERE newWbe.wordBookId = :newBookId;

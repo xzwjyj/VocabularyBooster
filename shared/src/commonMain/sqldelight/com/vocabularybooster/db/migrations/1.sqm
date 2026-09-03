@@ -1,0 +1,26 @@
+-- v1 → v2（2026-09-01，PROJECT_SPEC v1.3）：例句选择粒度细化
+-- 1) WordBookEntryDefinition 移除 includeExamples（表重建；v1 从未发布，无存量数据，
+--    v1 的 includeExamples=0 语义在 v2 不再可表达——如实丢弃，不臆造例句选择行）
+-- 2) 新增 WordBookEntryExampleSelection（wordBookEntryId, exampleId）逐例句选择
+
+CREATE TABLE WordBookEntryDefinition_new (
+  wordBookEntryDefinitionId  INTEGER PRIMARY KEY AUTOINCREMENT,
+  wordBookEntryId            INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
+  definitionEntryId          INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId)
+);
+
+INSERT INTO WordBookEntryDefinition_new(wordBookEntryDefinitionId, wordBookEntryId, definitionEntryId)
+SELECT wordBookEntryDefinitionId, wordBookEntryId, definitionEntryId FROM WordBookEntryDefinition;
+
+DROP TABLE WordBookEntryDefinition;
+
+ALTER TABLE WordBookEntryDefinition_new RENAME TO WordBookEntryDefinition;
+
+CREATE UNIQUE INDEX WordBookEntryDefinition_unique
+  ON WordBookEntryDefinition(wordBookEntryId, definitionEntryId);
+
+CREATE TABLE WordBookEntryExampleSelection (
+  wordBookEntryId  INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
+  exampleId        INTEGER NOT NULL REFERENCES Example(exampleId),
+  PRIMARY KEY (wordBookEntryId, exampleId)
+);

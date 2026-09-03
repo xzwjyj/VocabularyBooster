@@ -4,7 +4,7 @@
 
 ## 当前状态与阶段纪律（最高优先级）
 
-- **Phase 0（规格与架构）已完成；决策 D1–D4 已冻结（2026-09-01，见 PHASE_0_REPORT 决策记录）；Phase 1（工程基础）已获批进行中。**
+- **Phase 0/1 已完成（2026-09-01，见 PHASE_0/1_REPORT）；决策 D1–D4 已冻结；FR-5 例句选择粒度已细化为逐 Example 勾选（PROJECT_SPEC v1.3 / schema v2，Phase 2 批准）；Phase 2（数据层 + 生词本基础）已获批进行中。**
 - 严格按 `docs/ROADMAP.md` 推进：**未经用户批准进入下一 Phase，禁止编写该 Phase 的任何代码**。开始编码前先确认当前所处 Phase 与出口条件。
 - 需求唯一事实来源：`docs/PROJECT_SPEC.md`（FR-01…FR-16 编号引用）。**任何行为疑问先查它**；要改需求 → 先改 PROJECT_SPEC（含版本记录）再改下游文档。
 - 开放问题登记在 `docs/reports/PHASE_0_REPORT.md`，逐条决策后回写 PROJECT_SPEC。
@@ -45,7 +45,7 @@
 1. `shared/commonMain` **禁止** import `android.*` / `java.*`（detekt 强制 fail）。平台能力只经 ARCHITECTURE §5 的端口接口进入。
 2. 业务规则（排序规则、队列/分组/掌握/完成/派生、播放状态机、导入、勋章）只存在于 shared；`app`/`iosApp` 只做 UI + ViewModel 委托 + actual 装配。
 3. 词条排序恒为 `(partOfSpeechOrder ASC, definitionOrder ASC)`，同词性连续、EN 先于 CN（PROJECT_SPEC FR-2）；改任何列表/播放序列前先读 DOMAIN_MODEL §4/§5。
-4. MeaningEN/MeaningCN 不可拆分；Example（句+译文+音频）为原子单元；收藏选择粒度 = DefinitionEntry + includeExamples。
+4. MeaningEN/MeaningCN 不可拆分；Example（句+译文+音频）为原子单元；收藏选择粒度 = DefinitionEntry + 逐 Example 勾选（PROJECT_SPEC v1.3，schema v2 的 WordBookEntryExampleSelection）。
 5. "会了"语音与按钮走同一 `markMastered()`；落库必须单事务（SessionWord + WordMastery）。
 6. 语音识别只存在于 CommandWindow 态；TTS 播放期间 recognizer 必须关闭（FR-12）。
 7. Pause/Resume 以 Segment 为粒度，绝不整词重播（TTS 段重读当前段是已批准的平台限制，ADR-09）。

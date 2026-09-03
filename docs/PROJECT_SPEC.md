@@ -116,9 +116,9 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 
 - 选择**一个或多个**目标生词本；
 - 选择要保存的**具体 DefinitionEntry**（可多选）；
-- 对每个选中的 DefinitionEntry，可独立选择**是否保存对应 Example**（Example 整体开关，不可拆分句子/译文）；
+- 对每个选中的 DefinitionEntry，可进一步勾选要保存的**具体 Example**（多选；Example 自身仍为原子单元——句/译文/音频不可拆分，见 FR-3；一条都不选 = 只保存释义）；
 - 不选任何 DefinitionEntry → 不允许保存（提示）；
-- **验收**：同一 Word 加入多个生词本成功；每本保存的 DefinitionEntry 集合可不同；底层 Word 表不产生重复行（复用）。
+- **验收**：同一 Word 加入多个生词本成功；每本保存的 DefinitionEntry 集合可不同；每条释义保存的 Example 集合可不同；底层 Word 表不产生重复行（复用）。
 
 ### FR-6 学习会话与分组
 
@@ -166,7 +166,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - 名称 = `{母本名称} {yyyy-MM-dd HH:mm}`（24 小时制，本地时间），例：`TOEFL Core 2026-09-01 08:30`；重名追加 `-2`、`-3`…；
 - `type = DERIVED`，`parentWordBookId = 母本 ID`，`sourceSessionId = 本次会话 ID`；
 - 内容 = 母本当前**所有未 MASTERED** 的词；
-- **只创建关系行**（复用，绝不复制 Word / DefinitionEntry / Example 底层数据）：新 `WordBook` + `WordBookEntry`（保留 entryOrder、pendingTranslation）+ 释义/例句选择关系（原样复制 includeExamples）；
+- **只创建关系行**（复用，绝不复制 Word / DefinitionEntry / Example 底层数据）：新 `WordBook` + `WordBookEntry`（保留 entryOrder、pendingTranslation）+ 释义选择关系 + 例句选择关系（均原样复制）；
 - **不继承**母本的 MASTERED 状态。
 
 **掌握状态作用域（D4，已确认）**：MASTERED 属于（WordBook, Word）二元组——同一词 `TOEFL → MASTERED` 与 `GRE → NOT_MASTERED` 互不影响；派生本从"未掌握"全新开始。
@@ -293,7 +293,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 一个 Word 多个 POS；同 POS 释义连续排列；POS 完成后进入下一个 | FR-2 |
 | MeaningEN 显示在 MeaningCN 前；同属一条 DefinitionEntry | FR-2 |
 | Example + ChineseTranslation 属同一例句单元 | FR-3 / FR-5 |
-| 生词本：创建 / 命名 / 重命名 / 删除 / 一词多本 / 保存时选 DefinitionEntry / Example 可选 | FR-4 / FR-5 |
+| 生词本：创建 / 命名 / 重命名 / 删除 / 一词多本 / 保存时选 DefinitionEntry / Example 逐条可选 | FR-4 / FR-5 |
 | 学习模式：选生词本、每组默认 10 词、组内循环 | FR-6 |
 | "会了" → MASTERED → 移出队列 → 下一个；组完成 → 下一组 | FR-7 / FR-8 |
 | 退出：剔除已 MASTERED，另存"原名称+日期时间"新本，复用不复制 | FR-9 |
@@ -318,3 +318,4 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：退出三分支；WordBook.type（ORIGINAL/DERIVED）+ parentWordBookId + sourceSessionId；母本不变性；掌握作用域=（生词本,词） |
 | 1.2 | 2026-09-01 | C5 定格 compileSdk 35（Phase 1 实装；升 36 需 AGP ≥8.9 随依赖升级处理） |
+| 1.3 | 2026-09-01 | FR-5 例句选择粒度细化（Phase 2 批准）：由「per-DefinitionEntry 整体开关 includeExamples」改为「逐 Example 勾选（多选，可全不选）」；Example 原子性不变。下游同步：DOMAIN_MODEL §1/§2.6、DATABASE_SCHEMA（schema v2）、TEST_PLAN、CLAUDE.md 铁律 4 |

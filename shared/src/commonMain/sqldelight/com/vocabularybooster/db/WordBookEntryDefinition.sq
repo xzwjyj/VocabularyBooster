@@ -1,18 +1,16 @@
-import kotlin.Boolean;
-
--- WordBookEntryDefinition（DATABASE_SCHEMA §2.6）：收藏时的释义选择 + 例句开关（FR-5）
+-- WordBookEntryDefinition（DATABASE_SCHEMA §2.6，schema v2）：收藏时的释义选择（FR-5）
+-- v2 起不含 includeExamples：例句选择粒度细化到逐 Example（WordBookEntryExampleSelection）
 CREATE TABLE WordBookEntryDefinition (
   wordBookEntryDefinitionId  INTEGER PRIMARY KEY AUTOINCREMENT,
   wordBookEntryId            INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
-  definitionEntryId          INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId),
-  includeExamples            INTEGER AS Boolean NOT NULL DEFAULT 1
+  definitionEntryId          INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId)
 );
 CREATE UNIQUE INDEX WordBookEntryDefinition_unique
   ON WordBookEntryDefinition(wordBookEntryId, definitionEntryId);
 
 insertEntryDefinition:
-INSERT INTO WordBookEntryDefinition(wordBookEntryId, definitionEntryId, includeExamples)
-VALUES (?, ?, ?);
+INSERT INTO WordBookEntryDefinition(wordBookEntryId, definitionEntryId)
+VALUES (?, ?);
 
 selectEntryDefinitions:
 SELECT * FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;

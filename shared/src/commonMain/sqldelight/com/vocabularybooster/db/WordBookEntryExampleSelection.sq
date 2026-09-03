@@ -1,0 +1,18 @@
+-- WordBookEntryExampleSelection（DATABASE_SCHEMA §2.6，schema v2 新增，PROJECT_SPEC v1.3）：
+-- 收藏时的例句逐条选择——一行 = 该词条勾选了一个例句；无行 = 不保存该例句
+-- Example 自身仍是原子单元（句+译文+音频不可拆分，FR-3）
+CREATE TABLE WordBookEntryExampleSelection (
+  wordBookEntryId  INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
+  exampleId        INTEGER NOT NULL REFERENCES Example(exampleId),
+  PRIMARY KEY (wordBookEntryId, exampleId)
+);
+
+insertExampleSelection:
+INSERT OR IGNORE INTO WordBookEntryExampleSelection(wordBookEntryId, exampleId)
+VALUES (?, ?);
+
+selectExampleSelections:
+SELECT * FROM WordBookEntryExampleSelection WHERE wordBookEntryId = ?;
+
+deleteExampleSelectionsForEntry:
+DELETE FROM WordBookEntryExampleSelection WHERE wordBookEntryId = ?;

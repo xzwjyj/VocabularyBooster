@@ -3,54 +3,84 @@ package com.vocabularybooster.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import com.vocabularybooster.app.ui.BookDetailScreen
+import com.vocabularybooster.app.ui.LookupScreen
+import com.vocabularybooster.app.ui.WordBooksScreen
+import com.vocabularybooster.app.ui.WordDetailScreen
 
 /**
- * Phase 1 占位入口：仅证明壳模块可构建/安装/启动（无任何业务功能）。
+ * Phase 2 主界面：两 Tab（查词 / 生词本）+ 词条详情 / 本详情覆盖层。
+ * 简单状态导航（无 nav 依赖）；UI 只渲染状态 + 转发意图（ARCHITECTURE §4）。
  */
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    PhaseOnePlaceholderScreen()
-                }
+                Surface(Modifier.fillMaxSize()) { VocabularyBoosterRoot() }
             }
         }
     }
 }
 
 @Composable
-private fun PhaseOnePlaceholderScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(text = "VocabularyBooster", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            text = "Phase 1 工程基础已就绪\n业务功能将在后续阶段实现",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-    }
-}
+private fun VocabularyBoosterRoot() {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var openWordText by rememberSaveable { mutableStateOf<String?>(null) }
+    var openBookId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-@Preview(showBackground = true)
-@Composable
-private fun PhaseOnePlaceholderPreview() {
-    MaterialTheme {
-        PhaseOnePlaceholderScreen()
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = tab == 0 && openWordText == null,
+                    onClick = { tab = 0; openWordText = null; openBookId = null },
+                    icon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    label = { Text("查词") },
+                )
+                NavigationBarItem(
+                    selected = tab == 1 && openBookId == null,
+                    onClick = { tab = 1; openWordText = null; openBookId = null },
+                    icon = { Icon(Icons.Filled.List, contentDescription = null) },
+                    label = { Text("生词本") },
+                )
+            }
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when {
+                openWordText != null -> WordDetailScreen(
+                    wordText = openWordText!!,
+                    onBack = { openWordText = null },
+                )
+                openBookId != null -> BookDetailScreen(
+                    bookId = openBookId!!,
+                    onBack = { openBookId = null },
+                )
+                tab == 0 -> LookupScreen(onWordClick = { openWordText = it })
+                else -> WordBooksScreen(onBookClick = { openBookId = it })
+            }
+        }
     }
 }

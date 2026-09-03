@@ -13,7 +13,7 @@
 | 数据库名 | `vocabulary.db`（SQLDelight database name: `VocabularyDatabase`） |
 | 主键 | `INTEGER PRIMARY KEY AUTOINCREMENT`（Long） |
 | 时间 | `INTEGER` epoch **毫秒**（kotlinx-datetime `Instant.toEpochMilliseconds()`） |
-| 布尔 | `INTEGER AS Boolean`，且 `.sq` 文件顶部需 `import kotlin.Boolean;`（SQLDelight 2.x 原生映射；SQLite 底层存 `INTEGER` 0/1） |
+| 布尔 | `INTEGER AS Boolean`，且 `.sq` 文件顶部需 `import kotlin.Boolean;`（SQLDelight 2.x 原生映射；SQLite 底层存 `INTEGER` 0/1）。**v2 起全库暂无布尔列**（includeExamples 已随粒度细化移除），约定保留备未来使用 |
 | 枚举 | `TEXT`（领域枚举名，应用层映射） |
 | 外键 | **强制开启**：Android 驱动必须 `PRAGMA foreign_keys = ON`（SQLite 默认关闭，Phase 1 在 Driver 工厂中配置；iOS 驱动同样） |
 | schema 文件位置 | `shared/src/commonMain/sqldelight/com/vocabularybooster/db/*.sq`（Phase 1 引入） |
@@ -105,19 +105,23 @@ CREATE UNIQUE INDEX WordBookEntry_unique ON WordBookEntry(wordBookId, wordId);
 CREATE INDEX WordBookEntry_order ON WordBookEntry(wordBookId, entryOrder);
 ```
 
-### 2.6 WordBookEntryDefinition（收藏时的释义选择）
+### 2.6 WordBookEntryDefinition + WordBookEntryExampleSelection（收藏选择，v2）
 
 ```sql
-import kotlin.Boolean;
-
 CREATE TABLE WordBookEntryDefinition (
   wordBookEntryDefinitionId  INTEGER PRIMARY KEY AUTOINCREMENT,
   wordBookEntryId            INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
-  definitionEntryId          INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId),
-  includeExamples            INTEGER AS Boolean NOT NULL DEFAULT 1
+  definitionEntryId          INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId)
 );
 CREATE UNIQUE INDEX WordBookEntryDefinition_unique
   ON WordBookEntryDefinition(wordBookEntryId, definitionEntryId);
+
+-- 例句逐条选择（PROJECT_SPEC v1.3 / DOMAIN_MODEL §2.6b；一行 = 一个被选中的例句）
+CREATE TABLE WordBookEntryExampleSelection (
+  wordBookEntryId  INTEGER NOT NULL REFERENCES WordBookEntry(wordBookEntryId) ON DELETE CASCADE,
+  exampleId        INTEGER NOT NULL REFERENCES Example(exampleId),
+  PRIMARY KEY (wordBookEntryId, exampleId)
+);
 ```
 
 ### 2.7 WordMastery（行存在 = MASTERED）
@@ -222,11 +226,19 @@ SELECT :newBookId, wordId, entryOrder, pendingTranslation, :now FROM WordBookEnt
   AND wordId IN (SELECT wordId FROM SessionWord WHERE sessionId = :sessionId AND status != 'MASTERED');
 
 copyEntryDefinitionRelations:
-INSERT INTO WordBookEntryDefinition (wordBookEntryId, definitionEntryId, includeExamples)
-SELECT newWbe.wordBookEntryId, wed.definitionEntryId, wed.includeExamples
+INSERT INTO WordBookEntryDefinition (wordBookEntryId, definitionEntryId)
+SELECT newWbe.wordBookEntryId, wed.definitionEntryId
 FROM WordBookEntry newWbe
 JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
 JOIN WordBookEntryDefinition wed ON wed.wordBookEntryId = oldWbe.wordBookEntryId
+WHERE newWbe.wordBookId = :newBookId;
+
+copyExampleSelections:
+INSERT INTO WordBookEntryExampleSelection (wordBookEntryId, exampleId)
+SELECT newWbe.wordBookEntryId, wes.exampleId
+FROM WordBookEntry newWbe
+JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
+JOIN WordBookEntryExampleSelection wes ON wes.wordBookEntryId = oldWbe.wordBookEntryId
 WHERE newWbe.wordBookId = :newBookId;
 ```
 
@@ -235,8 +247,8 @@ WHERE newWbe.wordBookId = :newBookId;
 | 场景 | 事务内容 |
 |---|---|
 | `MasteryMarker`（"会了"） | `UPDATE SessionWord → MASTERED` + `INSERT WordMastery`（同一事务，LEARNING_ENGINE_SPEC §6） |
-| `WordBookDeriver`（退出分支 B 派生） | `insertDerivedWordBook`（type=DERIVED + parentWordBookId + sourceSessionId）+ Q5 复制 entries（保留 entryOrder/pendingTranslation）+ 复制 WordBookEntryDefinition（含 includeExamples）——全部或全无；**不复制** WordMastery（D4） |
-| 收藏保存（FR-5） | Word upsert（首次）+ N×`WordBookEntry` + M×`WordBookEntryDefinition` |
+| `WordBookDeriver`（退出分支 B 派生） | `insertDerivedWordBook`（type=DERIVED + parentWordBookId + sourceSessionId）+ Q5 复制 entries（保留 entryOrder/pendingTranslation）+ 复制 WordBookEntryDefinition + 复制 WordBookEntryExampleSelection——全部或全无；**不复制** WordMastery（D4） |
+| 收藏保存（FR-5） | Word upsert（首次）+ N×`WordBookEntry` + M×`WordBookEntryDefinition` + K×`WordBookEntryExampleSelection`（M/K 均可部分选择，PROJECT_SPEC v1.3） |
 | 导入（FR-14） | 分块事务：每块（如 500 行）成功才提交；取消/失败 → 已提交块保留**或**整体回滚（见 IMPORT_SPEC §6：v1 整体回滚） |
 | 勋章授予 | `INSERT OR IGNORE` + 唯一索引兜底（幂等，FR-13） |
 | 会话创建 | `INSERT LearningSession` + N×`INSERT SessionWord` |
@@ -244,6 +256,7 @@ WHERE newWbe.wordBookId = :newBookId;
 ## 5. 迁移与版本
 
 - Schema v1 为基线；此后任何 DDL 变更 = **新 schema 版本 + `.sqm` 迁移文件 + 迁移测试**（SQLDelight `MigrationTest`，JVM 全版本链验证）；
+- **v1 → v2（2026-09-01，PROJECT_SPEC v1.3）**：`WordBookEntryDefinition` 移除 `includeExamples` 列（表重建）；新增 `WordBookEntryExampleSelection`。迁移文件 `1.sqm`：重建表（含旧数据 `INSERT INTO … SELECT` 迁移，原 includeExamples=0 的例句选择信息在 v1 不可表达，迁移时不产生例句选择行——v1 从未发布，无存量数据）；
 - D1–D4 决策字段（`WordBook.type / parentWordBookId / sourceSessionId`）**直接纳入 schema v1 基线**（Phase 1 落地时一并生成，无需迁移）；
 - 禁止修改历史 `.sqm`；禁止无迁移直接改 v1+ 的建表语句；
 - Phase 1 生成 schema 时锁定版本 1 并在 TEST_PLAN TC-DB-06 建立迁移测试基线。
@@ -257,7 +270,7 @@ WHERE newWbe.wordBookId = :newBookId;
 | FR-2 MeaningEN/CN 不可拆分 | 同表两列（天然原子） |
 | FR-3 例句单元原子（句子+译文+音频+来源） | `Example` 单表 + `sourceType/sourceRef/licenseNote` |
 | FR-4 生词本增删改 | `WordBook`；删除 = 关系级联，词不动 |
-| FR-5 一词多本 + 释义选择 + 例句开关 | `WordBookEntry(wordBookId,wordId)` 唯一 + `WordBookEntryDefinition.includeExamples` |
+| FR-5 一词多本 + 释义选择 + 例句逐条选择 | `WordBookEntry(wordBookId,wordId)` 唯一 + `WordBookEntryDefinition` + `WordBookEntryExampleSelection(wordBookEntryId,exampleId)` |
 | FR-6 队列=未掌握 + entryOrder + 分组固化 | Q2 + `SessionWord.groupIndex/orderInGroup` |
 | FR-7 "会了"幂等 | `WordMastery` 复合主键（重复 INSERT 冲突即忽略）；`SessionWord` PK |
 | FR-8 完成检测 | Q3 |
@@ -274,3 +287,4 @@ WHERE newWbe.wordBookId = :newBookId;
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：WordBook 增 type（ORIGINAL/DERIVED，CHECK 约束）、parentWordBookId（RESTRICT）、sourceSessionId；派生不复制 WordMastery |
 | 1.2 | 2026-09-01 | Phase 1 落地回写：Q5 `copyEntryRelations` 补 `pendingTranslation` 列（与 §4 事务规则对齐）；新增 `copyEntryDefinitionRelations`（Q5b，同步复制释义选择关系，D3） |
+| 1.3 | 2026-09-01 | Schema v2（PROJECT_SPEC v1.3）：`WordBookEntryDefinition` 移除 includeExamples；新增 `WordBookEntryExampleSelection`；Q5 新增 `copyExampleSelections`；§4 事务规则同步 |

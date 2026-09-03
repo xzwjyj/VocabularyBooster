@@ -21,5 +21,23 @@ SELECT * FROM WordBookEntry WHERE wordBookId = ? ORDER BY entryOrder ASC;
 selectEntryByWord:
 SELECT * FROM WordBookEntry WHERE wordBookId = ? AND wordId = ?;
 
+-- —— Phase 2 生词本词条管理（FR-4/FR-5）——
+
+countEntriesForWordBook:
+SELECT COUNT(*) FROM WordBookEntry WHERE wordBookId = ?;
+
+maxEntryOrder:
+SELECT MAX(entryOrder) FROM WordBookEntry WHERE wordBookId = ?;
+
+deleteEntryByWord:
+DELETE FROM WordBookEntry WHERE wordBookId = ? AND wordId = ?;
+
+-- 本内词条列表（含词文本，entryOrder 升序）
+selectEntryWordsForBook:
+SELECT wbe.wordBookEntryId, wbe.wordBookId, wbe.wordId, wbe.entryOrder, wbe.pendingTranslation, wbe.addedAt, w.text AS wordText
+FROM WordBookEntry wbe JOIN Word w ON w.wordId = wbe.wordId
+WHERE wbe.wordBookId = ?
+ORDER BY wbe.entryOrder ASC;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();
