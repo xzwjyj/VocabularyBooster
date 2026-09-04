@@ -92,7 +92,7 @@
 | `sourceSessionId` | Long? | 来源会话 ID（仅 DERIVED 本必填） |
 | `createdAt` / `updatedAt` | Instant | |
 
-**不变量（D2）**：ORIGINAL 本是**永久母本**——学习会话退出永不修改其内容；DERIVED 本是某次会话退出时刻的**未掌握词快照**，只新增关系行，复用 Word / DefinitionEntry / Example，不继承母本掌握状态（D4）。
+**不变量（D2）**：ORIGINAL 本是**永久母本**——学习会话退出永不修改其内容；DERIVED 本是某次会话退出时刻的**未掌握词快照**——**以退出时刻母本仍存在的 entry 为边界（2026-09-04 裁决：DERIVED entries = 当前母本 WordBookEntry ∩ 本会话 SessionWord(status != MASTERED)；交集为空不建空本）**，只新增关系行，复用 Word / DefinitionEntry / Example，不继承母本掌握状态（D4）。
 
 ### 2.5 WordBookEntry（生词本词条）
 
@@ -149,7 +149,7 @@
 | `sessionId` + `wordId` | 复合主键 | |
 | `groupIndex` | Int | 组号（0 起） |
 | `orderInGroup` | Int | 组内顺序（0 起） |
-| `status` | SessionWordStatus | `PENDING / PLAYING / MASTERED / SKIPPED` |
+| `status` | SessionWordStatus | `PENDING / PLAYING / MASTERED`（v1 引擎产出）；`SKIPPED` 为 schema 预留扩展状态，v1 不产生（§8.3 裁决） |
 | `masteredAt` | Instant? | |
 
 **语义**：会话开始时把"未掌握队列"固化成本表（每词一行，含组号）；会话恢复/崩溃恢复都以此为准（NFR-3）。
@@ -263,6 +263,8 @@ PENDING ──开始播放──▶ PLAYING ──"会了"──▶ MASTERED
    └──────────────────Next 跳过──────────────▶（回到组内循环，仍 PENDING）
 ```
 
+**SKIPPED 裁决（v1，Phase 3 规格对齐）**：v1 学习引擎**不产生 `SKIPPED`**。Next 控制不改变状态（词保持 PENDING，留在组内循环等待下轮）；`nextWord()`、退出三分支裁决、完成检测、会话恢复均不依赖该状态。`SKIPPED` 保留为 schema 预留扩展状态（未来"用户显式跳过并移出循环"类需求），启用须走需求变更流程（PROJECT_SPEC §7）。
+
 ### 8.4 WordBook 完成度（派生状态，不落库）
 ```
 completion = masteredEntryCount / entryCount
@@ -289,7 +291,7 @@ completion = masteredEntryCount / entryCount
 | `GroupSplitter` | 队列 → 组（groupSize，会话固化） | LEARNING_ENGINE_SPEC §4 |
 | `MasteryMarker` | 事务化：SessionWord→MASTERED + WordMastery 落行 + 队列移除 | LEARNING_ENGINE_SPEC §6 |
 | `CompletionDetector` | 组完成→推进下一组；书完成→事件 | LEARNING_ENGINE_SPEC §7 |
-| `WordBookDeriver` | 退出三分支裁决（零掌握不派生 / 部分掌握派生 DERIVED 快照本 / 全部完成不派生） | LEARNING_ENGINE_SPEC §8 |
+| `WordBookDeriver` | 退出三分支裁决（零掌握不派生 / 部分掌握且复制交集非空派生 DERIVED 快照本 / 全部完成不派生；交集 = 当前母本 entries ∩ SessionWord 非 MASTERED，空则不建本） | LEARNING_ENGINE_SPEC §8 |
 | `SegmentBuilder` | Word + 开关 → 播放分段序列（I-8） | AUDIO_ENGINE_SPEC §3 |
 | `PlaybackOrchestrator` | 播放状态机（Play/Pause/Resume/Next/Replay/Exit） | AUDIO_ENGINE_SPEC §5 |
 | `CommandParser` | 识别文本 → VoiceCommand | AUDIO_ENGINE_SPEC §7 |
@@ -303,3 +305,5 @@ completion = masteredEntryCount / entryCount
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：WordBook.type（ORIGINAL/DERIVED）、parentWordBookId + sourceSessionId、母本不变性、退出三分支、掌握作用域 |
 | 1.2 | 2026-09-01 | FR-5 例句选择粒度（PROJECT_SPEC v1.3）：新增实体 WordBookEntryExampleSelection（逐 Example 勾选）；WordBookEntryDefinition 移除 includeExamples 字段 |
+| 1.3 | 2026-09-03 | Phase 3 规格对齐：§2.9/§8.3 SKIPPED 裁决——v1 引擎不产生，保留为 schema 预留扩展状态；所有算法不依赖 |
+| 1.4 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§2.4 DERIVED「未掌握词快照」补边界——以退出时刻母本仍存在的 entry 为界（当前母本 WordBookEntry ∩ 本会话 SessionWord 非 MASTERED），交集为空不建空本；§10 WordBookDeriver 职责同步 |

@@ -15,11 +15,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 
 /**
  * WordBookRepository 的 SQLDelight 实现（Phase 2，FR-4/FR-5）。
  * 删除守卫、保存校验、事务原子性全部在此层（业务规则只在 shared，架构铁律 2）。
  */
+// 端口方法数 11（Phase 2 基础 + Step 5D 派生三方法）：与 domain 端口同步豁免
+@Suppress("TooManyFunctions")
 public class SqlDelightWordBookRepository(
     private val database: VocabularyDatabase,
     private val clock: Clock,
@@ -128,6 +131,70 @@ public class SqlDelightWordBookRepository(
                     }
                 }
             }
+        }
+    }
+
+    override suspend fun getWordBookName(wordBookId: Long): String? = withContext(dispatcher) {
+        database.wordBookQueries.selectWordBookById(wordBookId).executeAsOneOrNull()?.name
+    }
+
+    override suspend fun countBooksWithName(name: String): Int = withContext(dispatcher) {
+        database.wordBookQueries.countBooksNamed(name).executeAsOne().toInt()
+    }
+
+    override suspend fun deriveWordBook(
+        parentWordBookId: Long,
+        sourceSessionId: Long,
+        name: String,
+        createdAt: Instant,
+    ): Long? = withContext(dispatcher) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            throw RepositoryValidationException("派生本名称不能为空")
+        }
+        val now = createdAt.toEpochMilliseconds()
+        // 单事务（DATABASE_SCHEMA §4 WordBookDeriver 行）：交集守卫 + 建本 + 三类关系行复制全部或全无；
+        // copyEntryRelations 在事务内读 SessionWord/WordBookEntry 当前快照（LE spec §10-10 一致性）
+        database.transactionWithResult {
+            if (database.wordBookQueries.selectWordBookById(parentWordBookId).executeAsOneOrNull() == null) {
+                throw RepositoryValidationException("母本不存在：wordBookId=$parentWordBookId")
+            }
+            // Q5d 交集守卫（2026-09-04 裁决，Case 3）：effectiveRemaining = 当前母本词条 ∩
+            // SessionWord(status != MASTERED)。为 0 → 不建空 DERIVED 本（返回 null，零写入）
+            val effectiveRemaining = database.queriesQueries.countEffectiveRemaining(
+                wordBookId = parentWordBookId,
+                sessionId = sourceSessionId,
+            ).executeAsOne()
+            if (effectiveRemaining == 0L) {
+                return@transactionWithResult null
+            }
+            // insert + last_insert_rowid 同事务钉住连接（同 createWordBook 的 JDBC 驱动约束）
+            database.wordBookQueries.insertDerivedWordBook(
+                name = trimmed,
+                description = null,
+                parentWordBookId = parentWordBookId,
+                sourceSessionId = sourceSessionId,
+                createdAt = now,
+                updatedAt = now,
+            )
+            val newBookId = database.wordBookQueries.selectLastInsertRowId().executeAsOne()
+            // Q5/Q5b/Q5c（Queries.sq）：只插关系行——entryOrder/pendingTranslation 原样、
+            // 释义与例句选择逐 ID 一致；不复制 WordMastery、不触碰 Word/DefinitionEntry/Example
+            database.queriesQueries.copyEntryRelations(
+                newBookId = newBookId,
+                sessionId = sourceSessionId,
+                sourceBookId = parentWordBookId,
+                now = now,
+            )
+            database.queriesQueries.copyEntryDefinitionRelations(
+                newBookId = newBookId,
+                sourceBookId = parentWordBookId,
+            )
+            database.queriesQueries.copyExampleSelections(
+                newBookId = newBookId,
+                sourceBookId = parentWordBookId,
+            )
+            newBookId
         }
     }
 }

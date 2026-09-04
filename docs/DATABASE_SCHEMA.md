@@ -148,6 +148,8 @@ CREATE TABLE LearningSession (
 );
 ```
 
+> **ACTIVE 唯一性（Phase 3 规格裁决）**：全局同一时刻最多一个 `status='ACTIVE'` 会话是**引擎层不变量**（LEARNING_ENGINE_SPEC §3：物化事务内检查 + 引擎串行化），**不设 DB 级约束、不引入 partial unique index**；多写入方场景出现时另立 RFC 走迁移。
+
 ### 2.9 SessionWord（队列物化）
 
 ```sql
@@ -162,6 +164,8 @@ CREATE TABLE SessionWord (
 );
 CREATE INDEX SessionWord_queue ON SessionWord(sessionId, groupIndex, orderInGroup);
 ```
+
+> `status` 中的 `SKIPPED` 为**预留扩展状态，v1 引擎不产生**（DOMAIN_MODEL §8.3 裁决：Next 不改状态，词保持 PENDING 留在组内循环）。表结构不因此变更。
 
 ### 2.10 Achievement
 
@@ -216,9 +220,16 @@ WHERE wed.wordBookEntryId = ?
 ORDER BY de.partOfSpeechOrder ASC, de.definitionOrder ASC;
 
 -- Q5 派生 DERIVED WordBook（D1 分支 B）：先建本（type=DERIVED + 血缘），再复制关系（不复制 Word / DefinitionEntry / Example）
+-- 复制集合 = 交集语义（2026-09-04 裁决）：当前母本仍存在的 WordBookEntry ∩ 本会话 SessionWord(status != 'MASTERED')
+--   —— 会话外新增词不在 SessionWord → 不复制；会话中已移出母本的词无母本词条行 → 不复制
 insertDerivedWordBook:
 INSERT INTO WordBook(type, name, description, parentWordBookId, sourceSessionId, createdAt, updatedAt)
 VALUES ('DERIVED', ?, ?, ?, ?, ?, ?);
+
+-- Q5d 交集计数（Case 3 裁决 2026-09-04）：effectiveRemaining 为 0 → 不建空 DERIVED 本（派生事务首步守卫）
+countEffectiveRemaining:
+SELECT COUNT(*) FROM WordBookEntry WHERE wordBookId = ?
+  AND wordId IN (SELECT wordId FROM SessionWord WHERE sessionId = ? AND status != 'MASTERED');
 
 copyEntryRelations:
 INSERT INTO WordBookEntry (wordBookId, wordId, entryOrder, pendingTranslation, addedAt)
@@ -247,7 +258,7 @@ WHERE newWbe.wordBookId = :newBookId;
 | 场景 | 事务内容 |
 |---|---|
 | `MasteryMarker`（"会了"） | `UPDATE SessionWord → MASTERED` + `INSERT WordMastery`（同一事务，LEARNING_ENGINE_SPEC §6） |
-| `WordBookDeriver`（退出分支 B 派生） | `insertDerivedWordBook`（type=DERIVED + parentWordBookId + sourceSessionId）+ Q5 复制 entries（保留 entryOrder/pendingTranslation）+ 复制 WordBookEntryDefinition + 复制 WordBookEntryExampleSelection——全部或全无；**不复制** WordMastery（D4） |
+| `WordBookDeriver`（退出分支 B 派生） | 母本存在守卫 → **Q5d `countEffectiveRemaining` 交集守卫（2026-09-04 裁决：为 0 → 不建空本，返回 null）** → `insertDerivedWordBook`（type=DERIVED + parentWordBookId + sourceSessionId）+ Q5 复制 entries（保留 entryOrder/pendingTranslation，恒取自母本行）+ 复制 WordBookEntryDefinition + 复制 WordBookEntryExampleSelection——全部或全无；**不复制** WordMastery（D4）。会话终态（terminate）独立事务，不与本事务合并 |
 | 收藏保存（FR-5） | Word upsert（首次）+ N×`WordBookEntry` + M×`WordBookEntryDefinition` + K×`WordBookEntryExampleSelection`（M/K 均可部分选择，PROJECT_SPEC v1.3） |
 | 导入（FR-14） | 分块事务：每块（如 500 行）成功才提交；取消/失败 → 已提交块保留**或**整体回滚（见 IMPORT_SPEC §6：v1 整体回滚） |
 | 勋章授予 | `INSERT OR IGNORE` + 唯一索引兜底（幂等，FR-13） |
@@ -288,3 +299,5 @@ WHERE newWbe.wordBookId = :newBookId;
 | 1.1 | 2026-09-01 | 冻结 D1–D4：WordBook 增 type（ORIGINAL/DERIVED，CHECK 约束）、parentWordBookId（RESTRICT）、sourceSessionId；派生不复制 WordMastery |
 | 1.2 | 2026-09-01 | Phase 1 落地回写：Q5 `copyEntryRelations` 补 `pendingTranslation` 列（与 §4 事务规则对齐）；新增 `copyEntryDefinitionRelations`（Q5b，同步复制释义选择关系，D3） |
 | 1.3 | 2026-09-01 | Schema v2（PROJECT_SPEC v1.3）：`WordBookEntryDefinition` 移除 includeExamples；新增 `WordBookEntryExampleSelection`；Q5 新增 `copyExampleSelections`；§4 事务规则同步 |
+| 1.4 | 2026-09-03 | Phase 3 规格对齐注记：§2.8 ACTIVE 唯一性为引擎不变量（不设 DB 约束）；§2.9 SKIPPED 预留 v1 不产生——**无 DDL 变更，schema 版本维持 v2** |
+| 1.5 | 2026-09-04 | Step 5D 验收裁决（交集语义）：Q5 注释明确复制集合 = 当前母本 WordBookEntry ∩ SessionWord(status != 'MASTERED')；新增 Q5d `countEffectiveRemaining`（query-only）——交集为 0 → 不建空 DERIVED 本（Case 3）；§4 WordBookDeriver 事务规则同步——**无 DDL 变更，schema 版本维持 v2，无迁移** |

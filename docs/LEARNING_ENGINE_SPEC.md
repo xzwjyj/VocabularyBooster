@@ -47,6 +47,12 @@
   - 队列为空（全部已掌握）→ `Rejected(ALL_MASTERED)`（引导查看勋章）；
   - 六项播放开关全关 → `Rejected(PLAYBACK_DISABLED)`（FR-10 验收）；
   - 已存在 ACTIVE 会话 → `Rejected(ACTIVE_SESSION_EXISTS(sessionId))`，UI 引导「恢复」或「放弃旧的」（全局同一时刻最多一个 ACTIVE 会话）。
+
+**ACTIVE 会话唯一性 = 引擎不变量（Phase 3 规格裁决）**：全局同一时刻最多一个 `status='ACTIVE'` 的 LearningSession。该约束**不依赖数据库层约束**——LearningSession 表不设 partial unique index，schema 不为此变更；由引擎在两道防线下保证：
+1. **事务内检查**：会话物化事务（`INSERT LearningSession` + N×`INSERT SessionWord`）执行前，于同一事务内先查 ACTIVE 会话，存在即拒绝；
+2. **引擎串行化**：所有会话状态变更（start / resume / markMastered / exit）经引擎持有的单一注入 CoroutineScope 串行执行（ARCHITECTURE §7），进程内无并发竞争路径。
+
+> **残余风险（实现风险，非 schema 变更理由）**：多进程/多实例并发写同一库不在 v1 范围（单 App 进程持有单连接驱动）；JDBC 文件驱动的多连接行为仅存在于测试环境。若未来引入多写入方（云同步、桌面端并存），须升级为 DB 级唯一约束——另立 RFC 并走 schema 迁移流程，不得在本 Phase 顺手实现。
 - **物化**（单事务）：`INSERT LearningSession(status=ACTIVE, groupSize=设置值)` + 为队列每词 `INSERT SessionWord(status=PENDING, groupIndex, orderInGroup)`。
 
 ## 4. 分组（GroupSplitter）
@@ -69,6 +75,7 @@ nextWord(session):
 ```
 
 - 语义保证：**组内循环**（一轮播完回到组内第一个未掌握词）；组空则自然推进到下一组（§7）；`orderInGroup` 顺序严格保持。
+- **SKIPPED 裁决（v1）**：v1 引擎**不产生 `SKIPPED`** 状态（见 DOMAIN_MODEL §8.3）——Next 控制不改变 SessionWord 状态（词保持 PENDING 留在组内循环）。上式 `status != MASTERED` 在 v1 恒等价于 `status ∈ {PENDING, PLAYING}`；§6 幂等、§7 完成检测、§8 退出裁决、§9 恢复均不隐含依赖 SKIPPED。
 
 ## 6. "会了"落库（MasteryMarker）
 
@@ -96,21 +103,23 @@ nextWord(session):
 | 分支 | 条件 | 行为 |
 |---|---|---|
 | **A 零掌握** | MASTERED = 0 | 会话 `ABANDONED`（endedAt）——**保存会话状态与学习历史**；**不创建**派生本（不产生空本）；母本完全不变 |
-| **B 部分掌握** | MASTERED > 0 且 REMAINING > 0 | 会话 `ABANDONED` + **单事务**派生 DERIVED 本（步骤见下）；母本不变 |
+| **B 部分掌握** | MASTERED > 0 且 REMAINING > 0 | 会话 `ABANDONED` + **单事务**派生 DERIVED 本（步骤见下；复制交集为空 → **不建空本**，见 effectiveRemaining）；母本不变 |
 | **C 全部掌握** | REMAINING = 0 | 会话 `COMPLETED`（endedAt）+ 停止播放 + 解锁勋章（§7 / ACHIEVEMENT_SPEC）；**不创建**派生本 |
 
 > 分支 C 通常已由正常流程在最后一词 master 时触发（§7）；用户在"最后一词已 master、完成检测尚未执行"的瞬间点退出同样归入分支 C——裁决只看数据库。
 
-**分支 B 派生步骤（单事务，DATABASE_SCHEMA §4）**：
+**分支 B 派生步骤（单事务，DATABASE_SCHEMA §4；选择关系为 schema v2 结构）**：
 1. 命名：`"{母本.name} yyyy-MM-dd HH:mm"`（本地时区，注入 Clock）；重名追加 `-2`、`-3`…；
 2. `insertDerivedWordBook`：`INSERT WordBook(type='DERIVED', name, parentWordBookId=母本, sourceSessionId=本会话, createdAt)`；
-3. 复制 `WordBookEntry`：母本当前未掌握词（Q2 队列 / Q5 复制），**保留 entryOrder 与 pendingTranslation**；
-4. 复制对应 `WordBookEntryDefinition`（**保留 includeExamples**）；
-5. **不复制** WordMastery（D4：掌握属于「生词本+词」，派生本从"未掌握"全新开始）；
-6. **不触碰** Word / DefinitionEntry / Example 任何行（复用不复制）；**母本（ORIGINAL）保持原样**——永久母本原则（D2）。
+3. 复制 `WordBookEntry`（**交集语义，2026-09-04 裁决**）：**当前母本仍存在的 entries 中，本次 Session 未 MASTERED 的词**（Q5 `copyEntryRelations`：`CurrentMotherEntries ∩ SessionWord(status != 'MASTERED')`），**保留 entryOrder 与 pendingTranslation**（二者均取自母本 `WordBookEntry` 行，绝不改用 SessionWord 的组序）；
+4. 复制 `WordBookEntryDefinition`（Q5b `copyEntryDefinitionRelations`）：纯关系行 `(wordBookEntryId, definitionEntryId)`——schema v2 该表已无 includeExamples 列，母本选中的释义集合原样复制；
+5. 复制 `WordBookEntryExampleSelection`（Q5c `copyExampleSelections`）：关系行 `(wordBookEntryId, exampleId)` **逐 ID 一致**——母本勾选的每一条例句选择行，派生本逐字相同，一条不增不减（PROJECT_SPEC v1.3 / DOMAIN_MODEL §2.6b）；
+6. **不复制** WordMastery（D4：掌握属于「生词本+词」，派生本从"未掌握"全新开始）；
+7. **不触碰** Word / DefinitionEntry / Example 任何行（复用不复制）；**母本（ORIGINAL）保持原样**——永久母本原则（D2）。
 
-- 完成后发 `SessionExited(sessionId, derivedWordBookId?)`（分支 A/C 中 derivedWordBookId = null）。
-- 派生本与母本词条选择**逐字一致**（验收：比对两组关系行，仅 bookId 不同）。
+- **effectiveRemaining（交集为空不建本，Case 3 裁决 2026-09-04）**：`effectiveRemaining = 当前母本仍存在的 WordBookEntry ∩ 本会话 SessionWord(status != 'MASTERED')`（即步骤 3 的复制集合）。分支 B 条件成立但 effectiveRemaining 为空（REMAINING>0 全部来自会话外新增词，或会话剩余词已全部移出母本）→ **不创建空 DERIVED 本**：会话照常 `ABANDONED`、endedAt 正常写入、`derivedWordBookId = null`。
+- 完成后发 `SessionExited(sessionId, derivedWordBookId?)`（分支 A/C 及分支 B 交集为空时 derivedWordBookId = null）。
+- 派生本与母本词条选择**逐字一致**（验收：比对 `WordBookEntryDefinition` 与 `WordBookEntryExampleSelection` 两组关系行，仅 bookId 不同）。
 
 ## 9. 会话恢复（崩溃 / 进程死亡，NFR-3）
 
@@ -154,7 +163,7 @@ interface LearningEngine {
 
 - `Clock` / `CoroutineScope` / 派发器全部注入；引擎不取系统时间、不碰随机源；
 - §5 / §7 / §8 的规则全部实现为纯函数（输入 SessionWord 快照 → 输出决定），状态变更薄封装在其上；
-- 测试要求：§10 十条边界 + 100 词 ×10 组循环推进 + 派生内容一致性断言，全部 JVM commonTest。
+- 测试要求：§10 十一条边界 + 100 词 ×10 组循环推进 + 派生内容一致性断言，全部 JVM commonTest。
 
 ---
 
@@ -162,3 +171,5 @@ interface LearningEngine {
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：§8 重写为退出三分支；边界情形 #7 更新、新增 #11；"父本"统一改称"母本" |
+| 1.2 | 2026-09-03 | Phase 3 规格对齐：§8 分支 B 对齐 schema v2（Q5b 释义关系 + Q5c 例句选择逐 ID 复制，移除已废弃的 includeExamples 表述）；§3 新增 ACTIVE 会话唯一性引擎不变量（不改 schema）；§5 明确 v1 不产生 SKIPPED |
+| 1.3 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§8 步骤 3 明确派生集合 = **当前母本仍存在 entries ∩ 本会话 SessionWord(status != MASTERED)**（Q5 原文语义；entryOrder/pendingTranslation 恒取自母本行）；新增 **effectiveRemaining 空集规则**——分支 B 交集为空 → 不创建空 DERIVED 本（Case 3），会话仍 ABANDONED、derivedWordBookId = null；SessionExited 括注同步 |

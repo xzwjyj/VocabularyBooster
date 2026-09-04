@@ -17,5 +17,11 @@ SELECT * FROM LearningSession WHERE sessionId = ?;
 updateSessionStatus:
 UPDATE LearningSession SET status = ?, endedAt = ? WHERE sessionId = ?;
 
+-- ACTIVE 会话查询（FR-11 崩溃恢复入口 + LE spec §3 唯一性事务内检查）；
+-- 全局最多一个 ACTIVE 为引擎不变量，不设 DB 级约束（DATABASE_SCHEMA §2.8 注记），
+-- LIMIT 1 + DESC 仅保证（规格外的）脏数据下读取仍确定
+selectActiveSession:
+SELECT * FROM LearningSession WHERE status = 'ACTIVE' ORDER BY sessionId DESC LIMIT 1;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();

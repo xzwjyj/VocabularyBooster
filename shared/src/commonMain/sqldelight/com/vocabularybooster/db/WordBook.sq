@@ -22,6 +22,10 @@ insertDerivedWordBook:
 INSERT INTO WordBook(type, name, description, parentWordBookId, sourceSessionId, createdAt, updatedAt)
 VALUES ('DERIVED', ?, ?, ?, ?, ?, ?);
 
+-- 派生命名冲突探测（LE spec §8 分支 B 步骤 1：重名追加 -2、-3…；name 无唯一索引，精确匹配计数）
+countBooksNamed:
+SELECT COUNT(*) FROM WordBook WHERE name = ?;
+
 selectWordBookById:
 SELECT * FROM WordBook WHERE wordBookId = ?;
 

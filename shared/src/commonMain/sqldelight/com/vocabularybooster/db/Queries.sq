@@ -26,7 +26,15 @@ SELECT wb.*, (SELECT COUNT(*) FROM WordBookEntry wbe WHERE wbe.wordBookId = wb.w
 FROM WordBook wb ORDER BY wb.createdAt DESC, wb.wordBookId DESC;
 
 -- Q5 派生 DERIVED WordBook（D1 分支 B）：复制关系行（保留 entryOrder / pendingTranslation，D3），
--- 只复制 SessionWord 中 status != 'MASTERED' 的词；不复制 Word / DefinitionEntry / Example / WordMastery（D2/D4）
+-- 复制集合 = 交集语义（2026-09-04 裁决）：当前母本仍存在的 WordBookEntry ∩ SessionWord(status != 'MASTERED')
+-- ——会话外新增词不在 SessionWord 不复制；会话中移出母本的词无母本词条行不复制；
+-- 不复制 Word / DefinitionEntry / Example / WordMastery（D2/D4）
+
+-- Q5d 交集计数（Case 3 裁决 2026-09-04）：effectiveRemaining = 0 → 分支 B 不建空 DERIVED 本（派生事务首步守卫）
+countEffectiveRemaining:
+SELECT COUNT(*) FROM WordBookEntry WHERE wordBookId = ?
+  AND wordId IN (SELECT wordId FROM SessionWord WHERE sessionId = ? AND status != 'MASTERED');
+
 copyEntryRelations:
 INSERT INTO WordBookEntry(wordBookId, wordId, entryOrder, pendingTranslation, addedAt)
 SELECT :newBookId, wordId, entryOrder, pendingTranslation, :now FROM WordBookEntry WHERE wordBookId = :sourceBookId

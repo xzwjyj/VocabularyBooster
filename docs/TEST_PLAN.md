@@ -59,23 +59,25 @@
 | TC-DB-04 | 事务原子性：MasteryMarker 中途失败 → 两个写全回滚 |
 | TC-DB-05 | 派生一致性：派生本关系行与母本（除 bookId）逐行相等 |
 | TC-DB-06 | 迁移链：schema v1→vN 全版本 MigrationTest（Phase 1 起基线，每版迁移必加；首个迁移 v1→v2 于 Phase 2 落地：includeExamples 移除 + WordBookEntryExampleSelection 新建 + 数据保留断言） |
-| TC-DB-07 | WordBook 类型约束：`type` CHECK 生效；删除有派生子本的母本被拒（RESTRICT）；DERIVED 本 parentWordBookId/sourceSessionId 必填 |
+| TC-DB-07 | WordBook 类型约束：`type` CHECK 生效；删除有派生子本的母本被拒（RESTRICT）；DERIVED 本 parentWordBookId/sourceSessionId 必填（**Phase 2 遗留**：仓库层删除守卫已测并绿；DB 级 CHECK/RESTRICT 断言随 Phase 3 测试电池顺手补齐，不改 Phase 2 行为） |
 
-### 4.3 TC-LE 学习引擎（含 LEARNING_ENGINE_SPEC §10 十条边界）
+### 4.3 TC-LE 学习引擎（覆盖 LEARNING_ENGINE_SPEC §10 十一条边界，Phase 3 批准全集）
 
 | ID | 用例 |
 |---|---|
-| TC-LE-01 | 队列构建：100 词 → 未掌握全量，entryOrder 升序；全掌握 → 拒绝 |
-| TC-LE-02 | 分组固化：groupSize=10 → 组号 0..9；中途改设置不影响现有会话 |
+| TC-LE-01 | 队列构建：100 词 → 未掌握全量，entryOrder 升序；空本 / 全掌握 → 拒绝并给出明确原因（§10-1） |
+| TC-LE-02 | 分组固化：groupSize=10 → 组号 0..9；词数 < groupSize → 单组/末组不足（§10-2）；中途改设置不影响现有会话 |
 | TC-LE-03 | 组内循环：随机顺序 master 部分 → 推进严格跳过已掌握并回绕 |
-| TC-LE-04 | "会了"幂等：同词重复调用 → AlreadyMastered，无重复计数 |
+| TC-LE-04 | "会了"语义：同词重复调用 → AlreadyMastered 幂等无重复计数（§10-5）；词刚开始播放即"会了" → 立即落库并 advance（§10-4）；导入词（无释义）"会了"照常（§10-3 掌握侧；播放分段侧由 Phase 4 TC-AE-01/02 覆盖） |
 | TC-LE-05 | 组推进：组清空 → 下一组首词 |
 | TC-LE-06 | 书完成：最后一词 master → COMPLETED + 事件次序（停止→状态→勋章） |
-| TC-LE-07 | 退出分支 B：掌握 37/100 → 派生本恰 63 词、`type=DERIVED`、parentWordBookId/sourceSessionId 记录正确、名称格式 `yyyy-MM-dd HH:mm`、重名 -2 |
+| TC-LE-07 | 退出分支 B：掌握 37/100 → 派生本恰 63 词、`type=DERIVED`、parentWordBookId/sourceSessionId 记录正确、名称格式 `yyyy-MM-dd HH:mm`（注入时区精确断言）、重名 -2、再重名 -3；释义 + 例句选择关系逐 ID 一致；派生读事务内 DB 快照，母本并发编辑不影响一致性（§10-10）。**mid-session 母本编辑三边界（交集语义，2026-09-04 裁决，真实 JDBC 集成）**：Case 1 会话外新增未掌握词 → 不进派生本（留母本，Q3 计入）；Case 2 会话中词被移出母本（SessionWord 尚在）→ 不进派生本（entryOrder/pendingTranslation 恒取自母本行）；Case 3 交集为空（MASTERED>0 且 REMAINING>0）→ **不创建空 DERIVED 本**：derivedWordBookId=null、会话 ABANDONED、endedAt 正常写入 |
 | TC-LE-08 | 退出分支 A：0 掌握退出 → 无新本（不产生空本）；会话状态与学习历史保留 |
 | TC-LE-09 | 崩溃恢复：杀进程模拟 → 队列/分组/掌握状态完整还原 |
-| TC-LE-10 | 恢复异常：书已删 / 词已移除 → 安全 ABANDON |
+| TC-LE-10 | 恢复异常两分支：书已删 → 安全 ABANDON + 提示（§10-8）；某词已从本移除 → 该词从会话剔除，其余照常（§10-9，**不**整会话 ABANDON） |
 | TC-LE-11 | 退出分支 C：退出瞬间 REMAINING=0 → COMPLETED + 勋章 + 不派生（以 DB 实时状态裁决） |
+
+> TC-LE-01…11 即 Phase 3 批准测试全集（ROADMAP Phase 3 出口条件）；与 LEARNING_ENGINE_SPEC §10 #1–#11 逐条映射如上括注。另：ACTIVE 会话唯一性不变量（LE spec §3）断言并入 TC-LE-01（存在 ACTIVE 时第二次 startSession → Rejected）。
 
 ### 4.4 TC-AE 播放引擎（AUDIO_ENGINE_SPEC §3 状态表逐行）
 
@@ -187,3 +189,5 @@
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | 冻结 D1–D4：TC-LE-07/08 升级，新增 TC-LE-11（分支 C）与 TC-DB-07（type/血缘约束） |
 | 1.2 | 2026-09-01 | FR-5 粒度细化（PROJECT_SPEC v1.3）：新增 TC-DM-05；TC-DB-01 增 (wordBookEntryId,exampleId)；TC-DB-06 记 v1→v2 首迁移 |
+| 1.3 | 2026-09-03 | Phase 3 规格对齐：§4.3 标题改"十一条边界"（ROADMAP 出口统一为 TC-LE-01…11）；TC-LE-01/02/04/07 补 §10 边界映射（空本、<groupSize、开播即会了、导入词、事务快照）+ ACTIVE 唯一性断言并入 TC-LE-01；**修正 TC-LE-10 语义**（词已移除 → 剔除该词其余照常，非整会话 ABANDON，对齐 LE spec §10-9）；TC-DB-07 标注 Phase 2 遗留、随 Phase 3 电池补齐 |
+| 1.4 | 2026-09-04 | Step 5D 验收裁决（交集语义）：TC-LE-07 补 mid-session 母本编辑三边界——Case 1 会话外新增词不进派生本 / Case 2 会话中移除词不进派生本 / Case 3 交集为空**不创建空 DERIVED 本**（derivedWordBookId=null、会话 ABANDONED、endedAt 写入）；命名断言升级为注入时区精确格式 + 重名 -2/-3 两级 |

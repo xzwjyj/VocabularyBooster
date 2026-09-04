@@ -12,7 +12,7 @@
 | **0（已完成）** | 环境/需求/架构/规格 | — |
 | **1（已完成，2026-09-01，见 docs/reports/PHASE_1_REPORT.md；待用户验收确认）** | 环境安装 + 工程引导（KMP 骨架） | 环境安装 |
 | **2（已完成，2026-09-03，见 docs/reports/PHASE_2_REPORT.md；待用户验收确认）** | 数据层 + 生词本基础 | 1 |
-| 3 | 学习引擎（纯逻辑，无音频） | 2 |
+| **3（已完成，2026-09-04，见 docs/reports/PHASE_3_REPORT.md；最终验收 PASS）** | 学习引擎（纯逻辑，无音频） | 2 |
 | 4 | 播放引擎（TTS + 控制） | 3 |
 | 5 | 语音命令（"会了"） | 4 |
 | 6 | 勋章 | 3（事件）|
@@ -49,10 +49,12 @@
 **交付**：DOMAIN_MODEL 实体 + Repository 实现；词条详情页（FR-2 排序渲染）；生词本增删改（FR-4）；保存流（多本 + 释义选择 + 例句开关，FR-5）；`DictionaryProvider` 本地 JSON 种子实现（≥50 词样例库，含多词性/多例句/多来源）。
 **出口**：TC-DM、TC-DB-01…03 绿；词条渲染通过排序专项验收；FR-1~FR-5 逐条签字。
 
-## Phase 3 — 学习引擎（headless）
+## Phase 3 — 学习引擎（headless）（已完成 2026-09-04）
+
+**结果**：最终验收 PASS。TC-LE-01…11 全绿 + Phase 2 遗留 TC-DB-07 DB 级断言补齐（3 用例，不改 Phase 2 行为）；100 词 ×10 组全流程（掌握→组推进→派生→完成）真实 SQLite 集成通过；测试门禁 jvmTest 154 / commonTest(Android) 98 / app 1，0 失败，detekt/平台边界/assembleDebug/`git diff --check` 全绿；**schema 恒 v2（零 DDL、零迁移），.sq 变更全部 query-only**；app 层零改动。规格演进：LE spec v1.3 / DOMAIN_MODEL v1.4 / DATABASE_SCHEMA v1.5 / TEST_PLAN v1.4（Step 5D 交集语义裁决，2026-09-04）。偏差：原文「临时调试界面」未交付——引擎以 headless 方式由四层测试验证，正式学习 UI 在 Phase 4。详见 `docs/reports/PHASE_3_REPORT.md`。
 
 **交付**：`StudyQueueBuilder / GroupSplitter / MasteryMarker / CompletionDetector / WordBookDeriver`（LEARNING_ENGINE_SPEC 全部规则）；会话持久化与崩溃恢复；临时调试界面驱动引擎（仅验证用，正式学习 UI 在 Phase 4）。
-**出口**：TC-LE-01…10 全绿；100 词 ×10 组全流程模拟（掌握→组推进→派生→完成）通过；FR-6/FR-8/FR-9 逻辑层验收。
+**出口**：TC-LE-01…11 全绿（TEST_PLAN §4.3 批准全集，覆盖 LEARNING_ENGINE_SPEC §10 十一条边界，含退出分支 C）；100 词 ×10 组全流程模拟（掌握→组推进→派生→完成）通过；FR-6/FR-8/FR-9 逻辑层验收。顺手补 Phase 2 遗留 TC-DB-07 的 DB 级断言（不改 Phase 2 行为）。
 
 ## Phase 4 — 播放引擎
 
@@ -106,3 +108,5 @@
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-01 | Phase 1 标记完成（验收记录见 PHASE_1_REPORT） |
+| 1.2 | 2026-09-03 | Phase 2 标记完成（验收记录见 PHASE_2_REPORT）；Phase 3 范围裁决 = 学习引擎 headless（不接 Dictionary API）；Phase 3 出口统一为 TC-LE-01…11 + TC-DB-07 遗留补齐说明 |
+| 1.3 | 2026-09-04 | Phase 3 标记完成（最终验收 PASS，验收记录见 PHASE_3_REPORT）；如实登记偏差：调试界面未交付（headless 测试驱动替代） |

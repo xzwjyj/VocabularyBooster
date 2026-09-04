@@ -16,5 +16,50 @@ INSERT INTO SessionWord(sessionId, wordId, groupIndex, orderInGroup, status) VAL
 selectSessionWords:
 SELECT * FROM SessionWord WHERE sessionId = ? ORDER BY groupIndex ASC, orderInGroup ASC;
 
+selectSessionWord:
+SELECT * FROM SessionWord WHERE sessionId = ? AND wordId = ?;
+
+selectSessionWordsByGroup:
+SELECT * FROM SessionWord WHERE sessionId = ? AND groupIndex = ? ORDER BY orderInGroup ASC;
+
 updateSessionWordStatus:
 UPDATE SessionWord SET status = ?, masteredAt = ? WHERE sessionId = ? AND wordId = ?;
+
+-- 掌握落库（LE spec §6 语句 1 / DATABASE_SCHEMA §4）：条件更新 = 幂等基石——
+-- 已 MASTERED 时 0 行受影响，masteredAt 保持首次值；与 WordMastery 的 INSERT OR IGNORE
+-- 由仓储层组装为同一事务（markSessionWordMastered）。仅新增 query，无 DDL/schema 变更
+markMastered:
+UPDATE SessionWord SET status = 'MASTERED', masteredAt = ?
+WHERE sessionId = ? AND wordId = ? AND status != 'MASTERED';
+
+-- SQLite changes()：最近一条数据修改语句的受影响行数（连接级）。
+-- 2.0.2 对 UPDATE 生成的函数返回 Unit（丢弃行数），故须在**同一事务内**
+-- 紧跟 markMastered 调用本查询，实现 LE spec §6「0 行受影响 → 幂等」判据
+selectChanges:
+SELECT changes();
+
+-- 播放位迁移（LE spec §5 cur 语义 / §8.3，Phase 3 Step 5A）：当前位 = 持久化 PLAYING 状态推导，
+-- 非引擎内存态。语句 1：现播放词回到 PENDING（Next 跳过的词留在组内循环，仍 PENDING）；
+-- 语句 2：目标词置 PLAYING（条件排除 MASTERED——§5 只在未掌握词中推进）。
+-- 两条语句由仓储 setPlayingWord 组装为同一事务（半迁移 = 崩溃窗口双 PLAYING/PENDING 漂移）。
+-- 仅新增 query，无 DDL/schema 变更
+clearPlaying:
+UPDATE SessionWord SET status = 'PENDING', masteredAt = NULL
+WHERE sessionId = ? AND status = 'PLAYING';
+
+setPlaying:
+UPDATE SessionWord SET status = 'PLAYING', masteredAt = NULL
+WHERE sessionId = ? AND wordId = ? AND status != 'MASTERED';
+
+-- 恢复完整性 Case B（LE spec §9/§10-9，Phase 3 Step 5B）：剔除母本已不存在的会话词
+-- （任何状态，含 MASTERED/PLAYING）。wordBookId 经 LearningSession 行内子查询取得，
+-- 与书存在性检查同事务组装（仓储 recoverSessionIntegrity，无 TOCTOU）。
+-- WordMastery 不在触碰范围——移词路径（removeWordFromWordBook）已自理。
+-- 仅新增 query，无 DDL/schema 变更
+deleteSessionWordsNotInBook:
+DELETE FROM SessionWord
+WHERE sessionId = :sessionId
+  AND wordId NOT IN (
+    SELECT wbe.wordId FROM WordBookEntry wbe
+    WHERE wbe.wordBookId = (SELECT wordBookId FROM LearningSession WHERE sessionId = :sessionId)
+  );

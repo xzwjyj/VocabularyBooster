@@ -9,8 +9,9 @@ import kotlin.test.assertEquals
  * 在 JVM 内存 SQLite 上验证建表、排序、幂等与派生复制（决策 D1–D4 落地）；
  * v2 变更：WordBookEntryDefinition 去 includeExamples，新增 WordBookEntryExampleSelection。
  *
- * 注：JVM 驱动默认不开启外键，FK 约束行为（TC-DB-07）在 Android 驱动
- * （PRAGMA foreign_keys=ON）上于后续阶段验证。
+ * 注：JVM 驱动默认不开启外键，FK/CHECK 约束行为（TC-DB-07）在
+ * WordBookTypeAndLineageConstraintTest 以连接属性等价开启后于 JVM 验证
+ * （生产端 Android 驱动 PRAGMA foreign_keys=ON，DATABASE_SCHEMA §1）。
  */
 class SchemaSmokeTest {
 

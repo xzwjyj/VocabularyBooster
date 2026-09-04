@@ -1,5 +1,7 @@
 package com.vocabularybooster.di
 
+import com.vocabularybooster.data.SqlDelightLearningSessionRepository
+import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
 import com.vocabularybooster.data.SqlDelightWordBookRepository
 import com.vocabularybooster.data.SqlDelightWordRepository
 import com.vocabularybooster.data.seed.SEED_DICTIONARY_JSON
@@ -7,6 +9,8 @@ import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
 import com.vocabularybooster.domain.dictionary.DictionaryProvider
+import com.vocabularybooster.domain.repository.LearningSessionRepository
+import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.WordBookRepository
 import com.vocabularybooster.domain.repository.WordRepository
 import com.vocabularybooster.platform.DatabaseDriverFactoryProvider
@@ -26,6 +30,12 @@ public val sharedDataModule: Module = module {
     }
     single<WordBookRepository> {
         SqlDelightWordBookRepository(database = get(), clock = get())
+    }
+    single<LearningSessionRepository> {
+        SqlDelightLearningSessionRepository(database = get(), clock = get())
+    }
+    single<LearningSettingsRepository> {
+        SqlDelightLearningSettingsRepository(database = get())
     }
     single {
         SeedDictionaryProvider(SEED_DICTIONARY_JSON)

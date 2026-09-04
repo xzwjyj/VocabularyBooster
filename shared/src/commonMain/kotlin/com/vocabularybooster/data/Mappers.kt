@@ -1,16 +1,23 @@
 package com.vocabularybooster.data
 
 import com.vocabularybooster.db.Example as ExampleRow
+import com.vocabularybooster.db.LearningSession as LearningSessionRow
 import com.vocabularybooster.db.SelectEntryWordsForBook
 import com.vocabularybooster.db.SelectWordBookSummaries
+import com.vocabularybooster.db.SessionWord as SessionWordRow
 import com.vocabularybooster.db.Word as WordRow
 import com.vocabularybooster.db.WordBook as WordBookRow
 import com.vocabularybooster.domain.model.Example
 import com.vocabularybooster.domain.model.ExampleSourceType
+import com.vocabularybooster.domain.model.LearningSession
+import com.vocabularybooster.domain.model.SessionStatus
+import com.vocabularybooster.domain.model.SessionWord
+import com.vocabularybooster.domain.model.SessionWordStatus
 import com.vocabularybooster.domain.model.Word
 import com.vocabularybooster.domain.model.WordBook
 import com.vocabularybooster.domain.model.WordBookType
 import com.vocabularybooster.domain.model.WordBookWord
+import kotlinx.datetime.Instant
 
 /**
  * db 行 → 领域模型映射（DOMAIN_MODEL 实体一一对应）。
@@ -80,4 +87,25 @@ internal fun SelectEntryWordsForBook.toDomain(): WordBookWord = WordBookWord(
     wordText = wordText,
     entryOrder = entryOrder.toInt(),
     pendingTranslation = pendingTranslation,
+)
+
+// 枚举 TEXT 列映射：未知值 fail-fast（脏数据显式暴露，不静默吞掉）
+internal fun LearningSessionRow.toDomain(): LearningSession = LearningSession(
+    sessionId = sessionId,
+    wordBookId = wordBookId,
+    status = runCatching { SessionStatus.valueOf(status) }
+        .getOrElse { error("Unknown SessionStatus in DB: $status") },
+    groupSize = groupSize.toInt(),
+    startedAt = Instant.fromEpochMilliseconds(startedAt),
+    endedAt = endedAt?.let(Instant::fromEpochMilliseconds),
+)
+
+internal fun SessionWordRow.toDomain(): SessionWord = SessionWord(
+    sessionId = sessionId,
+    wordId = wordId,
+    groupIndex = groupIndex.toInt(),
+    orderInGroup = orderInGroup.toInt(),
+    status = runCatching { SessionWordStatus.valueOf(status) }
+        .getOrElse { error("Unknown SessionWordStatus in DB: $status") },
+    masteredAt = masteredAt?.let(Instant::fromEpochMilliseconds),
 )
