@@ -192,6 +192,8 @@ CREATE TABLE AppSetting (
 
 内置键（与 PROJECT_SPEC FR-15 对应）：`settings.groupSize`(10)、`settings.commandWindowMs`(4000)、`settings.playbackToggles`（六项默认全开）、`settings.ttsRate`(1.0)、`settings.ttsPitch`(1.0)、`settings.masteredAliases`（["会了","记住了","掌握了"]）。
 
+> 运行时键（非设置）：`playback.position`（AUDIO_ENGINE_SPEC §5，`PlaybackPosition` 序列化——段级恢复信息；**恢复双源优先级见 AUDIO §5 裁决 L3**：SessionWord.PLAYING 为词级真相源，本键不可反写播放位；会话终态清除）。KV 表新增键**免迁移**（Phase 4 Step 0 预登记，2026-09-05）。
+
 ## 3. 关键查询（负载承载）
 
 ```sql
@@ -218,6 +220,14 @@ SELECT de.* FROM WordBookEntryDefinition wed
 JOIN DefinitionEntry de ON de.definitionEntryId = wed.definitionEntryId
 WHERE wed.wordBookEntryId = ?
 ORDER BY de.partOfSpeechOrder ASC, de.definitionOrder ASC;
+
+-- Q4b 播放用的例句选择（只播被勾选的例句；Phase 4 计划新增，query-only——Step 0 预登记 2026-09-05，
+-- 随 Phase 4 实施落地 .sq；与 Q4 同入口 wordBookEntryId，AUDIO §2 SegmentBuilder 装配输入）
+selectSelectedExamples:
+SELECT ex.* FROM WordBookEntryExampleSelection wes
+JOIN Example ex ON ex.exampleId = wes.exampleId
+WHERE wes.wordBookEntryId = ?
+ORDER BY ex.exampleOrder ASC;
 
 -- Q5 派生 DERIVED WordBook（D1 分支 B）：先建本（type=DERIVED + 血缘），再复制关系（不复制 Word / DefinitionEntry / Example）
 -- 复制集合 = 交集语义（2026-09-04 裁决）：当前母本仍存在的 WordBookEntry ∩ 本会话 SessionWord(status != 'MASTERED')
@@ -301,3 +311,4 @@ WHERE newWbe.wordBookId = :newBookId;
 | 1.3 | 2026-09-01 | Schema v2（PROJECT_SPEC v1.3）：`WordBookEntryDefinition` 移除 includeExamples；新增 `WordBookEntryExampleSelection`；Q5 新增 `copyExampleSelections`；§4 事务规则同步 |
 | 1.4 | 2026-09-03 | Phase 3 规格对齐注记：§2.8 ACTIVE 唯一性为引擎不变量（不设 DB 约束）；§2.9 SKIPPED 预留 v1 不产生——**无 DDL 变更，schema 版本维持 v2** |
 | 1.5 | 2026-09-04 | Step 5D 验收裁决（交集语义）：Q5 注释明确复制集合 = 当前母本 WordBookEntry ∩ SessionWord(status != 'MASTERED')；新增 Q5d `countEffectiveRemaining`（query-only）——交集为 0 → 不建空 DERIVED 本（Case 3）；§4 WordBookDeriver 事务规则同步——**无 DDL 变更，schema 版本维持 v2，无迁移** |
+| 1.6 | 2026-09-05 | Phase 4 Step 0 预登记：§2.11 补运行时键 `playback.position` 注记（KV 免迁移，双源优先级引用 AUDIO §5 裁决 L3）；§3 新增 **Q4b `selectSelectedExamples`**（播放例句装配，query-only 计划项，随 Phase 4 实施）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |

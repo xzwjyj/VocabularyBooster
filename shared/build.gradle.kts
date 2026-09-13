@@ -47,6 +47,9 @@ kotlin {
                 implementation(libs.sqldelight.android.driver)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.koin.android)
+                // Phase 4 Step 3：Media3AudioPlayer actual（AUDIO_ENGINE_SPEC §8；compileSdk 35 兼容矩阵）
+                implementation(libs.androidx.media3.exoplayer)
+                implementation(libs.androidx.media3.common)
             }
         }
         if (isMacOsHost) {

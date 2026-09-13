@@ -57,6 +57,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.datetime)
+    testImplementation(libs.kotlinx.coroutines.test) // ViewModel 测试：Dispatchers.setMain + 虚拟时间（Phase 4 Step 4）
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)

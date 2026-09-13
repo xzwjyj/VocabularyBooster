@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookType
@@ -140,11 +141,12 @@ private fun NameEditorDialog(
     )
 }
 
-/** 本内词条：列表 + 移除（FR-4）。 */
+/** 本内词条：列表 + 移除（FR-4）+ 开始学习入口（Phase 4 Step 4）。 */
 @Composable
 fun BookDetailScreen(
     bookId: Long,
     onBack: () -> Unit,
+    onStartLearning: (Long) -> Unit = {},
     viewModel: BookDetailViewModel = koinViewModel(),
 ) {
     LaunchedEffect(bookId) { viewModel.load(bookId) }
@@ -152,11 +154,20 @@ fun BookDetailScreen(
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← 返回") }
         }
-        Text(
-            "本内词条",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "本内词条",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+            )
+            Button(
+                onClick = { onStartLearning(bookId) },
+                modifier = Modifier.testTag("start_learning_button"),
+            ) { Text("开始学习") }
+        }
         viewModel.message?.let {
             Text(
                 it,

@@ -79,22 +79,38 @@
 
 > TC-LE-01…11 即 Phase 3 批准测试全集（ROADMAP Phase 3 出口条件）；与 LEARNING_ENGINE_SPEC §10 #1–#11 逐条映射如上括注。另：ACTIVE 会话唯一性不变量（LE spec §3）断言并入 TC-LE-01（存在 ACTIVE 时第二次 startSession → Rejected）。
 
-### 4.4 TC-AE 播放引擎（AUDIO_ENGINE_SPEC §3 状态表逐行）
+### 4.4 TC-AE 播放引擎（AUDIO_ENGINE_SPEC §3 状态表逐行；Phase 4 批准全集 = TC-AE-01…03、07…19，TC-AE-04…06、10 由 **Phase 5 Step 1** 交付——Step 0 裁决 L1/L5 + Phase 5 裁决 D1–D5，2026-09-12）
 
 | ID | 用例 |
 |---|---|
-| TC-AE-01 | 分段构建：六开关全开 → 段序 = I-8 结构（POS 排序 + 例句序） |
+| TC-AE-01 | 分段构建：六开关全开 → 段序 = I-8 结构（POS 排序 + 例句序）；**导入词（无选中释义）→ 仅 PRONUNCIATION + SPELLING**（LE §10-3 播放侧，Phase 3 延期项） |
 | TC-AE-02 | 开关组合：随机开关 → 段序列与映射表一致；全关 → 引擎拒绝会话 |
-| TC-AE-03 | 每词周期：末段完成 → 300ms guard → 窗口开启（虚拟时间断言） |
-| TC-AE-04 | 窗口命中"会了" → markMastered 被调 + 立即换词 |
-| TC-AE-05 | 窗口超时/噪音文本 → 换词，不误掌握 |
-| TC-AE-06 | **TTS 期间识别关闭**：Playing 态全程 recognizer 零调用（间谍断言） |
+| TC-AE-03 | 每词周期：末段完成 → 300ms guard → 窗口开启（虚拟时间断言；**P4 纯倒计时，不接识别器**，L1） |
+| TC-AE-04 | 窗口命中"会了" → markMastered 被调 + 立即换词（**Phase 5 Step 1 已交付**：commonTest 语音集成 + app 单测/冒烟三层同语义） |
+| TC-AE-05 | 窗口超时/噪音文本 → 换词，不误掌握（**Phase 5 Step 1 已交付**：UNKNOWN 保持监听至窗口超时；识别错误零掌握零推进——裁决 D5 红线） |
+| TC-AE-06 | **TTS 期间识别关闭**：Playing 态全程 recognizer 零调用（间谍断言）（**Phase 5 Step 1 已交付**，commonTest） |
 | TC-AE-07 | Pause/Resume：文件段恢复 offsetMs 精确；TTS 段重读本段（段索引不变、词索引不变） |
 | TC-AE-08 | Pause/Resume 于窗口态 → 重开整窗 |
 | TC-AE-09 | Next / Replay：不改掌握状态；词级重置正确 |
-| TC-AE-10 | 命令解析：别名/大小写/全角/带标点 → MASTERED；未知 → UNKNOWN |
-| TC-AE-11 | 双语切换：EN 段 en-US、CN 段 zh-CN 的 speak 请求逐段正确 |
-| TC-AE-12 | 降级：识别不可用 → 会话继续 + 手动按钮可用；音频失败 → TTS 兜底 |
+| TC-AE-10 | 命令解析：别名/大小写/全角/带标点 → MASTERED；未知 → UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
+| TC-AE-11 | 双语切换：EN 段 en-US、CN 段 zh-CN 的 speak 请求逐段正确（rate/pitch 取设置；SPELLING 0.8×） |
+| TC-AE-12 | 降级（**P4/P5 拆分，裁决 L7**）：P4 断言——例句音频加载失败 → 该段 TTS 朗读 sentence 兜底、会话不中断；识别不接入（L1）→ CommandWindow 倒计时模式；「手动'会了'按钮可用」子句已随 Phase 5 Step 1 按钮交付（TC-AE-25/26） |
+| TC-AE-13 | 位置持久化生命周期（AUDIO §5 / NFR-3）：段切换/暂停即写 `playback.position`；恢复读回词/段/offsetMs；会话 COMPLETED/ABANDONED 后键清除；close/reopen 真库重启续播（JVM integration + restart） |
+| TC-AE-14 | 停止播放次序（FR-8/FR-9 可观测语义，TC-LE-06/11「停止播放」延期段）：advance → BookComplete / exit 分支 C → 全部播放端口先停（零在途 speak/播放）再暴露 Completed/Stopped 状态（commonTest + JVM integration） |
+| TC-AE-15 | BOOK_DELETED 恢复提示 UI 边界（TC-LE-10 UI 侧，Phase 3 延期项 3）：resume 返回 BOOK_DELETED → 提示呈现、无后续会话操作入口、返回书本列表；引擎语义不在 UI 层重测（androidTest UI 边界） |
+| TC-AE-16 | 音频焦点：transient 丢失 → 自动 Pause 并广播状态；焦点回归**不**自动播放（androidTest + 手动矩阵；平台侧 transient→自动暂停/回归不续播已由 Phase 4 Step 3 androidTest 覆盖，编排器级状态广播随学习 UI Step 接入） |
+| TC-AE-17 | **逐词空 Segment（裁决 L2，negative 必测）**：空段词不调用 markMastered、不产生 WordMastery 行、SessionWord.status 不变、不伪造播放完成 → 直接进入该词 CommandWindow → 窗口结束正常 advance（Engine 裁决 NextWord/BookComplete）——**空段绝不改变掌握状态**（commonTest） |
+| TC-AE-18 | **恢复双源冲突（裁决 L3）**：position.wordId == PLAYING wordId → 采用 segmentIndex + offsetMs；不匹配 → 忽略 position 从 seg0；position 指向已不存在的词 → 忽略；无 PLAYING word → 不由 position 创造播放位；**advance 已切 PLAYING 词而 position 尚未写新词 → close/reopen → resume 使用新 PLAYING 词、从该词 seg0 开始**（JVM integration 真实 SQLite + restart） |
+| TC-AE-19 | **Toggle 生效粒度（裁决 L4）**：Segment N 播放中 toggle 变更 → N 不受影响（不重播/不切换/不取消/不重建）；N 完成 → N+1 使用新配置；当前段绝不重建重播（commonTest，可注入设置源） |
+| TC-AE-20 | **Media3 后端契约（Phase 4 Step 3，androidTest·模拟器）**：prepare 合法 res/raw 资产完成；playAt(0) 回调驱动完成（durationMs≈4000）；pause 返回真实 currentPosition；playAt(offset) 续播非重播（耗时可区分）；stop 后可重新 prepare；无效 audioUri → prepare 抛异常（→ 兜底触发器）；release 后 prepare/playAt 抛异常、stop 幂等（AUDIO §8） |
+| TC-AE-21 | **TTS 后端契约（Phase 4 Step 3，androidTest·模拟器，环境自适应不伪造绿）**：初始化达终态（READY/UNAVAILABLE）；UNAVAILABLE → speak 抛异常；EN 朗读 UtteranceProgressListener 回调完成；zh-CN 语音缺席 → 抛"语言不可用"异常、**不静默改播另一语言**；rate/pitch 接受且完成；stop() 真停（isSpeaking=false + 在途 utterance completed=false）；release 后 speak 抛异常（AUDIO §8） |
+| TC-AE-22 | **编排器 ↔ 真实后端冒烟 A–D（Phase 4 Step 3，androidTest·模拟器，真实种子 + in-memory SQLite + 真实引擎栈）**：A 带占位 audioUri 例句 → 文件段真实出声（progressMs 前进）→ 完成 → CommandWindow → exit；B audioUri 指向不存在资源 → Media3 真失败 → degraded 广播 → TTS 兜底 → 会话不中断；C 文件段 pause 记录真实 offsetMs → resume 续播（非整段重播）；D 无 audioUri 例句 = 纯 TTS 段（非降级）→ pause → 引擎层面真停 |
+| TC-AE-23 | **学习会话 ViewModel 投影/转发（Phase 4 Step 4，app 单测·JVM，真实 PlaybackOrchestrator + 手写 Fake 端口）**：A 初始 Loading；B Playing 投影（词文本/组号/段标签/段号/降级标志）；C Paused 投影；D CommandWindow 倒计时直接消费编排器状态（VM 无自建计时器）；E Completed 投影（完成权威=引擎，UI 不重判）；F Stopped 投影；G–K Pause/Resume/Replay/Next/Exit 五控制转发（可观测端口 stop 与位置清除）；L BOOK_DELETED 呈现（不出声、不推进引擎）；M onCleared → dispose 停端口停驱动；另：TTS 失败 → Error 投影（§9 可表达子集）；冲突「放弃旧的并开始」= resume → exit → start 全编排器公开 API |
+| TC-AE-24 | **学习会话 UI 冒烟 A–H（Phase 4 Step 4，androidTest·模拟器，真实 App 流程：MainActivity/真实 Koin 图/文件库/Media3/TTS）**：A 打开学习屏首词可见；B 占位音频真实播完 → 窗口开启；C Pause→已暂停→Resume 回播放；D 缺音频 → Media3 真失败 → TTS 兜底降级横幅；E 窗口倒计时可见递减；F Next 按编排器语义换第二词；G Exit 二次确认后回本详情；H Completed 确定性 fixture（repository 预置掌握 + 窗口超时）渲染。（BOOK_DELETED 恢复流程独立为 BookDeletedRecoveryUiSmokeTest，归 TC-AE-15；冒烟字母 I/J 自 Phase 5 Step 1 重指派，见 TC-AE-26） |
+| TC-AE-25 | **语音命令编排器集成（Phase 5 Step 1，commonTest·JVM：真实 CommandParser + Fake 识别器 + 记录型引擎 Fake）**：Hit「会了」→ 恰一次 markMastered(VOICE) + advance、消费后停听；噪音 UNKNOWN → 零掌握、窗口跑满走既有超时 advance（不误杀）；Unavailable → 整窗降级（listening=false）零掌握、按钮仍可用；isAvailable=false → 前置门降级零 listenOnce 调用；TTS/Playing 全程 recognizer 零调用（与 TC-AE-06 同层互证）；**同窗双入口至多一次掌握**（按钮双击 / 语音命中后补按按钮 → no-op，AUDIO §11 双层防护）；窗口 pause/exit → 关识别；**识别错误绝不 advance / 绝不掌握**（裁决 D5 红线逐条） |
+| TC-AE-26 | **「会了」交互端到端（Phase 5 Step 1，app 单测·JVM + androidTest·模拟器）**：VM 单测——语音 Hit → markMastered(VOICE) 恰一次推进；噪音零掌握、窗口超时推进；降级窗口按钮 markMastered(BUTTON)；双击至多一次；窗口外按钮 no-op。插桩 actual 契约——可用性探测 / 静默 Timeout（deadline 预算）/ 取消 → destroy 后再受理 / 并发第二调用者 Unavailable / 权限拒绝 → Unavailable 且拉低 isAvailable（**PermissionDeniedSpeechInstrumentedTest 单类隔离运行**：Gradle 每次插桩重装 APK = 新装拒绝态，确定性；套件内 pm revoke 会杀运行中 app 进程故禁止）。UI 冒烟 I 窗口「会了」按钮 → 同一路径推进第二词；J 权限拒绝 → 窗口降级提示 + 未授权麦克风横幅（拒绝态自适应 / 隔离运行）。真实人声「会了」识别 = 手动矩阵（不伪造） |
+
+> **TC-AE 编号裁决（L5，2026-09-05）**：沿用 TEST_PLAN/ROADMAP 既有 `TC-<模块>-<序号>` 体系，新增自 TC-AE-13 顺序递增（后续新增从 TC-AE-20 起）；**不设 Phase 专属第二编号体系**。
 
 ### 4.5 TC-IMP 导入（IMPORT_SPEC §9 九条边界）
 
@@ -140,12 +156,12 @@
 | FR-3 | TC-DM-04、TC-AE-12 |
 | FR-4/FR-5 | TC-DB-01/02、TC-DM-04/05、TC-UI 生词本流 |
 | FR-6 | TC-LE-01…03、TC-DB-03 |
-| FR-7 | TC-LE-04、TC-AE-04/05/10 |
+| FR-7 | TC-LE-04、TC-AE-04/05/10/25/26 |
 | FR-8 | TC-LE-05/06、TC-AC |
 | FR-9 | TC-LE-07/08/11、TC-DB-05/07 |
 | FR-10 | TC-AE-01/02 |
 | FR-11 | TC-AE-07/08/09 |
-| FR-12 | TC-AE-03/06 |
+| FR-12 | TC-AE-03/06/25/26 |
 | FR-13 | TC-AC 全组 |
 | FR-14 | TC-IMP 全组 |
 | FR-15 | TC-UI 设置、TC-LE-02 |
@@ -191,3 +207,7 @@
 | 1.2 | 2026-09-01 | FR-5 粒度细化（PROJECT_SPEC v1.3）：新增 TC-DM-05；TC-DB-01 增 (wordBookEntryId,exampleId)；TC-DB-06 记 v1→v2 首迁移 |
 | 1.3 | 2026-09-03 | Phase 3 规格对齐：§4.3 标题改"十一条边界"（ROADMAP 出口统一为 TC-LE-01…11）；TC-LE-01/02/04/07 补 §10 边界映射（空本、<groupSize、开播即会了、导入词、事务快照）+ ACTIVE 唯一性断言并入 TC-LE-01；**修正 TC-LE-10 语义**（词已移除 → 剔除该词其余照常，非整会话 ABANDON，对齐 LE spec §10-9）；TC-DB-07 标注 Phase 2 遗留、随 Phase 3 电池补齐 |
 | 1.4 | 2026-09-04 | Step 5D 验收裁决（交集语义）：TC-LE-07 补 mid-session 母本编辑三边界——Case 1 会话外新增词不进派生本 / Case 2 会话中移除词不进派生本 / Case 3 交集为空**不创建空 DERIVED 本**（derivedWordBookId=null、会话 ABANDONED、endedAt 写入）；命名断言升级为注入时区精确格式 + 重名 -2/-3 两级 |
+| 1.5 | 2026-09-05 | Phase 4 Step 0 裁决落地：**L5** 编号体系冻结（沿用 TC-AE 顺序递增，不设 P4 第二编号）；**L1** §4.4 标注 P4 批准全集（01…03、07…19；04…06、10 归 P5）与 CommandWindow 纯倒计时边界；**L2** 新增 TC-AE-17 逐词空 Segment（negative：绝不 MASTERED）；**L3** 新增 TC-AE-18 恢复双源冲突四分支 + 重启场景；**L4** 新增 TC-AE-19 Toggle 下一 Segment 生效粒度；**L7** TC-AE-12 拆分 P4 子集；另新增 TC-AE-13 位置持久化生命周期 / TC-AE-14 停止播放次序（TC-LE-06/11 延期段）/ TC-AE-15 BOOK_DELETED UI 边界（Phase 3 延期项 3）/ TC-AE-16 音频焦点 |
+| 1.6 | 2026-09-05 | Phase 4 Step 3（Android 音频后端）落地：新增 TC-AE-20 Media3 后端契约 / TC-AE-21 TTS 后端契约（环境自适应）/ TC-AE-22 编排器↔真实后端冒烟 A–D；TC-AE-16 注记平台侧 androidTest 已交付、编排器级广播随 UI Step |
+| 1.7 | 2026-09-06 | Phase 4 Step 4（学习会话 UI）落地：新增 TC-AE-23 ViewModel 投影/转发单测（真实编排器 + Fake 端口；映射 A–F + 转发 G–K + BOOK_DELETED L + 生命周期 M + Error 投影 + 冲突「放弃旧的」公开 API 序列）/ TC-AE-24 UI 冒烟 A–I（真实 App 全链路）。TC-AE-16 的编排器级焦点状态广播因本 Step 范围约束（禁改 Media3AudioPlayer / AudioPlayer 端口契约）未接入，维持 Known Limitation |
+| 1.8 | 2026-09-12 | Phase 5 Step 1（语音命令 / 「会了」交互，裁决 D1–D5）落地：TC-AE-04/05/06/10 标注已交付（commonTest + app 层三层同语义）；TC-AE-12「按钮可用」子句闭合；新增 **TC-AE-25** 语音命令编排器集成（同窗双入口至多一次掌握、D5 红线逐条、TTS 期间零识别调用互证）与 **TC-AE-26**「会了」交互端到端（VM 单测 + AndroidSpeechCommandRecognizer actual 契约 + UI 冒烟 I/J；权限拒绝 = PermissionDeniedSpeechInstrumentedTest 单类隔离运行两段式确定性执行法；运行时 pm revoke 杀进程故全套件禁止；真实人声 = 手动矩阵）；TC-AE-24 冒烟字母表修正（A–H，BOOK_DELETED 独立归 TC-AE-15）；FR-7/FR-12 验收映射更新 |

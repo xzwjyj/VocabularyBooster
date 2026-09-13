@@ -18,6 +18,7 @@ turbine = "1.2.0"
 androidxTestCore = "1.6.1"
 androidxTestExtJunit = "1.2.1"
 androidxTestEspressoCore = "3.6.1"
+media3 = "1.5.1"
 
 [libraries]
 # shared (commonMain)
@@ -39,6 +40,8 @@ sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", versi
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
+androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
+androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3" }
 
 # app (android)
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

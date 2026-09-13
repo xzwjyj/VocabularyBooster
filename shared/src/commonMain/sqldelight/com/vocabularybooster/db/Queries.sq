@@ -20,6 +20,13 @@ JOIN DefinitionEntry de ON de.definitionEntryId = wed.definitionEntryId
 WHERE wed.wordBookEntryId = ?
 ORDER BY de.partOfSpeechOrder ASC, de.definitionOrder ASC;
 
+-- Q4b 播放用的例句选择（只播被勾选的例句；Phase 4 Step 1，query-only，DATABASE_SCHEMA v1.6 预登记）
+selectSelectedExamples:
+SELECT ex.* FROM WordBookEntryExampleSelection wes
+JOIN Example ex ON ex.exampleId = wes.exampleId
+WHERE wes.wordBookEntryId = ?
+ORDER BY ex.exampleOrder ASC;
+
 -- Q6 生词本列表摘要（Phase 2 UI）：含词条数子查询
 selectWordBookSummaries:
 SELECT wb.*, (SELECT COUNT(*) FROM WordBookEntry wbe WHERE wbe.wordBookId = wb.wordBookId) AS entryCount

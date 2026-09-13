@@ -58,8 +58,8 @@
 
 ## Phase 4 — 播放引擎
 
-**交付**：`SegmentBuilder / PlaybackOrchestrator`；`TtsSpeechSynthesizer` Android actual（**双语段切换**）；播放控制 UI（六控制，FR-11）；位置持久化；音频焦点处理；例句文件音频通道（`Media3AudioPlayer`，用种子数据占位音频验证）。
-**出口**：TC-AE-01…03、07…09、11、12 绿；手动矩阵"暂停恢复实感"通过；FR-10/FR-11 验收。
+**交付**：`SegmentBuilder / PlaybackOrchestrator`（**CommandWindow 纯倒计时，不接入 SpeechCommandRecognizer——Step 0 裁决 L1，识别器接线/CommandParser/权限流归 Phase 5**）；`TtsSpeechSynthesizer` Android actual（**双语段切换**）；播放控制 UI（六控制，FR-11）+ 正式学习会话屏（Phase 3 偏差补齐，含 BOOK_DELETED 恢复提示——Phase 3 延期项 3）；位置持久化（**恢复双源优先级 = SessionWord.PLAYING 词级真相，裁决 L3**）；`LearningSettingsRepository` 加法扩展（commandWindowMs / ttsRate / ttsPitch 读取，裁决 L6）；音频焦点处理；例句文件音频通道（`Media3AudioPlayer`，用种子数据占位音频验证）；书完成/退出「停止播放」接线（TC-LE-06/11 延期段）；逐词空 Segment 语义（`空段 → CommandWindow → advance()`，绝不 MASTERED，裁决 L2）与开关下一-Segment 生效粒度（裁决 L4）。
+**出口**：TC-AE-01…03、07…19 绿（TC-AE-04…06、10 归 Phase 5）；手动矩阵"暂停恢复实感"通过；FR-10/FR-11 验收。
 
 ## Phase 5 — 语音命令
 
@@ -110,3 +110,4 @@
 | 1.1 | 2026-09-01 | Phase 1 标记完成（验收记录见 PHASE_1_REPORT） |
 | 1.2 | 2026-09-03 | Phase 2 标记完成（验收记录见 PHASE_2_REPORT）；Phase 3 范围裁决 = 学习引擎 headless（不接 Dictionary API）；Phase 3 出口统一为 TC-LE-01…11 + TC-DB-07 遗留补齐说明 |
 | 1.3 | 2026-09-04 | Phase 3 标记完成（最终验收 PASS，验收记录见 PHASE_3_REPORT）；如实登记偏差：调试界面未交付（headless 测试驱动替代） |
+| 1.4 | 2026-09-05 | Phase 4 Step 0 裁决落地（L1–L7，详见 AUDIO_ENGINE_SPEC v1.1 / TEST_PLAN v1.5 变更记录）：Phase 4 交付/出口补齐——CommandWindow P4 纯倒计时边界、正式学习会话屏与 BOOK_DELETED 提示、位置持久化双源优先级、设置端口加法扩展、空段/开关粒度语义；出口全集更新为 TC-AE-01…03、07…19 |

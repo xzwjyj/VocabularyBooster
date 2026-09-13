@@ -7,6 +7,9 @@ import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.di.sharedCoreModule
 import com.vocabularybooster.di.sharedDataModule
+import com.vocabularybooster.di.sharedLearningModule
+import com.vocabularybooster.playback.AudioPlayer
+import com.vocabularybooster.speech.SpeechSynthesizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,10 +26,14 @@ class VocabularyBoosterApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        startKoin {
+        val koinApp = startKoin {
             androidContext(this@VocabularyBoosterApp)
-            modules(sharedCoreModule, sharedDataModule, appModule)
+            modules(sharedCoreModule, sharedDataModule, sharedLearningModule, appModule)
         }
+        // Phase 4 Step 3：播放后端在主线程预装配——ExoPlayer 构造线程确定（线程契约）+
+        // TTS 异步初始化提前启动（speak 仍不假定 ready，见 TtsSpeechSynthesizer）
+        koinApp.koin.get<AudioPlayer>()
+        koinApp.koin.get<SpeechSynthesizer>()
         // 首启词库导入：幂等（ensureSeeded 空库才导）；失败仅记日志，不阻断启动
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { seedImporter.ensureSeeded(seedProvider) }

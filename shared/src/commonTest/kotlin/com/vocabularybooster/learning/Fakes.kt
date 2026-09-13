@@ -219,9 +219,15 @@ internal class FakeLearningSessionRepository : LearningSessionRepository {
 internal class FakeLearningSettingsRepository(
     var groupSize: Int = LearningSettingsRepository.DEFAULT_GROUP_SIZE,
     var playbackToggles: PlaybackToggles = PlaybackToggles.DEFAULT,
+    var commandWindowMs: Long = LearningSettingsRepository.DEFAULT_COMMAND_WINDOW_MS,
+    var ttsRate: Float = LearningSettingsRepository.DEFAULT_TTS_RATE,
+    var ttsPitch: Float = LearningSettingsRepository.DEFAULT_TTS_PITCH,
 ) : LearningSettingsRepository {
     override suspend fun getGroupSize(): Int = groupSize
     override suspend fun getPlaybackToggles(): PlaybackToggles = playbackToggles
+    override suspend fun getCommandWindowMs(): Long = commandWindowMs
+    override suspend fun getTtsRate(): Float = ttsRate
+    override suspend fun getTtsPitch(): Float = ttsPitch
 }
 
 /**

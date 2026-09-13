@@ -40,9 +40,50 @@ public class SqlDelightLearningSettingsRepository(
         }
     }
 
+    // —— Phase 4 Step 1 裁决 L6 加法扩展：缺键默认、损坏/越界按既有语义失败 ——
+
+    override suspend fun getCommandWindowMs(): Long = withContext(dispatcher) {
+        val raw = database.appSettingQueries.selectSetting(COMMAND_WINDOW_KEY).executeAsOneOrNull()
+            ?: return@withContext LearningSettingsRepository.DEFAULT_COMMAND_WINDOW_MS
+        val value = runCatching { json.decodeFromString<Long>(raw) }.getOrElse {
+            throw RepositoryValidationException("设置值损坏（key=$COMMAND_WINDOW_KEY）：无法解析为命令窗口时长")
+        }
+        if (value <= 0L) {
+            throw RepositoryValidationException("commandWindowMs 必须 > 0：$value（key=$COMMAND_WINDOW_KEY）")
+        }
+        value
+    }
+
+    override suspend fun getTtsRate(): Float = withContext(dispatcher) {
+        val raw = database.appSettingQueries.selectSetting(TTS_RATE_KEY).executeAsOneOrNull()
+            ?: return@withContext LearningSettingsRepository.DEFAULT_TTS_RATE
+        val value = runCatching { json.decodeFromString<Float>(raw) }.getOrElse {
+            throw RepositoryValidationException("设置值损坏（key=$TTS_RATE_KEY）：无法解析为 TTS 语速")
+        }
+        if (value <= 0f) {
+            throw RepositoryValidationException("ttsRate 必须 > 0：$value（key=$TTS_RATE_KEY）")
+        }
+        value
+    }
+
+    override suspend fun getTtsPitch(): Float = withContext(dispatcher) {
+        val raw = database.appSettingQueries.selectSetting(TTS_PITCH_KEY).executeAsOneOrNull()
+            ?: return@withContext LearningSettingsRepository.DEFAULT_TTS_PITCH
+        val value = runCatching { json.decodeFromString<Float>(raw) }.getOrElse {
+            throw RepositoryValidationException("设置值损坏（key=$TTS_PITCH_KEY）：无法解析为 TTS 音调")
+        }
+        if (value <= 0f) {
+            throw RepositoryValidationException("ttsPitch 必须 > 0：$value（key=$TTS_PITCH_KEY）")
+        }
+        value
+    }
+
     private companion object {
         const val GROUP_SIZE_KEY = "settings.groupSize"
         const val PLAYBACK_TOGGLES_KEY = "settings.playbackToggles"
+        const val COMMAND_WINDOW_KEY = "settings.commandWindowMs"
+        const val TTS_RATE_KEY = "settings.ttsRate"
+        const val TTS_PITCH_KEY = "settings.ttsPitch"
 
         // 前向兼容：未来新增开关键不破坏旧值读取（未知键忽略，缺省字段取默认）
         val json = Json { ignoreUnknownKeys = true }

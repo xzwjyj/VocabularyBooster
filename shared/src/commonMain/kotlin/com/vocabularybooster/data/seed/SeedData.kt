@@ -6,6 +6,9 @@ package com.vocabularybooster.data.seed
  * - sourceType=TTS：为本种子撰写的例句，音频以 TTS 朗读（FR-3 兜底）；
  * - sourceType=LICENSED_OTHER：公版（public domain，1900 年前出版）名著/KJV 原句，
  *   licenseNote 如实标注公版状态，译文为本项目参考译文；
+ * - audioUri 采用平台中立逻辑 scheme `res://<资源名>`（随包资产）；平台 actual 负责解析
+ *   （Android → android.resource://<packageName>/raw/<资源名>；iOS → bundle resource），
+ *   commonMain 不携带平台专属 URI（架构铁律 1，checkPlatformBoundaries 门禁）；
  * - 未接入任何受版权保护的影视/演讲/有声书音频（NFR-5，Phase 0 约束）。
  */
 public const val SEED_DICTIONARY_JSON: String = """
@@ -135,7 +138,10 @@ public const val SEED_DICTIONARY_JSON: String = """
           "meaningEN": "to increase or improve something",
           "meaningCN": "提高；使增长",
           "examples": [
-            { "sentence": "The marketing campaign boosted sales by twenty percent.", "chineseTranslation": "这场营销活动使销售额提高了两成。", "exampleOrder": 0 },
+            { "sentence": "The marketing campaign boosted sales by twenty percent.", "chineseTranslation": "这场营销活动使销售额提高了两成。",
+              "audioUri": "res://vb_placeholder_audio", "audioDurationMs": 4000,
+              "sourceType": "LICENSED_OTHER", "sourceRef": "app/src/main/res/raw/vb_placeholder_audio.wav",
+              "licenseNote": "项目自生成占位音频（440Hz 正弦音，非语音，无第三方权利）；Phase 4 文件音频通道验证用，后续阶段替换为真实例句音频", "exampleOrder": 0 },
             { "sentence": "Good sleep can boost your immune system.", "chineseTranslation": "良好的睡眠能增强你的免疫系统。", "exampleOrder": 1 }
           ] },
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 2,
