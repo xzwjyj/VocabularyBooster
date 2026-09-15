@@ -39,9 +39,11 @@ import org.koin.dsl.module
  * PlaybackOrchestrator 单例（唯一实例；scope = 应用级 Main.immediate，平台调用主线程限定契约）。
  * Phase 5 Step 1：语音命令接入——AndroidSpeechCommandRecognizer（识别只存在于 CommandWindow）
  * + CommandParser（唯一命令解释器）；编排器 = 唯一播放状态机，命令汇合于 masterCurrentWord 路径。
- * Phase 5 收尾（E1/E2/E3，2026-09-14）：识别引擎启动时一次选择——系统识别服务在场 → 系统 actual
- * 为主、内置 Vosk 离线引擎为备（E3 窗口内回退代理：主引擎可用性级硬失败 → 当场回退备引擎完成
- * 同窗剩余预算 + 进程内降级主引擎）；缺席（国行无标准 RecognitionService 机型）→ 直连 Vosk。
+ * Phase 5 收尾（E1/E2/E3/E4，2026-09-14）：识别引擎启动时一次选择——系统识别服务在场 →
+ * 内置 Vosk 离线引擎为主（已预加载、响应瞬时、零盲区），系统 actual 为备（仅主引擎硬失败时
+ * 同窗回退）；缺席（国行无标准 RecognitionService 机型）→ 直连 Vosk（无回退路径）。
+ * 首窗即时命中：Vosk 主引擎在窗口开启前已完成预加载（prewarmModel），首个 CommandWindow
+ * 响应时间≈0ms，彻底消除系统坏服务的 1500ms E4 看门狗盲区。
  */
 val appModule = module {
     single<LogSink> { AndroidLogSink() }
@@ -68,8 +70,8 @@ val appModule = module {
         }
         when (SpeechEnginePolicy.select(systemAvailable)) {
             SpeechEngineKind.SYSTEM_SERVICE -> FallbackSpeechCommandRecognizer(
-                primary = AndroidSpeechCommandRecognizer(ctx),
-                secondary = vosk,
+                primary = vosk,                    // Vosk：已预加载、响应瞬时、零盲区（主引擎）
+                secondary = AndroidSpeechCommandRecognizer(ctx),  // 系统引擎：仅主引擎硬失败时回退
                 scope = speechScope,
             )
             SpeechEngineKind.EMBEDDED_VOSK -> vosk

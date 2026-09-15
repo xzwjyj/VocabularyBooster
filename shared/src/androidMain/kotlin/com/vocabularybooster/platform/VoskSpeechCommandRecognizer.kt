@@ -27,8 +27,9 @@ import org.vosk.android.StorageService
 
 /**
  * SpeechCommandRecognizer 的内置离线引擎实现（AUDIO_ENGINE_SPEC §8 `VoskSpeechCommandRecognizer`
- * 契约行 + 裁决 E1/E2，2026-09-14）：Vosk + 中文小模型打包进 APK，**纯本地识别、无云端链路**
- * （NFR-1/NFR-4）。仅当系统识别服务缺席时由 DI 选择（E2：系统服务在场 → 系统 actual，行为零变化）。
+ * 契约行 + 裁决 E1/E2/E3，2026-09-14）：Vosk + 中文小模型打包进 APK，**纯本地识别、无云端链路**
+ * （NFR-1/NFR-4）。在 DI 装配时为**主引擎**（窗口开启前已完成 prewarmModel 预加载，响应≈0ms、零盲区）；
+ * 仅系统引擎硬失败时由 [FallbackSpeechCommandRecognizer] 回退到系统 actual。
  * 与 [AndroidSpeechCommandRecognizer] 实现同一端口——编排器/解析器/掌握语义（D2–D5）零改动。
  *
  * - **模型**：`vosk-model-small-cn-0.22` 随 app assets 分发；首个窗口前懒加载——

@@ -10,11 +10,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * 引擎回退代理（裁决 E3，2026-09-14，AUDIO_ENGINE_SPEC §8「引擎选择与回退规则」）：
+ * 引擎回退代理（裁决 E3+E4，2026-09-14，AUDIO_ENGINE_SPEC §8「引擎选择与回退规则」）：
  * E2 启动探测"服务在场" ≠ "服务可用"——厂商助手可注册不可用的 `RecognitionService`
  * （实测 vivo V2436A 蓝心 Copilot 唤醒服务可解析、绑定后 46ms 即硬失败）。
- * 本代理包住主（系统）+ 备（Vosk）两个 actual，实现同一端口——编排器/解析器/掌握语义零改动。
+ * 本代理包住主（Vosk 离线）+ 备（系统）两个 actual，实现同一端口——编排器/解析器/掌握语义零改动。
  *
+ * - 主引擎 = Vosk 离线引擎：窗口开启前已完成预加载（prewarmModel），响应≈0ms、零盲区。
+ * - 备引擎 = 系统 `SpeechRecognizer`：仅在主引擎硬失败时同窗回退（剩余预算）。
  * - **硬失败信号** = 主引擎返回 `Unavailable` **且**拉低了自身 `isAvailable`（D5 可用性级错误语义）。
  * - **窗口内回退**：硬失败当场改用备引擎完成同一窗口的**剩余预算**（窗口总时长不变）。
  * - **进程内降级（粘滞）**：降级后主引擎零调用、直连备引擎；重启进程回到 E2 启动探测。
