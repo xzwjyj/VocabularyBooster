@@ -28,7 +28,7 @@ class LearningEngineAdvanceTest {
             studySnapshots[wordBookId] = StudyQueueSnapshot(
                 wordBookExists = true,
                 totalEntryCount = orderedWordIds.size,
-                unmasteredEntries = orderedWordIds.mapIndexed { index, id ->
+                studyEntries = orderedWordIds.mapIndexed { index, id ->
                     StudyQueueEntryRef(wordId = id, entryOrder = index)
                 },
             )
@@ -237,11 +237,11 @@ class LearningEngineAdvanceTest {
     }
 
     @Test
-    fun sessionExhaustedWithMidSessionBookAdditionStaysActive() = kotlinx.coroutines.test.runTest {
-        // 规格未定义分支：会话队列耗尽但书在会话中途新增词（队列固化，新词不入本会话）——
-        // Q3 > 0 → 不设终态（退出三分支裁决），但本会话确无可播词
+    fun sessionExhaustedCompletesRegardlessOfBookAdditions() = kotlinx.coroutines.test.runTest {
+        // 2026-09-15: ADR-002 语义变更 - 会话完成基于 snapshot，不基于 Q3
+        // 会话队列全部 mastered 即完成，不管书在会话中途是否新增词
         val repo = repoWithQueue(101L, 102L)
-        repo.unmasteredEntryCounts[wordBookId] = 3
+        // 不再设置 unmasteredEntryCounts（Q3 不再用于会话完成判断）
         val (engine, _) = engine(repo)
         val sessionId = assertIs<StartResult.Started>(engine.startSession(wordBookId)).snapshot.session.sessionId
         engine.playAndMaster(sessionId, 101L)
@@ -249,8 +249,8 @@ class LearningEngineAdvanceTest {
 
         assertEquals(AdvanceResult.BookComplete, engine.advance(sessionId))
 
-        assertEquals(SessionStatus.ACTIVE, repo.sessions[sessionId]?.status) // deferred：不 COMPLETED
-        assertTrue(repo.updateSessionStatusCalls.isEmpty())
+        // 现在会话会完成（snapshot consumed），不再 deferred
+        assertEquals(SessionStatus.COMPLETED, repo.sessions[sessionId]?.status)
     }
 
     @Test

@@ -37,10 +37,18 @@ class StudyQueueBuilderTest {
     }
 
     @Test
-    fun allMasteredBookIsRejectedWithAllMastered() {
-        // 有词（count=5）但 Q2 队列为空 = 全部已掌握 → 引导查看勋章，非 EMPTY_BOOK
-        val result = StudyQueueBuilder.build(snapshot(count = 5, queue = emptyList()))
-        assertEquals(StudyQueueResult.Rejected(StudyQueueResult.Reason.ALL_MASTERED), result)
+    fun allMasteredBookCanStillBeStudied() {
+        // 2026-09-15: 移除 ALL_MASTERED，实现"母本永远可学"
+        // 即使全部已掌握，母本仍可开始学习
+        val queue = listOf(
+            q(wordId = 1, entryOrder = 0),
+            q(wordId = 2, entryOrder = 1),
+            q(wordId = 3, entryOrder = 2),
+            q(wordId = 4, entryOrder = 3),
+            q(wordId = 5, entryOrder = 4),
+        )
+        val result = StudyQueueBuilder.build(snapshot(count = 5, queue = queue))
+        assertEquals(5, (result as StudyQueueResult.Queue).words.size)
     }
 
     @Test

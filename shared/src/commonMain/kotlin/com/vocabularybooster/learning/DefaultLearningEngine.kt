@@ -49,7 +49,7 @@ public class DefaultLearningEngine(
                     wordBookId = wordBookId,
                     wordBookExists = data.wordBookExists,
                     totalEntryCount = data.totalEntryCount,
-                    unmasteredQueue = data.unmasteredEntries.map {
+                    studyQueue = data.studyEntries.map {
                         StudyQueueWord(wordId = it.wordId, entryOrder = it.entryOrder)
                     },
                 ),
@@ -58,7 +58,6 @@ public class DefaultLearningEngine(
             is StudyQueueResult.Rejected -> return StartResult.Rejected(
                 when (queue.reason) {
                     StudyQueueResult.Reason.EMPTY_BOOK -> StartResult.Reason.EMPTY_BOOK
-                    StudyQueueResult.Reason.ALL_MASTERED -> StartResult.Reason.ALL_MASTERED
                 },
             )
             is StudyQueueResult.Queue -> queue.words
@@ -123,9 +122,9 @@ public class DefaultLearningEngine(
 
     @Suppress("ReturnCount") // 退出分支三分支（A/B 完成 / C 完成 / 已终态幂等）+ 分支 B 派生
     /**
-     * LE spec §8 退出三分支（裁决只看数据库实时状态，不信任缓存计数）：
-     * 分支选择唯一完成权威 = [CompletionDetector.isBookComplete]（REMAINING = Q3）——
-     * 分支 C：Q3 = 0 → COMPLETED；分支 A/B：Q3 > 0 → ABANDONED。
+     * LE spec §8 退出三分支：
+     * 2026-09-15: 改用 session snapshot 判断完成（ADR-002），不再使用 Q3（book-level）。
+     * 分支选择基于当前会话的 snapshot（SessionWord 列表）——全部 MASTERED → COMPLETED；否则 ABANDONED。
      * 终态落库为仓储单事务原子操作；已终态幂等 no-op（endedAt 不刷新）。
      * ABANDONED 后分支 A/B 的裁决与派生（Step 5D）委托 [WordBookDeriver]：
      * 零掌握 → null（不建空本）；部分掌握 → DERIVED 本 ID；**复制交集为空
@@ -136,9 +135,9 @@ public class DefaultLearningEngine(
             ?: throw RepositoryValidationException("会话不存在：sessionId=$sessionId")
         // 已终态（COMPLETED/ABANDONED）重复退出：幂等 no-op，零写入（endedAt 保持首次终态时刻）
         if (snapshot.session.status != SessionStatus.ACTIVE) return ExitResult(derivedWordBookId = null)
-        val remaining = sessionRepository.countUnmasteredEntries(snapshot.session.wordBookId)
-        val terminal = if (CompletionDetector.isBookComplete(remaining)) {
-            SessionStatus.COMPLETED // 分支 C（含「最后一词已 master、完成检测尚未执行」的退出瞬间）
+        // 2026-09-15: 用 session snapshot 判断，不再查 Q3（实现"母本永远可学"）
+        val terminal = if (CompletionDetector.isSessionComplete(snapshot.words)) {
+            SessionStatus.COMPLETED // 分支 C：会话 snapshot 全部掌握
         } else {
             SessionStatus.ABANDONED // 分支 A/B：保存会话状态与学习历史
         }
@@ -179,19 +178,14 @@ public class DefaultLearningEngine(
     }
 
     /**
-     * §7 书级完成：Q3 经 [CompletionDetector.isBookComplete] 裁决（唯一权威）→
+     * §7 会话级完成：使用 session snapshot 判断（ADR-002 实现"母本永远可学"）。
+     * 2026-09-15: 不再使用 Q3（book-level），改为基于 SessionWord snapshot 判断。
      * 会话置 COMPLETED + endedAt。动作序列中的停止播放（Phase 4）与勋章（Phase 6）不在本步。
-     * Q3 > 0（会话中途书新增词，队列固化不含新词）为规格未定义分支：不设终态、不派生，
-     * 留待退出三分支（§8）裁决——本会话确无可播词，仍返回 BookComplete。
      */
     private suspend fun completeSessionLocked(snapshot: SessionSnapshot): AdvanceResult {
-        val unmastered = sessionRepository.countUnmasteredEntries(snapshot.session.wordBookId)
-        return if (CompletionDetector.isBookComplete(unmastered)) {
-            sessionRepository.updateSessionStatus(snapshot.session.sessionId, SessionStatus.COMPLETED)
-            AdvanceResult.BookComplete
-        } else {
-            AdvanceResult.BookComplete
-        }
+        // 2026-09-15: 用 session snapshot 判断（实现"母本永远可学"）
+        sessionRepository.updateSessionStatus(snapshot.session.sessionId, SessionStatus.COMPLETED)
+        return AdvanceResult.BookComplete
     }
 
     /** 离开的组已无未掌握词 → 携带其组号（§7 GroupCompleted 载体；裁决权在 CompletionDetector）。 */

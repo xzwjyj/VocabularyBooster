@@ -27,7 +27,7 @@ class LearningEngineRecoveryTest {
             studySnapshots[wordBookId] = StudyQueueSnapshot(
                 wordBookExists = true,
                 totalEntryCount = orderedWordIds.size,
-                unmasteredEntries = orderedWordIds.mapIndexed { index, id ->
+                studyEntries = orderedWordIds.mapIndexed { index, id ->
                     StudyQueueEntryRef(wordId = id, entryOrder = index)
                 },
             )

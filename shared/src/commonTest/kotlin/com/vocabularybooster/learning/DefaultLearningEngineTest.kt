@@ -34,7 +34,7 @@ class DefaultLearningEngineTest {
         studySnapshots[wordBookId] = StudyQueueSnapshot(
             wordBookExists = true,
             totalEntryCount = totalEntryCount,
-            unmasteredEntries = orderedWordIds.mapIndexed { index, id ->
+            studyEntries = orderedWordIds.mapIndexed { index, id ->
                 StudyQueueEntryRef(wordId = id, entryOrder = index)
             },
         )
@@ -140,7 +140,7 @@ class DefaultLearningEngineTest {
     fun emptyBookIsRejected() = kotlinx.coroutines.test.runTest {
         val repo = FakeLearningSessionRepository().apply {
             studySnapshots[wordBookId] =
-                StudyQueueSnapshot(wordBookExists = true, totalEntryCount = 0, unmasteredEntries = emptyList())
+                StudyQueueSnapshot(wordBookExists = true, totalEntryCount = 0, studyEntries = emptyList())
         }
         val engine = engine(repo)
 
@@ -152,21 +152,26 @@ class DefaultLearningEngineTest {
     }
 
     @Test
-    fun allMasteredBookIsRejected() = kotlinx.coroutines.test.runTest {
+    fun allMasteredBookCanStillBeStudied() = kotlinx.coroutines.test.runTest {
+        // 2026-09-15: 移除 ALL_MASTERED，实现"母本永远可学"
+        // 即使全部已掌握，母本仍可开始学习
         val repo = FakeLearningSessionRepository().apply {
             studySnapshots[wordBookId] = StudyQueueSnapshot(
                 wordBookExists = true,
                 totalEntryCount = 5,
-                unmasteredEntries = emptyList(), // Q2 为空 = 全部已掌握
+                studyEntries = listOf(
+                    StudyQueueEntryRef(1L, 0),
+                    StudyQueueEntryRef(2L, 1),
+                    StudyQueueEntryRef(3L, 2),
+                    StudyQueueEntryRef(4L, 3),
+                    StudyQueueEntryRef(5L, 4),
+                ), // 所有词都可学习，不管 mastery 状态
             )
         }
         val engine = engine(repo)
 
-        assertEquals(
-            StartResult.Rejected(StartResult.Reason.ALL_MASTERED),
-            engine.startSession(wordBookId),
-        )
-        assertNull(repo.getActiveSession())
+        val result = engine.startSession(wordBookId)
+        assertTrue(result is StartResult.Started, "母本全部已掌握仍可开始学习")
     }
 
     @Test
@@ -177,7 +182,7 @@ class DefaultLearningEngineTest {
         repo.studySnapshots[2L] = StudyQueueSnapshot(
             wordBookExists = true,
             totalEntryCount = 2,
-            unmasteredEntries = listOf(StudyQueueEntryRef(201L, 0), StudyQueueEntryRef(202L, 1)),
+            studyEntries = listOf(StudyQueueEntryRef(201L, 0), StudyQueueEntryRef(202L, 1)),
         )
         val engine = engine(repo)
 

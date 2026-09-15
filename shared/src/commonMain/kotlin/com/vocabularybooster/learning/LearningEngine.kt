@@ -16,7 +16,8 @@ public interface LearningEngine {
     /**
      * 开始会话（LE spec §3）：编排 StudyQueueBuilder → GroupSplitter → 会话物化。
      * 前置裁决顺序：本不存在（抛 [com.vocabularybooster.domain.repository.RepositoryValidationException]，
-     * 沿用 domain 契约）→ EMPTY_BOOK → ALL_MASTERED → PLAYBACK_DISABLED → ACTIVE_SESSION_EXISTS。
+     * 沿用 domain 契约）→ EMPTY_BOOK → PLAYBACK_DISABLED → ACTIVE_SESSION_EXISTS。
+     * 2026-09-15: 移除 ALL_MASTERED，实现"母本永远可学"。
      */
     public suspend fun startSession(wordBookId: Long): StartResult
 
@@ -71,9 +72,6 @@ public sealed interface StartResult {
 
         /** 本无词条（LE spec §10-1）。 */
         public data object EMPTY_BOOK : Reason
-
-        /** 全部已掌握，引导查看勋章（LE spec §10-1）。 */
-        public data object ALL_MASTERED : Reason
 
         /** 六项播放开关全关（FR-10 验收 / TC-AE-02）。 */
         public data object PLAYBACK_DISABLED : Reason

@@ -158,7 +158,7 @@ internal class FakeLearningSessionRepository : LearningSessionRepository {
         studySnapshots[wordBookId] ?: StudyQueueSnapshot(
             wordBookExists = false,
             totalEntryCount = 0,
-            unmasteredEntries = emptyList(),
+            studyEntries = emptyList(),
         )
 
     override suspend fun setPlayingWord(sessionId: Long, wordId: Long) {

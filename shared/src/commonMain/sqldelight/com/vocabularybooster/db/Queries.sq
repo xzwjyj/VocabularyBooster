@@ -1,13 +1,14 @@
 -- 跨表查询（DATABASE_SCHEMA §3）：Q2–Q5 负载承载查询
 
--- Q2 学习队列：生词本当前未掌握的词（entryOrder 升序；FR-6）
+-- Q2 学习队列：生词本所有词（不管 mastery 状态，WordBook membership 永久保持）
+-- 2026-09-15: 移除 wm.wordId IS NULL 条件，实现"母本永远可学"
 selectStudyQueue:
 SELECT wbe.* FROM WordBookEntry wbe
-LEFT JOIN WordMastery wm ON wm.wordBookId = wbe.wordBookId AND wm.wordId = wbe.wordId
-WHERE wbe.wordBookId = ? AND wm.wordId IS NULL
+WHERE wbe.wordBookId = ?
 ORDER BY wbe.entryOrder ASC;
 
--- Q3 完成度检测（=0 → BOOK_COMPLETED 事件；FR-8）
+-- Q3 完成度检测（已废弃，由 CompletionDetector 基于 SessionWord snapshot 判断）
+-- 保留仅用于兼容旧代码，新逻辑不应依赖此查询
 countUnmastered:
 SELECT COUNT(*) FROM WordBookEntry wbe
 LEFT JOIN WordMastery wm ON wm.wordBookId = wbe.wordBookId AND wm.wordId = wbe.wordId

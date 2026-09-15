@@ -189,7 +189,7 @@ public class SqlDelightLearningSessionRepository(
                     .executeAsOneOrNull() != null,
                 totalEntryCount = database.wordBookEntryQueries.countEntriesForWordBook(wordBookId)
                     .executeAsOne().toInt(),
-                unmasteredEntries = database.queriesQueries.selectStudyQueue(wordBookId)
+                studyEntries = database.queriesQueries.selectStudyQueue(wordBookId)
                     .executeAsList()
                     .map { StudyQueueEntryRef(wordId = it.wordId, entryOrder = it.entryOrder.toInt()) },
             )

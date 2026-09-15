@@ -209,7 +209,7 @@ class LearningSessionViewModel(
         return state.toUiState(wordTextCache)
     }
 
-    /** startSession 被拒（LE spec §3 四拒绝）：冲突进对话框，其余经 [notice] 引导后返回。 */
+    /** startSession 被拒（LE spec §3 拒绝）：冲突进对话框，其余经 [notice] 引导后返回。 */
     private fun handleStartRejection(reason: StartResult.Reason, pending: Long) {
         when (reason) {
             is StartResult.Reason.ACTIVE_SESSION_EXISTS -> {
@@ -218,8 +218,6 @@ class LearningSessionViewModel(
             }
             StartResult.Reason.EMPTY_BOOK ->
                 notice = LearningNotice.StartRejected("生词本内没有词条，无法开始学习")
-            StartResult.Reason.ALL_MASTERED ->
-                notice = LearningNotice.StartRejected("该生词本的全部单词已掌握")
             StartResult.Reason.PLAYBACK_DISABLED ->
                 notice = LearningNotice.StartRejected("播放开关全部关闭，无法开始学习")
         }

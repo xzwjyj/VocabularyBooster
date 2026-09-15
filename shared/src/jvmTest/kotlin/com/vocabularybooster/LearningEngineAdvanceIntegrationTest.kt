@@ -134,9 +134,9 @@ class LearningEngineAdvanceIntegrationTest {
     }
 
     @Test
-    fun sessionExhaustedAfterMidSessionAdditionStaysActive() = runTest {
-        // 规格未定义分支（deferred issue）：队列固化不含会话中途新增词——
-        // Q3 > 0 → 不设终态；会话确无可播词 → BookComplete
+    fun sessionExhaustedCompletesRegardlessOfBookAdditions() = runTest {
+        // 2026-09-15: ADR-002 - 会话完成基于 snapshot，不基于 Q3
+        // 会话队列全部 mastered 即完成，不管书在会话中途是否新增词
         val db = TestDb.inMemory()
         val clock = FixedClock()
         val (bookId, wordIds) = db.seedBookWithWords(2)
@@ -156,7 +156,7 @@ class LearningEngineAdvanceIntegrationTest {
 
         assertEquals(AdvanceResult.BookComplete, engine.advance(sessionId))
 
-        assertEquals("ACTIVE", db.database.learningSessionQueries.selectSessionById(sessionId).executeAsOne().status)
-        assertEquals(1L, db.database.queriesQueries.countUnmastered(bookId).executeAsOne())
+        // 现在会话会完成（snapshot consumed），不再保持 ACTIVE
+        assertEquals("COMPLETED", db.database.learningSessionQueries.selectSessionById(sessionId).executeAsOne().status)
     }
 }

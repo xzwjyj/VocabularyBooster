@@ -368,11 +368,9 @@ class LearningEngineDerivationIntegrationTest {
     }
 
     @Test
-    fun exitEmptyIntersectionCreatesNoDerivedBookWhenSessionExhausted() = runTest {
-        // Case 3 裁决（2026-09-04，交集语义，LE spec v1.3 §8 effectiveRemaining）：
-        // MASTERED=2>0 且 REMAINING=3>0（全部来自会话外新增词）→ 分支 B 字面成立，
-        // 但 effectiveRemaining = 当前母本词条 ∩ SessionWord 非 MASTERED = ∅ →
-        // **不建空 DERIVED 本**：derivedWordBookId=null、会话 ABANDONED、endedAt 正常写入
+    fun exitWithAllSessionWordsMasteredCompletes() = runTest {
+        // 2026-09-15: ADR-002 - 退出基于 session snapshot，不基于 Q3
+        // 会话全部 mastered → COMPLETED，不再因 Q3>0 而 ABANDONED
         val db = TestDb.inMemory()
         val clock = FixedClock()
         val (bookId, wordIds) = db.seedBookWithSelections(2, label = "g")
@@ -391,13 +389,13 @@ class LearningEngineDerivationIntegrationTest {
 
         val exitResult = engine.exitSession(sessionId)
 
-        assertNull(exitResult.derivedWordBookId) // 交集为空 → 不建空本
+        assertNull(exitResult.derivedWordBookId) // COMPLETED 不派生
         val sessionRow = db.database.learningSessionQueries.selectSessionById(sessionId).executeAsOne()
-        assertEquals("ABANDONED", sessionRow.status) // 会话终态照常
-        assertNotNull(sessionRow.endedAt) // endedAt 正常写入（终态事务不受派生守卫影响）
+        assertEquals("COMPLETED", sessionRow.status) // snapshot 全部 mastered → COMPLETED
+        assertNotNull(sessionRow.endedAt) // endedAt 正常写入
         assertEquals(0L, db.database.wordBookQueries // 零派生子本
             .countDerivedChildren(bookId).executeAsOne())
-        assertEquals(3L, db.database.queriesQueries.countUnmastered(bookId).executeAsOne()) // 母本待学 3 词
+        assertEquals(3L, db.database.queriesQueries.countUnmastered(bookId).executeAsOne()) // 3 个新词未掌握
         assertNull(db.database.learningSessionQueries.selectActiveSession().executeAsOneOrNull())
         db.close()
     }

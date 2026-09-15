@@ -30,7 +30,7 @@ class LearningEngineExitTest {
             studySnapshots[wordBookId] = StudyQueueSnapshot(
                 wordBookExists = true,
                 totalEntryCount = orderedWordIds.size,
-                unmasteredEntries = orderedWordIds.mapIndexed { index, id ->
+                studyEntries = orderedWordIds.mapIndexed { index, id ->
                     StudyQueueEntryRef(wordId = id, entryOrder = index)
                 },
             )
@@ -162,12 +162,11 @@ class LearningEngineExitTest {
     }
 
     @Test
-    fun exitWithRemainingBookAdditionsAbandons() = kotlinx.coroutines.test.runTest {
-        // 5A deferred 角落收口：会话队列耗尽但书有会话外新增词（Q3>0）→ 退出 = 分支 A/B；
-        // MASTERED=2>0 且 Q3=3>0 按分支 B 字面裁决 → 派生（内容 = 会话非 MASTERED 词 = 0，
-        // 规格字面结果：空派生本——见 Step 5D 报告 deferred）
+    fun exitWithAllSessionWordsMasteredCompletes() = kotlinx.coroutines.test.runTest {
+        // 2026-09-15: ADR-002 语义变更 - 退出基于 session snapshot，不基于 Q3
+        // 会话全部 mastered → COMPLETED，不再因 Q3>0 而 ABANDONED
         val repo = repoWithQueue(101L, 102L)
-        repo.unmasteredEntryCounts[wordBookId] = 3
+        // 不再设置 unmasteredEntryCounts（Q3 不再用于判断）
         val wordBooks = FakeWordBookRepository().apply { bookNames[wordBookId] = "母本" }
         val (engine, _) = engine(repo, FixedClock(), wordBooks)
         val sessionId = engine.startedSessionId()
@@ -176,8 +175,8 @@ class LearningEngineExitTest {
 
         val result = engine.exitSession(sessionId)
 
-        assertEquals(SessionStatus.ABANDONED, repo.sessions[sessionId]?.status) // Q3=3 → 非 COMPLETED
-        assertNotNull(result.derivedWordBookId) // 分支 B 字面：MASTERED>0 && Q3>0 → 派生
+        assertEquals(SessionStatus.COMPLETED, repo.sessions[sessionId]?.status) // snapshot 全部 mastered → COMPLETED
+        assertNull(result.derivedWordBookId) // COMPLETED 不派生
     }
 
     // —— 终态幂等与 endedAt 不可变 ——

@@ -96,7 +96,8 @@ class SchemaSmokeTest {
     }
 
     @Test
-    fun q2Q3StudyQueueExcludesMasteredWords() {
+    fun q2StudyQueueIncludesAllWords() {
+        // 2026-09-15: ADR-002 - Q2 返回所有词（不管 mastery 状态），实现"母本永远可学"
         val db = newDatabase()
         val now = 1_760_000_000_000L
         db.wordBookQueries.insertOriginalWordBook("GRE Core", null, now, now)
@@ -109,7 +110,9 @@ class SchemaSmokeTest {
         db.wordMasteryQueries.markMastered(bookId, 2L, now) // word1 已掌握
 
         val queue = db.queriesQueries.selectStudyQueue(bookId).executeAsList()
-        assertEquals(listOf(1L, 3L), queue.map { it.wordId }) // entryOrder 升序、掌握词被排除
+        // Q2 现在返回所有词，不管 mastery 状态
+        assertEquals(listOf(1L, 2L, 3L), queue.map { it.wordId }) // entryOrder 升序，包含已掌握词
+        // Q3 countUnmastered 仍返回未掌握数（用于其他目的）
         assertEquals(2L, db.queriesQueries.countUnmastered(bookId).executeAsOne())
     }
 
