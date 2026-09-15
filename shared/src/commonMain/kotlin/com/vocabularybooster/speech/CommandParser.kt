@@ -21,8 +21,10 @@ public enum class VoiceCommand {
  *
  * - 归一化：全角→半角（FF01–FF5E / 全角空格）+ 小写折叠 + **去除全部空白**（含内部——
  *   语音引擎分词伪影：Vosk 中文模型按字分词输出「会 了」，2026-09-14 vivo 实测）+ 忽略末尾标点；
- * - 精确匹配语义：归一化后与别名集合整串相等才命中——不做模糊/近义/简繁转换
- *   （规格未定义，不自行扩展；「會了」繁体 → UNKNOWN）；
+ * - 匹配 = 归一化后与别名整串相等，或命中该别名的**近音兜底白名单**
+ *   （[NEAR_HOMOPHONES_BY_ALIAS]，v1.7：Vosk 中文小模型近音误听「会了」→「坏了」，2026-09-16
+ *   vivo 实测；白名单按别名归集、随真机日志增补）。除白名单外仍为精确语义——不做任意模糊
+ *   匹配/简繁转换/NLP 容错（「你好」「會了」→ UNKNOWN，不误杀红线不变）；
  * - 命中别名且该命令在 enabled 集内 → [VoiceCommand.MASTERED]；其余一律 [VoiceCommand.UNKNOWN]
  *   （§9 不误杀词：UNKNOWN 由调用方「忽略并保持监听直到窗口超时」）；
  * - v1 启用集 = 仅 MASTERED（FR-12）；别名 = [DEFAULT_MASTERED_ALIASES]
@@ -32,9 +34,14 @@ public class CommandParser {
 
     public fun parse(rawText: String, aliases: Set<String>, enabled: Set<VoiceCommand>): VoiceCommand {
         val normalized = normalizeCommandText(rawText)
-        val matched = aliases.any { normalizeCommandText(it) == normalized }
+        val matched = aliases.any { matchesAlias(normalized, normalizeCommandText(it)) }
         return if (matched && VoiceCommand.MASTERED in enabled) VoiceCommand.MASTERED else VoiceCommand.UNKNOWN
     }
+
+    /** 精确等值，或命中该别名的近音兜底白名单（[NEAR_HOMOPHONES_BY_ALIAS]，同函数归一化后比对）。 */
+    private fun matchesAlias(normalized: String, normalizedAlias: String): Boolean =
+        normalized == normalizedAlias ||
+            NEAR_HOMOPHONES_BY_ALIAS[normalizedAlias]?.any { normalizeCommandText(it) == normalized } == true
 
     public companion object {
         /** FR-12 / FR-15 默认别名（与 DATABASE_SCHEMA §2.11 `settings.masteredAliases` 默认值一致）。 */
@@ -42,6 +49,20 @@ public class CommandParser {
 
         /** v1 启用命令集（FR-12：仅 MASTERED；其余枚举预留）。 */
         public val V1_ENABLED: Set<VoiceCommand> = setOf(VoiceCommand.MASTERED)
+
+        /**
+         * 近音兜底白名单（AUDIO_ENGINE_SPEC §7 v1.7）：Vosk 中文小模型的已知近音误听形式，
+         * key = 归一化别名、value = 该别名的近音变体（同函数归一化后整串比对）。
+         * 证据驱动增补（2026-09-16 vivo 实测：「会了」→「坏了」/「回来」/断字截断「会」（了 被丢）；
+         * 「回来/回了/会来」为 huì-le 的 {会,坏,换,回,惠,汇}×{了,啦,来} 同族高概率形式）；Phase 8
+         * 别名设置化时随别名扩展。白名单按别名归集：非默认别名集（如拉丁自定义别名）无近音兜底；
+         * 无关短语（「你好」）与白名单外的任何文本仍 → UNKNOWN（D5 不误杀红线）。
+         */
+        public val NEAR_HOMOPHONES_BY_ALIAS: Map<String, Set<String>> = mapOf(
+            "会了" to setOf("坏了", "换了", "会啦", "惠了", "汇了", "回来", "回了", "会来", "会"),
+            "记住了" to setOf("记住啦", "记住咯"),
+            "掌握了" to setOf("掌握啦", "掌握咯"),
+        )
     }
 }
 

@@ -92,7 +92,7 @@
 | TC-AE-07 | Pause/Resume：文件段恢复 offsetMs 精确；TTS 段重读本段（段索引不变、词索引不变） |
 | TC-AE-08 | Pause/Resume 于窗口态 → 重开整窗 |
 | TC-AE-09 | Next / Replay：不改掌握状态；词级重置正确 |
-| TC-AE-10 | 命令解析：别名/大小写/全角/带标点/**分词空格**（Vosk 中文按字分词「会 了」，2026-09-14 vivo 实测修复）→ MASTERED；未知（噪音/繁体/前导标点）→ UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
+| TC-AE-10 | 命令解析：别名/大小写/全角/带标点/**分词空格**（Vosk 中文按字分词「会 了」，2026-09-14 vivo 实测修复）/**近音兜底白名单**（「坏了」「换了」「回来」及断字截断「会」等按命中处理，2026-09-16 vivo 实测「会了」→「坏了」/「回来」/「会」零掌握修复）→ MASTERED；未知（噪音/繁体/前导标点/白名单外近形短语「你好」「会了吗」、单字误听残片「坏」）→ UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
 | TC-AE-11 | 双语切换：EN 段 en-US、CN 段 zh-CN 的 speak 请求逐段正确（rate/pitch 取设置；SPELLING 0.8×） |
 | TC-AE-12 | 降级（**P4/P5 拆分，裁决 L7**）：P4 断言——例句音频加载失败 → 该段 TTS 朗读 sentence 兜底、会话不中断；识别不接入（L1）→ CommandWindow 倒计时模式；「手动'会了'按钮可用」子句已随 Phase 5 Step 1 按钮交付（TC-AE-25/26） |
 | TC-AE-13 | 位置持久化生命周期（AUDIO §5 / NFR-3）：段切换/暂停即写 `playback.position`；恢复读回词/段/offsetMs；会话 COMPLETED/ABANDONED 后键清除；close/reopen 真库重启续播（JVM integration + restart） |
@@ -232,3 +232,4 @@
 | 2.1 | 2026-09-14 | **裁决 E3（引擎回退代理）**：新增 **TC-AE-28**（app 单测·JVM，Fake 双引擎——同窗回退剩余预算/进程内降级粘滞/GMS 零变化/并发守卫不回退/剩余预算 ≤0 → Timeout/双引擎皆败 → Unavailable/isAvailable 投影）；FR-12 映射 +28；§7.1 增坏服务机型（vivo 蓝心 Copilot）走窗口内回退路径注记。上游：PROJECT_SPEC v1.6 / AUDIO_ENGINE_SPEC v1.4 |
 | 2.2 | 2026-09-14 | **裁决 E4（系统引擎响应看门狗）**：新增 **TC-AE-29**（androidTest 零误触断言扩展进既有静默用例 + vivo 僵尸服务路径 M1 手动实证；两 actual 全链路识别日志）；FR-12 映射 +29。上游：PROJECT_SPEC v1.7 / AUDIO_ENGINE_SPEC v1.5 |
 | 2.3 | 2026-09-14 | **解析归一化缺陷修复（E4 后真机日志定位）**：TC-AE-10 增**分词空格**用例——Vosk 中文模型按字分词输出「会 了」，归一化原只 trim 首尾导致精确匹配未命中（识别成功却零掌握）；AUDIO_ENGINE_SPEC v1.6 §7 归一化改**去除全部空白**（别名/识别文本同函数，精确匹配语义不变） |
+| 2.4 | 2026-09-16 | **需求变更（用户裁决）：「会了」近音误听按命中处理**（M1 真机复测驱动——Vosk 小模型把「会了」听成「坏了」，说完命令倒计时走满零掌握）。TC-AE-10 增**近音兜底白名单**用例（坏了/换了/会啦/记住啦/掌握咯 → MASTERED）+ 防误杀守卫用例（你好/坏（单字）/会了吗 → UNKNOWN；自定义别名集无近音兜底）。上游：PROJECT_SPEC v1.8（FR-12 验收口径）；下游同步：AUDIO_ENGINE_SPEC v1.7 §7（`NEAR_HOMOPHONES_BY_ALIAS`） |
