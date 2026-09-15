@@ -208,10 +208,11 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - **TTS / 音频播放期间：SpeechRecognizer 保持关闭**——杜绝 TTS 被自识别；
 - 当前 Word 的**最后一个 Segment 播放完成** → 静默 `guardDelayMs`（默认 300ms，防尾音串扰）→ 打开命令窗口 `commandWindowMs`（默认 4000ms，可配置）；
 - 窗口内：识别到命令 → 执行并立即关闭窗口；超时/无有效结果 → 关闭窗口，自动进入下一个未掌握 Word；
-- v1 命令集：**仅 `MASTERED`**——"会了"（别名默认："记住了"、"掌握了"，可在设置扩展）；
+- v1 命令集：**仅 `MASTERED`**——"会了"（别名默认："记住了"、"掌握了"；用户可编辑别名归 Phase 8 设置页实现，Phase 5 冻结为代码常量 {会了, 记住了, 掌握了}——裁决 D4，2026-09-12）；
 - 预留命令枚举（v1 只定义、不实现）：`PAUSE`"暂停" / `RESUME`"继续" / `NEXT`"下一个" / `REPLAY`"再来一次" / `EXIT`"退出"；
 - 命令文本解析为纯 Kotlin 组件（跨平台复用），识别引擎由平台注入。
-- **验收**：TTS 播放中对着麦克风说任何内容均无效果；窗口期说"会了"触发 FR-7；别名可配置生效。
+- **识别引擎（2026-09-14 需求变更，裁决 E1/E2）**：命令识别不依赖单一系统服务——平台系统识别服务（`SpeechRecognizer`）存在时优先使用（行为不变）；**缺席时使用 App 内置离线引擎**（Vosk + 中文小模型打包进 APK），保证中国大陆发售的无 GMS / 无标准识别服务机型（华为/荣耀/小米/OPPO/vivo 等）语音命令同样可用。内置引擎**纯本地识别，无云端链路**（NFR-1/NFR-4）；命令解析/编排/掌握语义（D2–D5）零改动。**运行时回退（裁决 E3，2026-09-14）**：系统服务探测在场但窗口内发生可用性级失败（厂商助手可注册了不可用的 `RecognitionService`——实测 vivo V2436A 上蓝心 Copilot 唤醒服务可解析、绑定后 46ms 即硬失败，"可解析" ≠ "可用"）时，**当场回退内置引擎完成同一窗口剩余预算**（窗口总时长不变），并在本进程内降级系统引擎（后续窗口直连内置引擎，不反复试探；重启后重新探测）。系统服务健康设备硬失败从不发生，行为零变化。**响应看门狗（裁决 E4，2026-09-14 二次真机诊断）**：坏服务另有静默死法（startListening 后零回调零错误挂至窗口超时，与"用户未说话"不可区分，实测吞掉用户命令词）→ 系统 actual 内置看门狗：1500ms 零回调（健康服务安静时亦持续回调）即判死、按可用性级失败上报，同样触发窗口内回退；GMS 健康服务零误触。
+- **验收**：TTS 播放中对着麦克风说任何内容均无效果；窗口期说"会了"触发 FR-7；别名可配置生效（该子句已按裁决 D4（2026-09-12）延期至 Phase 8：Phase 5 验收口径 = 固定代码别名 会了/记住了/掌握了 均可命中，用户可编辑别名随 FR-15 设置页交付，见 AUDIO_ENGINE_SPEC §7）；无系统识别服务、或系统服务存在但不可用的国行机型，经**内置离线引擎**（含 E3 窗口内回退）同样满足本验收（E1/E3，2026-09-14，AUDIO_ENGINE_SPEC §8）。
 
 ### FR-13 完成勋章
 
@@ -262,7 +263,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | NFR-1 | **离线优先** | 学习主流程（查本地词、学习、播放、掌握、勋章、导入）100% 离线可用 |
 | NFR-2 | **性能** | 冷启动 ≤ 3s；Segment 间切换间隙 ≤ 500ms（目标 300ms）；命令窗口在 Segment 结束后 ≤ 300ms 打开；10 万行导入 ≤ 60s 且可取消 |
 | NFR-3 | **可靠性** | 会话状态持久化，进程被杀后可恢复到词/段粒度；DB 写入事务化；导入原子；DB 迁移有回归测试 |
-| NFR-4 | **隐私** | 语音仅在命令窗口内采集，命令文本本地解析、不上传；若平台识别引擎存在云端链路（Android SpeechRecognizer 可能走 Google 云），须在隐私声明中披露，并优先尝试离线识别（`EXTRA_PREFER_OFFLINE`） |
+| NFR-4 | **隐私** | 语音仅在命令窗口内采集，命令文本本地解析、不上传；若平台识别引擎存在云端链路（Android SpeechRecognizer 可能走 Google 云），须在隐私声明中披露，并优先尝试离线识别（`EXTRA_PREFER_OFFLINE`）；**内置离线引擎路径（E1，2026-09-14）纯本地识别，无任何云端链路** |
 | NFR-5 | **内容合规** | 音频素材仅限 TTS 或**合法授权来源**；`sourceType / sourceRef / licenseNote` 强制留存；无授权素材不得上线 |
 | NFR-6 | **跨平台可移植** | shared 模块 `commonMain` 禁止 import `android.*` / `java.*`（静态检查强制）；学习/播放/导入/勋章引擎为纯 Kotlin，JVM 可 100% 单测；iOS 仅实现平台 actual，**零核心重写** |
 | NFR-7 | **国际化** | UI 默认简体中文；词条内容天然双语（EN/CN） |
@@ -319,3 +320,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.1 | 2026-09-01 | 冻结 D1–D4：退出三分支；WordBook.type（ORIGINAL/DERIVED）+ parentWordBookId + sourceSessionId；母本不变性；掌握作用域=（生词本,词） |
 | 1.2 | 2026-09-01 | C5 定格 compileSdk 35（Phase 1 实装；升 36 需 AGP ≥8.9 随依赖升级处理） |
 | 1.3 | 2026-09-01 | FR-5 例句选择粒度细化（Phase 2 批准）：由「per-DefinitionEntry 整体开关 includeExamples」改为「逐 Example 勾选（多选，可全不选）」；Example 原子性不变。下游同步：DOMAIN_MODEL §1/§2.6、DATABASE_SCHEMA（schema v2）、TEST_PLAN、CLAUDE.md 铁律 4 |
+| 1.4 | 2026-09-13 | FR-12 别名验收口径对齐 Phase 5 Step 1 裁决 D4（2026-09-12，Phase 5 收尾决策 D-B）：「别名可配置生效」延期至 Phase 8（Settings Repository/Settings UI，不改引擎）；Phase 5 使用 CommandParser 固定代码常量 {会了, 记住了, 掌握了}，验收口径 = 三别名均可命中。FR-7/FR-12 产品语义不变。文档对齐：AUDIO_ENGINE_SPEC v1.2 §7（既有） |
+| 1.5 | 2026-09-14 | **需求变更（用户裁决 E1/E2）：语音命令须支持中国大陆发售的所有安卓手机。**实测 vivo V2436A（Android 16）系统无任何标准 RecognitionService（仅 Gemini 无传统服务，vivo 私有服务不暴露标准接口），`SpeechRecognizer` 路径在国行主流机型不可用。FR-12 增识别引擎条款：系统服务在场优先（行为不变），缺席时 App 内置离线引擎（Vosk + 中文小模型打包进 APK）；NFR-4 增内置路径纯本地无云端。下游同步：AUDIO_ENGINE_SPEC v1.3（§8 双 actual + E2 选择规则）、ARCHITECTURE §5 矩阵、TEST_PLAN v2.0（TC-AE-27）、ROADMAP v1.5（Phase 5 收尾范围修订） |
+| 1.6 | 2026-09-14 | **裁决 E3（诊断修正 + 窗口内引擎回退）**：真机诊断证明 v1.5 对 vivo 的判断需修正——App 声明 `<queries>` 包可见性后，vivo V2436A 上**有**服务注册 `RecognitionService`（蓝心 Copilot 唤醒服务等），E2 启动探测返回 true → 装配系统 actual，但该服务对标准识别请求**立即可用性级硬失败**（46ms，权限已授予），首窗即降级且粘滞 →「语音命令不可用」。FR-12 识别引擎条款增运行时回退：主引擎窗口内可用性级失败 → 当场回退内置引擎完成同窗剩余预算 + 进程内降级主引擎（重启重新探测）；健康系统服务设备零变化。下游同步：AUDIO_ENGINE_SPEC v1.4（§8 选择与回退规则 E2/E3 + §9 可用性级行）、ARCHITECTURE §5 矩阵、TEST_PLAN v2.1（TC-AE-28）、ROADMAP v1.6 |
+| 1.7 | 2026-09-14 | **裁决 E4（系统引擎响应看门狗）**：E3 交付后真机复测暴露 vivo 假服务第二种死法——静默僵尸（零回调零错误挂至窗口超时，E3 未触发，用户说「会了」被吞）。FR-12 识别引擎条款增看门狗：startListening 后 1500ms 零回调（健康服务安静时亦持续回调）→ 判死按可用性级失败上报 → 纳入 E3 同窗回退；GMS 零误触（模拟器静默 androidTest 锁定）。下游同步：AUDIO_ENGINE_SPEC v1.5（§8 系统 actual 看门狗 + E4 段落 + §9 行）、TEST_PLAN v2.2（TC-AE-29）、ROADMAP v1.7 |

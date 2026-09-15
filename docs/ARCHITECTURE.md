@@ -120,7 +120,7 @@ interface LogSink { fun log(level: LogLevel, tag: String, message: String, error
 |---|---|---|
 | `SpeechSynthesizer` | `android.speech.tts.TextToSpeech` + `UtteranceProgressListener` | `AVSpeechSynthesizer` |
 | `AudioPlayer` | Media3 `ExoPlayer` | `AVPlayer` |
-| `SpeechCommandRecognizer` | `SpeechRecognizer`（`EXTRA_PREFER_OFFLINE`，NFR-4） | `SFSpeechRecognizer` |
+| `SpeechCommandRecognizer` | 系统 `SpeechRecognizer`（`EXTRA_PREFER_OFFLINE`，NFR-4）+ 响应看门狗（E4：1500ms 零回调判死）；**缺席时内置 Vosk 离线引擎兜底；在场但运行时可用性级失败（显式错误或看门狗判死）时窗口内回退 + 进程内降级**（E1/E2/E3/E4，2026-09-14，中文小模型打包 APK，DI 启动探测 + app 层回退代理，端口契约不变） | `SFSpeechRecognizer` |
 | `DatabaseDriverFactoryProvider` | `AndroidSqliteDriver` | `NSqliteDriver` |
 | `LogSink` | `android.util.Log` | `os_log` |
 

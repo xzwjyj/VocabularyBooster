@@ -19,7 +19,8 @@ public enum class VoiceCommand {
  * CommandParser（AUDIO_ENGINE_SPEC §7，纯 Kotlin——跨平台复用）：
  * 识别**最终文本** → [VoiceCommand]。
  *
- * - 归一化：trim + 全角→半角（FF01–FF5E / 全角空格）+ 小写折叠 + **忽略末尾标点**；
+ * - 归一化：全角→半角（FF01–FF5E / 全角空格）+ 小写折叠 + **去除全部空白**（含内部——
+ *   语音引擎分词伪影：Vosk 中文模型按字分词输出「会 了」，2026-09-14 vivo 实测）+ 忽略末尾标点；
  * - 精确匹配语义：归一化后与别名集合整串相等才命中——不做模糊/近义/简繁转换
  *   （规格未定义，不自行扩展；「會了」繁体 → UNKNOWN）；
  * - 命中别名且该命令在 enabled 集内 → [VoiceCommand.MASTERED]；其余一律 [VoiceCommand.UNKNOWN]
@@ -44,11 +45,11 @@ public class CommandParser {
     }
 }
 
-/** §7 归一化：全角→半角 → trim → 小写折叠 → 去末尾标点/空白（仅末尾——「，会了」不命中）。 */
+/** §7 归一化：全角→半角 → 去全部空白（Vosk 按字分词「会 了」伪影）→ 小写折叠 → 去末尾标点（仅末尾——「，会了」不命中）。 */
 internal fun normalizeCommandText(raw: String): String = raw
     .map(::toHalfWidth)
     .joinToString("")
-    .trim()
+    .filterNot { it.isWhitespace() }
     .lowercase()
     .trimEnd { it.isTrailingIgnorable() }
 

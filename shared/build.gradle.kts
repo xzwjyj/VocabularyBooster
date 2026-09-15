@@ -50,6 +50,8 @@ kotlin {
                 // Phase 4 Step 3：Media3AudioPlayer actual（AUDIO_ENGINE_SPEC §8；compileSdk 35 兼容矩阵）
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.common)
+                // Phase 5 收尾（E1）：内置离线引擎兜底 actual——VoskSpeechCommandRecognizer（AUDIO_ENGINE_SPEC §8）
+                implementation(libs.vosk.android)
             }
         }
         if (isMacOsHost) {

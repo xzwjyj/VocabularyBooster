@@ -5,7 +5,8 @@ import kotlin.test.assertEquals
 
 /**
  * CommandParser 测试（AUDIO_ENGINE_SPEC §7 / TEST_PLAN TC-AE-10）：
- * 别名 / 大小写 / 全角 / 带标点 → MASTERED；未知（含空文本、噪音、繁体、前导标点、未启用）→ UNKNOWN。
+ * 别名 / 大小写 / 全角 / 带标点 / 分词空格（Vosk 中文按字分词）→ MASTERED；
+ * 未知（含空文本、噪音、繁体、前导标点、未启用）→ UNKNOWN。
  * 精确匹配语义（无模糊 NLP）；partial 结果不进解析（端口契约，编排器侧不送入）。
  */
 class CommandParserTest {
@@ -23,12 +24,32 @@ class CommandParserTest {
         assertEquals(VoiceCommand.MASTERED, parser.parse("掌握了", aliases, enabled))
     }
 
-    // —— 空白（§7 trim + 全角空格折叠）——
+    // —— 空白（§7 全角空格折叠 + 去全部空白）——
 
     @Test
     fun surroundingWhitespaceIgnored() {
         assertEquals(VoiceCommand.MASTERED, parser.parse(" 会了 ", aliases, enabled))
         assertEquals(VoiceCommand.MASTERED, parser.parse("　会了　", aliases, enabled)) // U+3000 全角空格
+    }
+
+    // —— 内部空白（§7 去除全部空白：Vosk 中文按字分词伪影，2026-09-14 vivo 实测「会 了」被吞）——
+
+    @Test
+    fun interWordWhitespaceIsNormalized() {
+        assertEquals(VoiceCommand.MASTERED, parser.parse("会 了", aliases, enabled)) // vivo 实测字符串
+        assertEquals(VoiceCommand.MASTERED, parser.parse("记 住 了", aliases, enabled))
+        assertEquals(VoiceCommand.MASTERED, parser.parse("掌 握了", aliases, enabled))
+        assertEquals(VoiceCommand.MASTERED, parser.parse("　会　了　", aliases, enabled)) // 全角空格（内部+首尾）
+        assertEquals(VoiceCommand.MASTERED, parser.parse("会 了。", aliases, enabled)) // 分词空格 + 末尾标点
+        assertEquals(VoiceCommand.MASTERED, parser.parse("  会   了 ", aliases, enabled)) // 多空格混合
+    }
+
+    @Test
+    fun latinAliasWithSpacesMatchesAfterWhitespaceRemoval() {
+        // 别名与识别文本走同一归一化（双侧去空白后精确等值，语义不因去空白放宽）
+        val latin = setOf("Got it")
+        assertEquals(VoiceCommand.MASTERED, parser.parse("got  it", latin, enabled)) // 双空格
+        assertEquals(VoiceCommand.MASTERED, parser.parse("g o t i t", latin, enabled)) // 逐字分词
     }
 
     // —— 末尾标点（§7「忽略末尾标点」：全角/半角/叠加）——

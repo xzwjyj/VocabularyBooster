@@ -64,7 +64,8 @@
 ## Phase 5 — 语音命令
 
 **交付**：`AndroidSpeechCommandRecognizer` actual；命令窗口接入编排器；`CommandParser` + 别名设置；屏幕"会了"按钮；`RECORD_AUDIO` 权限流与降级路径。
-**出口**：TC-AE-04…06、10 绿；真机识别率达标（安静环境 ≥ 90% 命中）；FR-7/FR-12 验收。
+**收尾范围修订（2026-09-14，用户需求变更 + 裁决 E1/E2）**：语音命令须支持**中国大陆发售的所有安卓手机**——实测 vivo V2436A（Android 16）系统无任何标准 RecognitionService，系统 `SpeechRecognizer` 路径在国行主流机型不可用。新增交付：**App 内置离线识别引擎（Vosk + 中文小模型打包进 APK）**作为系统服务缺席时的兜底 actual（§8 双 actual + E2 选择规则：系统服务在场优先、行为零变化）；编排器/解析器/掌握语义零改动。**同日增补（裁决 E3）**：真机诊断证明 vivo 存在"注册了 `RecognitionService` 但绑定即硬失败"的厂商服务（蓝心 Copilot，探测被骗）→ 增交付**引擎回退代理**（主引擎窗口内可用性级失败 → 当场回退内置引擎完成同窗剩余预算 + 进程内降级主引擎；GMS 机零变化；E2 启动探测保留）。**二次增补（裁决 E4）**：坏服务另有静默死法（零回调零错误挂至窗口超时，E3 未触发、用户命令词被吞）→ 系统 actual 增**响应看门狗**（1500ms 零回调判死 → 按可用性级失败上报 → E3 同窗回退；GMS 零误触）。口径见 PROJECT_SPEC v1.7、AUDIO_ENGINE_SPEC v1.5。
+**出口**：TC-AE-04…06、10、27/28/29 绿；真机识别率达标（安静环境 ≥ 90% 命中；含无系统服务及坏服务国行机型走内置引擎/窗口内回退路径）；FR-7/FR-12 验收。
 
 ## Phase 6 — 勋章
 
@@ -111,3 +112,6 @@
 | 1.2 | 2026-09-03 | Phase 2 标记完成（验收记录见 PHASE_2_REPORT）；Phase 3 范围裁决 = 学习引擎 headless（不接 Dictionary API）；Phase 3 出口统一为 TC-LE-01…11 + TC-DB-07 遗留补齐说明 |
 | 1.3 | 2026-09-04 | Phase 3 标记完成（最终验收 PASS，验收记录见 PHASE_3_REPORT）；如实登记偏差：调试界面未交付（headless 测试驱动替代） |
 | 1.4 | 2026-09-05 | Phase 4 Step 0 裁决落地（L1–L7，详见 AUDIO_ENGINE_SPEC v1.1 / TEST_PLAN v1.5 变更记录）：Phase 4 交付/出口补齐——CommandWindow P4 纯倒计时边界、正式学习会话屏与 BOOK_DELETED 提示、位置持久化双源优先级、设置端口加法扩展、空段/开关粒度语义；出口全集更新为 TC-AE-01…03、07…19 |
+| 1.5 | 2026-09-14 | **Phase 5 收尾范围修订（用户需求变更 + 裁决 E1/E2）：语音命令须支持中国大陆发售的所有安卓手机**——新增内置离线识别引擎（Vosk + 中文小模型打包 APK）兜底 actual 与引擎选择规则（系统服务在场优先零变化）；出口 +TC-AE-27、真机验收覆盖无系统服务国行机型（vivo V2436A 代表）。详见 PROJECT_SPEC v1.5 / AUDIO_ENGINE_SPEC v1.3 / TEST_PLAN v2.0 |
+| 1.6 | 2026-09-14 | **裁决 E3（窗口内引擎回退）**：vivo 真机诊断——蓝心 Copilot 服务注册 `RecognitionService`（E2 探测被骗返回 true）但绑定即硬失败 = 「语音命令不可用」根因；Phase 5 收尾增交付引擎回退代理（TC-AE-28），出口 +28、真机覆盖坏服务机型。详见 PROJECT_SPEC v1.6 / AUDIO_ENGINE_SPEC v1.4 / TEST_PLAN v2.1 |
+| 1.7 | 2026-09-14 | **裁决 E4（系统引擎响应看门狗）**：E3 后真机复测暴露坏服务静默死法（零回调零错误→窗口超时，用户说「会了」被吞）；系统 actual 增响应看门狗（1500ms 零回调判死→E3 同窗回退，GMS 零误触），出口 +TC-AE-29。详见 PROJECT_SPEC v1.7 / AUDIO_ENGINE_SPEC v1.5 / TEST_PLAN v2.2 |

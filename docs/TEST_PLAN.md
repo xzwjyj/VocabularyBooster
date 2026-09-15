@@ -92,7 +92,7 @@
 | TC-AE-07 | Pause/Resume：文件段恢复 offsetMs 精确；TTS 段重读本段（段索引不变、词索引不变） |
 | TC-AE-08 | Pause/Resume 于窗口态 → 重开整窗 |
 | TC-AE-09 | Next / Replay：不改掌握状态；词级重置正确 |
-| TC-AE-10 | 命令解析：别名/大小写/全角/带标点 → MASTERED；未知 → UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
+| TC-AE-10 | 命令解析：别名/大小写/全角/带标点/**分词空格**（Vosk 中文按字分词「会 了」，2026-09-14 vivo 实测修复）→ MASTERED；未知（噪音/繁体/前导标点）→ UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
 | TC-AE-11 | 双语切换：EN 段 en-US、CN 段 zh-CN 的 speak 请求逐段正确（rate/pitch 取设置；SPELLING 0.8×） |
 | TC-AE-12 | 降级（**P4/P5 拆分，裁决 L7**）：P4 断言——例句音频加载失败 → 该段 TTS 朗读 sentence 兜底、会话不中断；识别不接入（L1）→ CommandWindow 倒计时模式；「手动'会了'按钮可用」子句已随 Phase 5 Step 1 按钮交付（TC-AE-25/26） |
 | TC-AE-13 | 位置持久化生命周期（AUDIO §5 / NFR-3）：段切换/暂停即写 `playback.position`；恢复读回词/段/offsetMs；会话 COMPLETED/ABANDONED 后键清除；close/reopen 真库重启续播（JVM integration + restart） |
@@ -109,6 +109,9 @@
 | TC-AE-24 | **学习会话 UI 冒烟 A–H（Phase 4 Step 4，androidTest·模拟器，真实 App 流程：MainActivity/真实 Koin 图/文件库/Media3/TTS）**：A 打开学习屏首词可见；B 占位音频真实播完 → 窗口开启；C Pause→已暂停→Resume 回播放；D 缺音频 → Media3 真失败 → TTS 兜底降级横幅；E 窗口倒计时可见递减；F Next 按编排器语义换第二词；G Exit 二次确认后回本详情；H Completed 确定性 fixture（repository 预置掌握 + 窗口超时）渲染。（BOOK_DELETED 恢复流程独立为 BookDeletedRecoveryUiSmokeTest，归 TC-AE-15；冒烟字母 I/J 自 Phase 5 Step 1 重指派，见 TC-AE-26） |
 | TC-AE-25 | **语音命令编排器集成（Phase 5 Step 1，commonTest·JVM：真实 CommandParser + Fake 识别器 + 记录型引擎 Fake）**：Hit「会了」→ 恰一次 markMastered(VOICE) + advance、消费后停听；噪音 UNKNOWN → 零掌握、窗口跑满走既有超时 advance（不误杀）；Unavailable → 整窗降级（listening=false）零掌握、按钮仍可用；isAvailable=false → 前置门降级零 listenOnce 调用；TTS/Playing 全程 recognizer 零调用（与 TC-AE-06 同层互证）；**同窗双入口至多一次掌握**（按钮双击 / 语音命中后补按按钮 → no-op，AUDIO §11 双层防护）；窗口 pause/exit → 关识别；**识别错误绝不 advance / 绝不掌握**（裁决 D5 红线逐条） |
 | TC-AE-26 | **「会了」交互端到端（Phase 5 Step 1，app 单测·JVM + androidTest·模拟器）**：VM 单测——语音 Hit → markMastered(VOICE) 恰一次推进；噪音零掌握、窗口超时推进；降级窗口按钮 markMastered(BUTTON)；双击至多一次；窗口外按钮 no-op。插桩 actual 契约——可用性探测 / 静默 Timeout（deadline 预算）/ 取消 → destroy 后再受理 / 并发第二调用者 Unavailable / 权限拒绝 → Unavailable 且拉低 isAvailable（**PermissionDeniedSpeechInstrumentedTest 单类隔离运行**：Gradle 每次插桩重装 APK = 新装拒绝态，确定性；套件内 pm revoke 会杀运行中 app 进程故禁止）。UI 冒烟 I 窗口「会了」按钮 → 同一路径推进第二词；J 权限拒绝 → 窗口降级提示 + 未授权麦克风横幅（拒绝态自适应 / 隔离运行）。真实人声「会了」识别 = 手动矩阵（不伪造） |
+| TC-AE-27 | **内置离线引擎（Vosk）actual 契约 + 引擎选择（裁决 E1/E2，Phase 5 收尾范围修订，2026-09-14；app 单测·JVM 选择逻辑 + androidTest·模拟器 actual 契约）**：选择逻辑——探测为真 → 系统 actual、为假 → Vosk actual（纯函数化探测注入，Fake 探测两分支单测）；Vosk actual 契约——模型自 assets 解包加载成功；静默窗口 → Timeout（deadline 预算，零命令语义）；listenOnce 取消 → 录音/识别器全释放后再受理（无泄漏）；并发第二调用者 → Unavailable；RECORD_AUDIO 未授予 → Unavailable 且拉低 isAvailable；**任何错误不产生命令语义**（D5 红线同系统 actual）。真实人声命中与国行真机覆盖 = M1/M2 手动矩阵（vivo V2436A = 无系统服务代表机型） |
+| TC-AE-28 | **引擎回退代理（裁决 E3，2026-09-14，app 单测·JVM，手写 Fake 双引擎）**：主引擎可用性级硬失败（返回 `Unavailable` 且拉低自身 `isAvailable`）→ **同窗内**改用备引擎、以剩余预算调用（窗口总时长不变）、返回备引擎结果；降级进程内粘滞——后续窗口主引擎**零调用**、直连备引擎；主引擎正常（Hit/Timeout）→ 备引擎零调用（GMS 机零变化）；并发守卫触发的 `Unavailable`（不拉低 `isAvailable`）→ 不回退、如实透传；剩余预算 ≤ 0 → `Timeout`（不调备引擎、零命令语义）；双引擎皆硬失败 → `Unavailable` 且代理 `isAvailable=false`（§9 双引擎皆不可用行）；`isAvailable` 投影——降级前随主引擎、降级后随备引擎；任何路径不产生命令语义（D5 红线）。真实坏服务机型（vivo V2436A 蓝心 Copilot = 注册 `RecognitionService` 但绑定即硬失败）= M1/M2 手动矩阵 |
+| TC-AE-29 | **系统引擎响应看门狗（裁决 E4，2026-09-14；androidTest·模拟器 + vivo M1 手动）**：健康服务安静窗口**零误触**——静默 listenOnce → Timeout 且 `isAvailable` 保持 true（回调持续到达，看门狗不判死；既有静默用例扩展断言）；僵尸服务路径（零回调 → 1500ms 判死 → HardFailure → 拉低 `isAvailable` → E3 同窗回退 Vosk）无法自动化伪造死服务 = vivo V2436A M1 手动矩阵实证（日志链：watchdog 判死 → VB-Vosk onResult text=…）；判死不产生命令语义（D5 红线）。两 actual 全链路识别日志（onResults/onError/看门狗/onResult 文本）为诊断辅助，非断言对象 |
 
 > **TC-AE 编号裁决（L5，2026-09-05）**：沿用 TEST_PLAN/ROADMAP 既有 `TC-<模块>-<序号>` 体系，新增自 TC-AE-13 顺序递增（后续新增从 TC-AE-20 起）；**不设 Phase 专属第二编号体系**。
 
@@ -161,7 +164,7 @@
 | FR-9 | TC-LE-07/08/11、TC-DB-05/07 |
 | FR-10 | TC-AE-01/02 |
 | FR-11 | TC-AE-07/08/09 |
-| FR-12 | TC-AE-03/06/25/26 |
+| FR-12 | TC-AE-03/06/25/26/27/28/29 |
 | FR-13 | TC-AC 全组 |
 | FR-14 | TC-IMP 全组 |
 | FR-15 | TC-UI 设置、TC-LE-02 |
@@ -185,6 +188,19 @@
 | 权限流 | 麦克风拒绝 → 降级路径可用（NFR-8） |
 | 大文件真机 | 5 万行 GBK 真机导入时长 + 取消 |
 | 熄屏/后台 | 会话状态与音频焦点行为符合预期 |
+
+### 7.1 Phase 5 真机验收（M1–M4，ROADMAP Phase 5 出口，裁决 D-E）
+
+详细步骤、口径与设备记录见 `docs/reports/PHASE_5_REAL_DEVICE_ACCEPTANCE_CHECKLIST.md`（2026-09-13，基线 `7ccb04c`）。
+**必须由用户本人真机执行；AVD 无真人输入与 zh-CN 离线识别包，不能代替 M1/M2。结果由用户回填——不预填、不伪造。**
+**2026-09-14 更新（裁决 E1/E2）**：识别引擎新增内置离线兜底后，M1–M4 须在搭载新引擎的包上执行；vivo V2436A（系统无 RecognitionService）为内置引擎路径的代表验收机型，有系统服务的机型回归 M1/M4 验证系统路径行为不变。**同日更新（裁决 E3）**：vivo 实测存在"注册了 `RecognitionService` 但绑定即硬失败"的厂商服务（蓝心 Copilot）——此类机型走**窗口内回退**路径（首窗当场切内置引擎），M1–M4 口径不变（UI 与直连内置引擎路径不可区分）。
+
+| 项 | 场景 | 门禁 | Manual Acceptance Result |
+|---|---|---|---|
+| M1 | 正常语音命令：授权 → 重启（进程内不自动恢复为设计语义）→ 窗口内说「会了」→ 恰一次掌握 + 立即下一词；同窗重复命令（语音后补按钮 / 按钮后补语音）不重复 advance | 全步骤符合预期 | ☐ PASS ☐ FAIL（待真机执行） |
+| M2 | 识别率：安静环境、明确发音，三别名 会了/记住了/掌握了 各 ≥10 次 | 命中率 = 命中次数 / 总说命令次数 ≥ 90%（Timeout 不计分母） | ☐ PASS ☐ FAIL（待真机执行） |
+| M3 | 权限拒绝：新装拒绝 → 不崩溃 + 整窗降级倒计时 + 「会了」按钮仍可用；重启后绝不自动申请权限 | 全步骤符合预期 | ☐ PASS ☐ FAIL（待真机执行） |
+| M4 | 无后台监听：Playing 期间零麦克风指示；窗口内监听属正常；Pause/Exit/离开学习屏即消失 | 窗口外零麦克风活动 | ☐ PASS ☐ FAIL（待真机执行） |
 
 ## 8. CI 计划（Phase 1 落地）
 
@@ -211,3 +227,8 @@
 | 1.6 | 2026-09-05 | Phase 4 Step 3（Android 音频后端）落地：新增 TC-AE-20 Media3 后端契约 / TC-AE-21 TTS 后端契约（环境自适应）/ TC-AE-22 编排器↔真实后端冒烟 A–D；TC-AE-16 注记平台侧 androidTest 已交付、编排器级广播随 UI Step |
 | 1.7 | 2026-09-06 | Phase 4 Step 4（学习会话 UI）落地：新增 TC-AE-23 ViewModel 投影/转发单测（真实编排器 + Fake 端口；映射 A–F + 转发 G–K + BOOK_DELETED L + 生命周期 M + Error 投影 + 冲突「放弃旧的」公开 API 序列）/ TC-AE-24 UI 冒烟 A–I（真实 App 全链路）。TC-AE-16 的编排器级焦点状态广播因本 Step 范围约束（禁改 Media3AudioPlayer / AudioPlayer 端口契约）未接入，维持 Known Limitation |
 | 1.8 | 2026-09-12 | Phase 5 Step 1（语音命令 / 「会了」交互，裁决 D1–D5）落地：TC-AE-04/05/06/10 标注已交付（commonTest + app 层三层同语义）；TC-AE-12「按钮可用」子句闭合；新增 **TC-AE-25** 语音命令编排器集成（同窗双入口至多一次掌握、D5 红线逐条、TTS 期间零识别调用互证）与 **TC-AE-26**「会了」交互端到端（VM 单测 + AndroidSpeechCommandRecognizer actual 契约 + UI 冒烟 I/J；权限拒绝 = PermissionDeniedSpeechInstrumentedTest 单类隔离运行两段式确定性执行法；运行时 pm revoke 杀进程故全套件禁止；真实人声 = 手动矩阵）；TC-AE-24 冒烟字母表修正（A–H，BOOK_DELETED 独立归 TC-AE-15）；FR-7/FR-12 验收映射更新 |
+| 1.9 | 2026-09-13 | Phase 5 收尾（决策 D-A…D-E，checkpoint commit `7ccb04c`）：§7.1 新增 Phase 5 真机验收 **M1–M4 Manual Acceptance Result 占位**（详细 checklist 见 `docs/reports/PHASE_5_REAL_DEVICE_ACCEPTANCE_CHECKLIST.md`；结果等用户真机执行后回填，不预填不伪造）；自动化交付项维持 v1.8 标注不变。同日 PROJECT_SPEC v1.4 对齐 FR-12 别名验收口径（D-B ↔ 裁决 D4：别名可配置延期至 Phase 8，Phase 5 = 固定代码常量三别名全命中） |
+| 2.0 | 2026-09-14 | **需求变更（用户裁决 E1/E2）：语音命令须支持中国大陆发售的所有安卓手机**（PROJECT_SPEC v1.5 / AUDIO_ENGINE_SPEC v1.3）。新增 **TC-AE-27** 内置离线引擎（Vosk）actual 契约 + 引擎选择逻辑（系统在场→系统 actual 零变化；缺席→Vosk；app 单测选择逻辑 + androidTest actual 契约；真实人声/国行机型 = M1/M2 手动矩阵）；FR-12 追踪映射 +TC-AE-27；§7.1 注记 M1–M4 须在搭载新引擎的包上执行（vivo V2436A = 内置引擎代表机型） |
+| 2.1 | 2026-09-14 | **裁决 E3（引擎回退代理）**：新增 **TC-AE-28**（app 单测·JVM，Fake 双引擎——同窗回退剩余预算/进程内降级粘滞/GMS 零变化/并发守卫不回退/剩余预算 ≤0 → Timeout/双引擎皆败 → Unavailable/isAvailable 投影）；FR-12 映射 +28；§7.1 增坏服务机型（vivo 蓝心 Copilot）走窗口内回退路径注记。上游：PROJECT_SPEC v1.6 / AUDIO_ENGINE_SPEC v1.4 |
+| 2.2 | 2026-09-14 | **裁决 E4（系统引擎响应看门狗）**：新增 **TC-AE-29**（androidTest 零误触断言扩展进既有静默用例 + vivo 僵尸服务路径 M1 手动实证；两 actual 全链路识别日志）；FR-12 映射 +29。上游：PROJECT_SPEC v1.7 / AUDIO_ENGINE_SPEC v1.5 |
+| 2.3 | 2026-09-14 | **解析归一化缺陷修复（E4 后真机日志定位）**：TC-AE-10 增**分词空格**用例——Vosk 中文模型按字分词输出「会 了」，归一化原只 trim 首尾导致精确匹配未命中（识别成功却零掌握）；AUDIO_ENGINE_SPEC v1.6 §7 归一化改**去除全部空白**（别名/识别文本同函数，精确匹配语义不变） |
