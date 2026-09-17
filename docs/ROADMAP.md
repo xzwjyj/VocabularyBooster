@@ -13,8 +13,8 @@
 | **1（已完成，2026-09-01，见 docs/reports/PHASE_1_REPORT.md；待用户验收确认）** | 环境安装 + 工程引导（KMP 骨架） | 环境安装 |
 | **2（已完成，2026-09-03，见 docs/reports/PHASE_2_REPORT.md；待用户验收确认）** | 数据层 + 生词本基础 | 1 |
 | **3（已完成，2026-09-04，见 docs/reports/PHASE_3_REPORT.md；最终验收 PASS）** | 学习引擎（纯逻辑，无音频） | 2 |
-| 4 | 播放引擎（TTS + 控制） | 3 |
-| 5 | 语音命令（"会了"） | 4 |
+| **4（已完成，Step 0–4 分步验收，2026-09-11；并入 Phase 5 checkpoint `7ccb04c`，见 docs/reports/PHASE_4_STEP_4_REPORT.md）** | 播放引擎（TTS + 控制） | 3 |
+| **5（已完成，2026-09-18，见 docs/reports/PHASE_5_REPORT.md；M1–M4 真机统计延后——用户裁决）** | 语音命令（"会了"） | 4 |
 | 6 | 勋章 | 3（事件）|
 | 7 | TXT 导入 | 2 |
 | 8 | 设置与打磨（i18n / 无障碍 / 性能） | 4–7 |
@@ -66,6 +66,7 @@
 **交付**：`AndroidSpeechCommandRecognizer` actual；命令窗口接入编排器；`CommandParser` + 别名设置；屏幕"会了"按钮；`RECORD_AUDIO` 权限流与降级路径。
 **收尾范围修订（2026-09-14，用户需求变更 + 裁决 E1/E2）**：语音命令须支持**中国大陆发售的所有安卓手机**——实测 vivo V2436A（Android 16）系统无任何标准 RecognitionService，系统 `SpeechRecognizer` 路径在国行主流机型不可用。新增交付：**App 内置离线识别引擎（Vosk + 中文小模型打包进 APK）**作为系统服务缺席时的兜底 actual（§8 双 actual + E2 选择规则：系统服务在场优先、行为零变化）；编排器/解析器/掌握语义零改动。**同日增补（裁决 E3）**：真机诊断证明 vivo 存在"注册了 `RecognitionService` 但绑定即硬失败"的厂商服务（蓝心 Copilot，探测被骗）→ 增交付**引擎回退代理**（主引擎窗口内可用性级失败 → 当场回退内置引擎完成同窗剩余预算 + 进程内降级主引擎；GMS 机零变化；E2 启动探测保留）。**二次增补（裁决 E4）**：坏服务另有静默死法（零回调零错误挂至窗口超时，E3 未触发、用户命令词被吞）→ 系统 actual 增**响应看门狗**（1500ms 零回调判死 → 按可用性级失败上报 → E3 同窗回退；GMS 零误触）。口径见 PROJECT_SPEC v1.7、AUDIO_ENGINE_SPEC v1.5。
 **出口**：TC-AE-04…06、10、27/28/29 绿；真机识别率达标（安静环境 ≥ 90% 命中；含无系统服务及坏服务国行机型走内置引擎/窗口内回退路径）；FR-7/FR-12 验收。
+**收尾（2026-09-18，用户裁决）**：自动化出口全绿（TC-AE-04…06、10、25…29，明细见 `PHASE_5_STEP_1_REPORT.md` §11/§14 与各 commit 门禁记录）；真机 vivo V2436A 多轮**取证性实测**（E3/E4 链路、近音证据链、轻声三窗取证——checklist 2026-09-14…18 记录）；**M1–M4 正式统计延后**：用户裁决当前语音效果自评够用，先交付 MVP，正式统计（≥90% 命中率）留待后续迭代按 checklist 原样补跑、结果不预填。收尾报告 `docs/reports/PHASE_5_REPORT.md`。
 
 ## Phase 6 — 勋章
 
@@ -115,3 +116,4 @@
 | 1.5 | 2026-09-14 | **Phase 5 收尾范围修订（用户需求变更 + 裁决 E1/E2）：语音命令须支持中国大陆发售的所有安卓手机**——新增内置离线识别引擎（Vosk + 中文小模型打包 APK）兜底 actual 与引擎选择规则（系统服务在场优先零变化）；出口 +TC-AE-27、真机验收覆盖无系统服务国行机型（vivo V2436A 代表）。详见 PROJECT_SPEC v1.5 / AUDIO_ENGINE_SPEC v1.3 / TEST_PLAN v2.0 |
 | 1.6 | 2026-09-14 | **裁决 E3（窗口内引擎回退）**：vivo 真机诊断——蓝心 Copilot 服务注册 `RecognitionService`（E2 探测被骗返回 true）但绑定即硬失败 = 「语音命令不可用」根因；Phase 5 收尾增交付引擎回退代理（TC-AE-28），出口 +28、真机覆盖坏服务机型。详见 PROJECT_SPEC v1.6 / AUDIO_ENGINE_SPEC v1.4 / TEST_PLAN v2.1 |
 | 1.7 | 2026-09-14 | **裁决 E4（系统引擎响应看门狗）**：E3 后真机复测暴露坏服务静默死法（零回调零错误→窗口超时，用户说「会了」被吞）；系统 actual 增响应看门狗（1500ms 零回调判死→E3 同窗回退，GMS 零误触），出口 +TC-AE-29。详见 PROJECT_SPEC v1.7 / AUDIO_ENGINE_SPEC v1.5 / TEST_PLAN v2.2 |
+| 1.8 | 2026-09-18 | **Phase 4/5 标记完成 + M1–M4 延后（用户裁决）**：Phase 4 Step 0–4 分步验收后并入 Phase 5 checkpoint（`7ccb04c`）；Phase 5 以 MVP 口径收尾（自动化出口全绿 + vivo 取证性实测；真机 M1–M4 正式统计延后至后续迭代——用户裁决语音效果自评够用，先交付 MVP；补跑按 checklist 原样执行、结果不预填）。收尾报告 `docs/reports/PHASE_5_REPORT.md`；TEST_PLAN v2.11 §7.1 同步注记 |
