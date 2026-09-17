@@ -78,6 +78,11 @@ class VoskSpeechCommandRecognizerInstrumentedTest {
         delay(500) // 首调用已持有会话守卫（模型加载/监听中）
         job.cancelAndJoin() // 取消 = cancel 录音线程 + finally 全释放（§3 pause/按钮/exit 的真实路径）
 
+        // 取消 = 正常生命周期，绝不当故障：不拉低 isAvailable（2026-09-17 vivo 回归——取消曾被
+        // 兜底 catch 吞成 Unavailable+拉低 → 回退代理误判主引擎硬失败 → 粘滞降级到坏服务系统引擎，
+        // 后续窗口全降级零识别）
+        assertTrue("取消不是故障，不得拉低 isAvailable", recognizer.isAvailable.value)
+
         // 守卫解锁回归：紧接的 listenOnce 正常受理（若守卫未释放则 Unavailable——即回归）
         val result = withTimeout(45_000) { recognizer.listenOnce(windowMs = 1_000) }
         assertEquals(RecognitionResult.Timeout, result)

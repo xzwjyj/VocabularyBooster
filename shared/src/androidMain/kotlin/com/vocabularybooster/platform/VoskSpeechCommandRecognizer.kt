@@ -7,6 +7,7 @@ import android.os.Process
 import com.vocabularybooster.speech.RecognitionResult
 import com.vocabularybooster.speech.SpeechCommandRecognizer
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -86,6 +87,11 @@ public class VoskSpeechCommandRecognizer(
                 // 库未按时回调（音频读取卡死等）→ 兜底终局；外层取消（按钮/暂停/退出）照常传播，不吞
                 currentCoroutineContext().ensureActive()
                 RecognitionResult.Timeout
+            } catch (e: CancellationException) {
+                // 外层取消（按钮/暂停/退出/dispose 关窗）是端口契约内的正常生命周期：重抛（协程契约）。
+                // 绝不按故障处理——若在此拉低 isAvailable，回退代理会把取消误判为主引擎硬失败，
+                // 进程内粘滞降级到备引擎（坏服务机型 = 后续窗口全降级零识别，2026-09-17 vivo 实证）。
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("VB-Vosk", "listenOnce unexpected failure", e)
                 _isAvailable.value = false
