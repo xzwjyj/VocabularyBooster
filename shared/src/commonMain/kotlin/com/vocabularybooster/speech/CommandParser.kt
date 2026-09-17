@@ -84,12 +84,13 @@ public class CommandParser {
          * 首/末字近音结构规则（AUDIO_ENGINE_SPEC §7 v2.0，用户裁决 2026-09-17）：
          * key = 归一化别名、value =（首字近音集, 末字近音集）——识别文本首字命中前者**或**末字命中
          * 后者即判命中该别名。字符集 = 白名单实证误听字的全集：会 hui 族（Vosk 把「会」听成
-         * 坏/换/回/惠/汇）、了 le 族（了/啦/咯/来）。证据驱动扩集；Phase 8 随别名设置化一并扩展。
+         * 坏/换/回/惠/汇）、了 le 族（了/啦/咯/来/呀——「呀」为 2026-09-18 vivo 轻声实证
+         * 「会了」→「呀」元音 a/e 混淆增补）。证据驱动扩集；Phase 8 随别名设置化一并扩展。
          */
         public val STRUCTURAL_NEAR_CHARS_BY_ALIAS: Map<String, Pair<Set<Char>, Set<Char>>> = mapOf(
             "会了" to (
                 setOf('会', '坏', '换', '回', '惠', '汇') to
-                    setOf('了', '啦', '咯', '来')
+                    setOf('了', '啦', '咯', '来', '呀')
                 ),
         )
     }

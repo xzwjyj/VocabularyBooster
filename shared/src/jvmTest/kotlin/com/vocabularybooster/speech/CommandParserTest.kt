@@ -118,6 +118,8 @@ class CommandParserTest {
     fun tailCharNearLeHits() {
         assertEquals(VoiceCommand.MASTERED, parser.parse("了", aliases, enabled)) // 单字：末字了
         assertEquals(VoiceCommand.MASTERED, parser.parse("了 了", aliases, enabled)) // vivo 实测 23:26 h 声母丢失
+        assertEquals(VoiceCommand.MASTERED, parser.parse("呀", aliases, enabled)) // vivo 实测 2026-09-18 05:36 轻声「会了」→「呀」元音混淆
+        assertEquals(VoiceCommand.MASTERED, parser.parse("好呀", aliases, enabled)) // 末字呀随 2026-09-18 扩集命中（与 X了/会X 同级取舍）
         assertEquals(VoiceCommand.MASTERED, parser.parse("会了吗", aliases, enabled)) // 原疑问形式守卫，随裁决翻转（首字会）
         assertEquals(VoiceCommand.MASTERED, parser.parse("我觉得这个词已经会了", aliases, enabled)) // 原非精确守卫，随裁决翻转（末字了）
         assertEquals(VoiceCommand.MASTERED, parser.parse("會了", aliases, enabled)) // 繁体也兜不住：規則只看首/末字，末字了命中（原繁体守卫随裁决失效）
