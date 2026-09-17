@@ -5,9 +5,10 @@ import kotlin.test.assertEquals
 
 /**
  * CommandParser 测试（AUDIO_ENGINE_SPEC §7 / TEST_PLAN TC-AE-10）：
- * 别名 / 大小写 / 全角 / 带标点 / 分词空格（Vosk 中文按字分词）/ 近音兜底白名单 → MASTERED；
- * 未知（含空文本、噪音、繁体、前导标点、未启用、白名单外近形短语）→ UNKNOWN。
- * 精确匹配 + 近音白名单（无任意模糊 NLP）；partial 结果不进解析（端口契约，编排器侧不送入）。
+ * 别名 / 大小写 / 全角 / 带标点 / 分词空格（Vosk 中文按字分词）/ 近音兜底白名单 /
+ * 首/末字近音结构规则（v2.0：首字≈会 或 末字≈了 → 命中）→ MASTERED；
+ * 未知（含空文本、繁体、未启用、首尾字均不在近音集的无关短语）→ UNKNOWN。
+ * 精确匹配 + 近音白名单 + 结构规则（无任意模糊 NLP）；partial 结果不进解析（端口契约，编排器侧不送入）。
  */
 class CommandParserTest {
 
@@ -87,15 +88,14 @@ class CommandParserTest {
         assertEquals(VoiceCommand.MASTERED, parser.parse("回 了", aliases, enabled)) // 分词伪影 + 近音
         assertEquals(VoiceCommand.MASTERED, parser.parse("会来", aliases, enabled)) // 同族 huì-lái
         assertEquals(VoiceCommand.MASTERED, parser.parse("坏 了", aliases, enabled)) // 分词伪影 + 近音
+        assertEquals(VoiceCommand.MASTERED, parser.parse("了 了", aliases, enabled)) // vivo 实测 23:26「会了」→「了了」（h 声母丢失，boost 窗口）
         assertEquals(VoiceCommand.MASTERED, parser.parse("记住啦", aliases, enabled))
         assertEquals(VoiceCommand.MASTERED, parser.parse("掌握咯", aliases, enabled))
     }
 
     @Test
     fun nearHomophonesDoNotLeakIntoUnrelatedPhrases() {
-        assertEquals(VoiceCommand.UNKNOWN, parser.parse("你好", aliases, enabled)) // 无关短语不误杀（D5）
-        assertEquals(VoiceCommand.UNKNOWN, parser.parse("坏", aliases, enabled)) // 单字误听残片不在白名单（「会」为别名自身截断、性质不同，见上）
-        assertEquals(VoiceCommand.UNKNOWN, parser.parse("会了吗", aliases, enabled)) // 疑问形式不在白名单
+        assertEquals(VoiceCommand.UNKNOWN, parser.parse("你好", aliases, enabled)) // 无关短语不误杀（D5）：你∉会近音集、好∉了近音集
     }
 
     @Test
@@ -104,14 +104,43 @@ class CommandParserTest {
         assertEquals(VoiceCommand.UNKNOWN, parser.parse("坏了", setOf("Got it"), enabled))
     }
 
+    // —— 首/末字近音结构规则（§7 v2.0，用户裁决 2026-09-17：首字≈会 或 末字≈了 → 命中「会了」）——
+
+    @Test
+    fun headCharNearHuiHits() {
+        assertEquals(VoiceCommand.MASTERED, parser.parse("坏", aliases, enabled)) // 单字残片：首字坏（原 UNKNOWN 守卫，随裁决翻转）
+        assertEquals(VoiceCommand.MASTERED, parser.parse("换", aliases, enabled)) // 单字残片：首字换
+        assertEquals(VoiceCommand.MASTERED, parser.parse("汇啊", aliases, enabled)) // 首字近音 + 任意尾字
+        assertEquals(VoiceCommand.MASTERED, parser.parse("回呀", aliases, enabled))
+    }
+
+    @Test
+    fun tailCharNearLeHits() {
+        assertEquals(VoiceCommand.MASTERED, parser.parse("了", aliases, enabled)) // 单字：末字了
+        assertEquals(VoiceCommand.MASTERED, parser.parse("了 了", aliases, enabled)) // vivo 实测 23:26 h 声母丢失
+        assertEquals(VoiceCommand.MASTERED, parser.parse("会了吗", aliases, enabled)) // 原疑问形式守卫，随裁决翻转（首字会）
+        assertEquals(VoiceCommand.MASTERED, parser.parse("我觉得这个词已经会了", aliases, enabled)) // 原非精确守卫，随裁决翻转（末字了）
+        assertEquals(VoiceCommand.MASTERED, parser.parse("會了", aliases, enabled)) // 繁体也兜不住：規則只看首/末字，末字了命中（原繁体守卫随裁决失效）
+    }
+
+    @Test
+    fun structuralRuleStillRejectsUnrelated() {
+        assertEquals(VoiceCommand.UNKNOWN, parser.parse("你好", aliases, enabled)) // 首尾字均不在近音集
+        assertEquals(VoiceCommand.UNKNOWN, parser.parse("hello", aliases, enabled))
+    }
+
+    @Test
+    fun structuralRuleIsScopedToHuiLeAlias() {
+        // 结构规则同白名单按别名归集：自定义别名集不适用
+        assertEquals(VoiceCommand.UNKNOWN, parser.parse("坏", setOf("Got it"), enabled))
+    }
+
     // —— 未命中 → UNKNOWN（不误触发，TC-AE-10 未知行 / §9 不误杀）——
 
     @Test
     fun unrelatedTextIsUnknown() {
         assertEquals(VoiceCommand.UNKNOWN, parser.parse("你好", aliases, enabled))
         assertEquals(VoiceCommand.UNKNOWN, parser.parse("hello", aliases, enabled))
-        assertEquals(VoiceCommand.UNKNOWN, parser.parse("我觉得这个词已经会了", aliases, enabled)) // 非精确 = 不命中
-        assertEquals(VoiceCommand.UNKNOWN, parser.parse("會了", aliases, enabled)) // 繁体：无简繁映射（规格未定义）
     }
 
     @Test
@@ -125,7 +154,10 @@ class CommandParserTest {
 
     @Test
     fun leadingPunctuationDoesNotHit() {
-        assertEquals(VoiceCommand.UNKNOWN, parser.parse("，会了", aliases, enabled)) // §7 只忽略「末尾」
+        // §7 只忽略「末尾」标点：前导标点不剥 → 整串不再精确等值。中文「，会了」经结构规则末字「了」
+        // 仍命中（v2.0 裁决，见 tailCharNearLeHits）；纯精确语义（无结构规则的别名）用拉丁别名断言。
+        assertEquals(VoiceCommand.MASTERED, parser.parse("，会了", aliases, enabled)) // 前导标点 + 末字了 → 结构命中
+        assertEquals(VoiceCommand.UNKNOWN, parser.parse("，got it", setOf("Got it"), enabled)) // 前导标点阻断精确等值
     }
 
     @Test

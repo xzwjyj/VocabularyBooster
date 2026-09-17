@@ -92,7 +92,7 @@
 | TC-AE-07 | Pause/Resume：文件段恢复 offsetMs 精确；TTS 段重读本段（段索引不变、词索引不变） |
 | TC-AE-08 | Pause/Resume 于窗口态 → 重开整窗 |
 | TC-AE-09 | Next / Replay：不改掌握状态；词级重置正确 |
-| TC-AE-10 | 命令解析：别名/大小写/全角/带标点/**分词空格**（Vosk 中文按字分词「会 了」，2026-09-14 vivo 实测修复）/**近音兜底白名单**（「坏了」「换了」「回来」及断字截断「会」等按命中处理，2026-09-16 vivo 实测「会了」→「坏了」/「回来」/「会」零掌握修复）→ MASTERED；未知（噪音/繁体/前导标点/白名单外近形短语「你好」「会了吗」、单字误听残片「坏」）→ UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
+| TC-AE-10 | 命令解析：别名/大小写/全角/带标点/**分词空格**（Vosk 中文按字分词「会 了」，2026-09-14 vivo 实测修复）/**近音兜底白名单**（「坏了」「换了」「回来」及断字截断「会」「了了」（h 声母丢失，2026-09-17 vivo 实测）等按命中处理，2026-09-16 vivo 实测「会了」→「坏了」/「回来」/「会」零掌握修复）/**首/末字近音结构规则**（「会了」：首字∈{会,坏,换,回,惠,汇} 或 末字∈{了,啦,咯,来} 即命中，v2.0 用户裁决 2026-09-17——单字残片「坏」「了」、「会了吗」「…会了」句式、h 声母丢失「了了」全覆盖；守卫翻转：「会了吗」「我觉得这个词已经会了」「，会了」及繁体「會了」（末字=了）原 UNKNOWN → 现 MASTERED）→ MASTERED；未知（空文本/首尾字均不在近音集「你好」「hello」/自定义别名集不适用结构规则与白名单）→ UNKNOWN（**Phase 5 Step 1 已交付**：CommandParser 纯 JVM 单测 + 编排器集成同断言） |
 | TC-AE-11 | 双语切换：EN 段 en-US、CN 段 zh-CN 的 speak 请求逐段正确（rate/pitch 取设置；SPELLING 0.8×） |
 | TC-AE-12 | 降级（**P4/P5 拆分，裁决 L7**）：P4 断言——例句音频加载失败 → 该段 TTS 朗读 sentence 兜底、会话不中断；识别不接入（L1）→ CommandWindow 倒计时模式；「手动'会了'按钮可用」子句已随 Phase 5 Step 1 按钮交付（TC-AE-25/26） |
 | TC-AE-13 | 位置持久化生命周期（AUDIO §5 / NFR-3）：段切换/暂停即写 `playback.position`；恢复读回词/段/offsetMs；会话 COMPLETED/ABANDONED 后键清除；close/reopen 真库重启续播（JVM integration + restart） |
@@ -234,3 +234,5 @@
 | 2.3 | 2026-09-14 | **解析归一化缺陷修复（E4 后真机日志定位）**：TC-AE-10 增**分词空格**用例——Vosk 中文模型按字分词输出「会 了」，归一化原只 trim 首尾导致精确匹配未命中（识别成功却零掌握）；AUDIO_ENGINE_SPEC v1.6 §7 归一化改**去除全部空白**（别名/识别文本同函数，精确匹配语义不变） |
 | 2.4 | 2026-09-16 | **需求变更（用户裁决）：「会了」近音误听按命中处理**（M1 真机复测驱动——Vosk 小模型把「会了」听成「坏了」，说完命令倒计时走满零掌握）。TC-AE-10 增**近音兜底白名单**用例（坏了/换了/会啦/记住啦/掌握咯 → MASTERED）+ 防误杀守卫用例（你好/坏（单字）/会了吗 → UNKNOWN；自定义别名集无近音兜底）。上游：PROJECT_SPEC v1.8（FR-12 验收口径）；下游同步：AUDIO_ENGINE_SPEC v1.7 §7（`NEAR_HOMOPHONES_BY_ALIAS`） |
 | 2.5 | 2026-09-17 | **Vosk actual 取消语义回归锁定（vivo 真机定位）**：TC-AE-27 增断言——`listenOnce` 取消后 `isAvailable` 保持 true（回归：取消曾被兜底 catch 吞成 Unavailable+拉低 → E3 代理粘滞降级坏服务引擎，后续窗口全降级零识别，2026-09-17 21:56 vivo 实证）。真机验收 checklist 增铁律 8（切后台自动暂停 = 设计行为，恢复播放后语音才有效，M2 不计分母）与铁律 9（vivo `adb install -r` 重置 RECORD_AUDIO，装包后预期重走授权+重启一轮）。下游同步：AUDIO_ENGINE_SPEC v1.8 §8 |
+| 2.6 | 2026-09-17 | **近音白名单证据增补**：TC-AE-10 +「了 了」用例（2026-09-17 23:26 vivo 实测「会了」→「了了」，h 声母丢失；boost 窗口首句 UNKNOWN → 同窗第二句预算不足零识别）。上游：AUDIO_ENGINE_SPEC v1.9 §7 |
+| 2.7 | 2026-09-17 | **需求变更（用户裁决）：首/末字近音结构规则**：TC-AE-10 增结构规则用例组（headCharNearHuiHits / tailCharNearLeHits / structuralRuleStillRejectsUnrelated / structuralRuleIsScopedToHuiLeAlias）+ **守卫翻转**（「会了吗」「我觉得这个词已经会了」「，会了」「坏（单字）」及繁体「會了」（末字=了）原 UNKNOWN → 现 MASTERED；前导标点精确语义断言改用拉丁别名）。上游：PROJECT_SPEC v1.9（FR-12）、AUDIO_ENGINE_SPEC v2.0 §7（`STRUCTURAL_NEAR_CHARS_BY_ALIAS`） |
