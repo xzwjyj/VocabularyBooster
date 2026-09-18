@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.vocabularybooster.data.SqlDelightAchievementRepository
 import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
 import com.vocabularybooster.data.SqlDelightPlaybackContentRepository
@@ -147,7 +148,14 @@ class BookDeletedRecoveryUiSmokeTest {
 
         val exited = AtomicBoolean(false)
         val viewModel = runBlocking {
-            withContext(Dispatchers.Main.immediate) { LearningSessionViewModel(orchestrator) } // 全新编排器 = 进程重建
+            withContext(Dispatchers.Main.immediate) {
+                // Phase 6 三参（仪式页快照）：独立栈补齐勋章仓储 + 事件总线（BOOK_DELETED 路径不触及）
+                LearningSessionViewModel(
+                    orchestrator,
+                    SqlDelightAchievementRepository(database),
+                    DefaultDomainEventBus(),
+                )
+            } // 全新编排器 = 进程重建
         }
         rule.setContent {
             LearningSessionScreen(bookId = targetBookId, onExit = { exited.set(true) }, viewModel = viewModel)

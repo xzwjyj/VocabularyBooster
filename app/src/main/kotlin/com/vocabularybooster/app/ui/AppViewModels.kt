@@ -9,12 +9,14 @@ import androidx.lifecycle.viewModelScope
 import com.vocabularybooster.app.di.ImportEngineFactory
 import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.DefinitionSelection
+import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SaveWordRequest
 import com.vocabularybooster.domain.model.Word
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import com.vocabularybooster.domain.model.WordDetail
 import com.vocabularybooster.domain.repository.AchievementRepository
+import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.WordBookDeletionException
 import com.vocabularybooster.domain.repository.WordBookRepository
 import com.vocabularybooster.domain.repository.WordRepository
@@ -360,4 +362,113 @@ sealed interface ImportUiState {
     data class Report(val report: ImportReport) : ImportUiState
 
     data class Failed(val message: String) : ImportUiState
+}
+
+/**
+ * 设置页（FR-15，Phase 8）：五项快照加载 + 变更即时持久化（无保存按钮）；
+ * 范围校验在端口（铁律 2），失败只提示并回滚显示（回显当前持久值）。
+ * 生效时机由既有读取点保证：开关/语速/音调下一 Segment、窗口时长下一窗口、
+ * groupSize 仅新会话（FR-6 第 4 条，UI 固定提示）。
+ */
+class SettingsViewModel(
+    private val settingsRepository: LearningSettingsRepository,
+) : ViewModel() {
+
+    var loaded by mutableStateOf(false)
+        private set
+
+    /** 持久值（回滚显示的基准）；[groupSizeText] 是输入框的显示态。 */
+    var groupSize by mutableStateOf(LearningSettingsRepository.DEFAULT_GROUP_SIZE)
+        private set
+    var groupSizeText by mutableStateOf(LearningSettingsRepository.DEFAULT_GROUP_SIZE.toString())
+        private set
+    var commandWindowMs by mutableStateOf(LearningSettingsRepository.DEFAULT_COMMAND_WINDOW_MS)
+        private set
+    var toggles by mutableStateOf(PlaybackToggles.DEFAULT)
+        private set
+    var ttsRate by mutableStateOf(LearningSettingsRepository.DEFAULT_TTS_RATE)
+        private set
+    var ttsPitch by mutableStateOf(LearningSettingsRepository.DEFAULT_TTS_PITCH)
+        private set
+    var message by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        viewModelScope.launch {
+            runCatching {
+                groupSize = settingsRepository.getGroupSize()
+                groupSizeText = groupSize.toString()
+                commandWindowMs = settingsRepository.getCommandWindowMs()
+                toggles = settingsRepository.getPlaybackToggles()
+                ttsRate = settingsRepository.getTtsRate()
+                ttsPitch = settingsRepository.getTtsPitch()
+            }.onFailure { message = "设置加载失败：${it.message}" }
+            loaded = true
+        }
+    }
+
+    /** groupSize 文本输入：可解析为整数即转发端口持久化（范围由端口裁决）；空/非数字只更新显示。 */
+    fun onGroupSizeChange(text: String) {
+        groupSizeText = text
+        val value = text.trim().toIntOrNull() ?: return
+        viewModelScope.launch {
+            runCatching { settingsRepository.setGroupSize(value) }
+                .onSuccess {
+                    groupSize = value
+                    message = null
+                }
+                .onFailure { e ->
+                    message = "保存失败：${e.message}"
+                    groupSizeText = groupSize.toString()
+                }
+        }
+    }
+
+    /** 窗口时长滑条变更（命名避开 var 属性的 JVM setter 签名）。 */
+    fun onWindowChange(value: Long) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setCommandWindowMs(value) }
+                .onSuccess {
+                    commandWindowMs = value
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    /** 六项播放开关整组更新（UI 侧 copy 单字段；全关不拦截——会话开始时裁决，LE spec §3）。 */
+    fun updateToggles(value: PlaybackToggles) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setPlaybackToggles(value) }
+                .onSuccess {
+                    toggles = value
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    /** 语速滑条变更。 */
+    fun onRateChange(value: Float) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setTtsRate(value) }
+                .onSuccess {
+                    ttsRate = value
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    /** 音调滑条变更。 */
+    fun onPitchChange(value: Float) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setTtsPitch(value) }
+                .onSuccess {
+                    ttsPitch = value
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
 }

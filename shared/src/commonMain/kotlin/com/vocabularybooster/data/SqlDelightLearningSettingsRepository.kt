@@ -7,13 +7,15 @@ import com.vocabularybooster.domain.repository.RepositoryValidationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
  * LearningSettingsRepository 的 SQLDelight 实现（Phase 3 Step 4，FR-15）。
  * 读 AppSetting KV（valueJson = kotlinx-serialization JSON，DATABASE_SCHEMA §2.11）：
  * 键缺失 → 内置默认值；值损坏（JSON 非法/超范围）→ [RepositoryValidationException]
- * （不静默吞损坏数据）。设置写入属 Phase 8 设置页，本实现只读。
+ * （不静默吞损坏数据）。写方法自 Phase 8 设置页：同范围校验、拒绝越界写入，
+ * `upsertSetting` 落库（query 自 Phase 1 在位——零迁移）。
  */
 public class SqlDelightLearningSettingsRepository(
     private val database: VocabularyDatabase,
@@ -76,6 +78,40 @@ public class SqlDelightLearningSettingsRepository(
             throw RepositoryValidationException("ttsPitch 必须 > 0：$value（key=$TTS_PITCH_KEY）")
         }
         value
+    }
+
+    // —— Phase 8 设置页写路径：校验镜像读侧（同范围拒绝），JSON 编码 + upsertSetting ——
+
+    override suspend fun setGroupSize(value: Int): Unit = withContext(dispatcher) {
+        if (value < 1) {
+            throw RepositoryValidationException("groupSize 必须 ≥ 1：$value（key=$GROUP_SIZE_KEY）")
+        }
+        database.appSettingQueries.upsertSetting(GROUP_SIZE_KEY, json.encodeToString(value))
+    }
+
+    override suspend fun setPlaybackToggles(value: PlaybackToggles): Unit = withContext(dispatcher) {
+        database.appSettingQueries.upsertSetting(PLAYBACK_TOGGLES_KEY, json.encodeToString(value))
+    }
+
+    override suspend fun setCommandWindowMs(value: Long): Unit = withContext(dispatcher) {
+        if (value <= 0L) {
+            throw RepositoryValidationException("commandWindowMs 必须 > 0：$value（key=$COMMAND_WINDOW_KEY）")
+        }
+        database.appSettingQueries.upsertSetting(COMMAND_WINDOW_KEY, json.encodeToString(value))
+    }
+
+    override suspend fun setTtsRate(value: Float): Unit = withContext(dispatcher) {
+        if (value <= 0f) {
+            throw RepositoryValidationException("ttsRate 必须 > 0：$value（key=$TTS_RATE_KEY）")
+        }
+        database.appSettingQueries.upsertSetting(TTS_RATE_KEY, json.encodeToString(value))
+    }
+
+    override suspend fun setTtsPitch(value: Float): Unit = withContext(dispatcher) {
+        if (value <= 0f) {
+            throw RepositoryValidationException("ttsPitch 必须 > 0：$value（key=$TTS_PITCH_KEY）")
+        }
+        database.appSettingQueries.upsertSetting(TTS_PITCH_KEY, json.encodeToString(value))
     }
 
     private companion object {

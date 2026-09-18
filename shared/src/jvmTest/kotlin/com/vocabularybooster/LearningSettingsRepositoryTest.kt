@@ -14,6 +14,8 @@ import kotlin.test.assertFailsWith
  * 新增 commandWindowMs / ttsRate / ttsPitch 三读取——缺键默认、存量读取、
  * 损坏值按既有设置仓储语义失败（RepositoryValidationException，不静默吞损坏数据）；
  * Phase 3 既有 groupSize / playbackToggles 语义回归不变。
+ * Phase 8 写路径：五 setter 往返（文件库 close/reopen 验证持久化）、
+ * 越界写拒绝且原值不变、upsert 覆盖旧值。
  */
 class LearningSettingsRepositoryTest {
 
@@ -85,5 +87,55 @@ class LearningSettingsRepositoryTest {
         assertFailsWith<RepositoryValidationException> { repo.getGroupSize() }
         db.database.appSettingQueries.upsertSetting("settings.groupSize", "broken")
         assertFailsWith<RepositoryValidationException> { repo.getGroupSize() }
+    }
+
+    // —— Phase 8 写路径（FR-15 即时持久化）——
+
+    @Test
+    fun writesRoundTripAcrossReopen() = runTest {
+        val db = TestDb.file()
+        val repo = newRepo(db)
+        repo.setGroupSize(7)
+        repo.setCommandWindowMs(6_000L)
+        repo.setTtsRate(1.25f)
+        repo.setTtsPitch(0.9f)
+        repo.setPlaybackToggles(PlaybackToggles(pronunciation = false, exampleCn = false))
+        db.close()
+
+        val reopened = TestDb.fileExisting(db.path!!)
+        val reread = newRepo(reopened)
+        assertEquals(7, reread.getGroupSize())
+        assertEquals(6_000L, reread.getCommandWindowMs())
+        assertEquals(1.25f, reread.getTtsRate())
+        assertEquals(0.9f, reread.getTtsPitch())
+        assertEquals(PlaybackToggles(pronunciation = false, exampleCn = false), reread.getPlaybackToggles())
+        reopened.close()
+    }
+
+    @Test
+    fun outOfRangeWritesAreRejectedAndLeaveStoredValueIntact() = runTest {
+        val repo = newRepo(TestDb.inMemory())
+        repo.setGroupSize(5)
+        repo.setCommandWindowMs(5_000L)
+        repo.setTtsRate(1.5f)
+        repo.setTtsPitch(1.2f)
+
+        assertFailsWith<RepositoryValidationException> { repo.setGroupSize(0) }
+        assertFailsWith<RepositoryValidationException> { repo.setCommandWindowMs(0L) }
+        assertFailsWith<RepositoryValidationException> { repo.setTtsRate(0f) }
+        assertFailsWith<RepositoryValidationException> { repo.setTtsPitch(-1f) }
+
+        assertEquals(5, repo.getGroupSize())
+        assertEquals(5_000L, repo.getCommandWindowMs())
+        assertEquals(1.5f, repo.getTtsRate())
+        assertEquals(1.2f, repo.getTtsPitch())
+    }
+
+    @Test
+    fun upsertOverwritesPreviousValue() = runTest {
+        val repo = newRepo(TestDb.inMemory())
+        repo.setCommandWindowMs(6_000L)
+        repo.setCommandWindowMs(8_000L)
+        assertEquals(8_000L, repo.getCommandWindowMs())
     }
 }

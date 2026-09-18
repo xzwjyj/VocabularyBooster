@@ -228,6 +228,27 @@ internal class FakeLearningSettingsRepository(
     override suspend fun getCommandWindowMs(): Long = commandWindowMs
     override suspend fun getTtsRate(): Float = ttsRate
     override suspend fun getTtsPitch(): Float = ttsPitch
+
+    // Phase 8 写路径 Fake：直写字段（范围校验的权威测试在 jvmTest 真实仓储）
+    override suspend fun setGroupSize(value: Int) {
+        groupSize = value
+    }
+
+    override suspend fun setPlaybackToggles(value: PlaybackToggles) {
+        playbackToggles = value
+    }
+
+    override suspend fun setCommandWindowMs(value: Long) {
+        commandWindowMs = value
+    }
+
+    override suspend fun setTtsRate(value: Float) {
+        ttsRate = value
+    }
+
+    override suspend fun setTtsPitch(value: Float) {
+        ttsPitch = value
+    }
 }
 
 /**

@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +30,7 @@ import com.vocabularybooster.app.ui.BookDetailScreen
 import com.vocabularybooster.app.ui.ImportScreen
 import com.vocabularybooster.app.ui.LearningSessionScreen
 import com.vocabularybooster.app.ui.LookupScreen
+import com.vocabularybooster.app.ui.SettingsScreen
 import com.vocabularybooster.app.ui.WordBooksScreen
 import com.vocabularybooster.app.ui.WordDetailScreen
 
@@ -36,6 +38,7 @@ import com.vocabularybooster.app.ui.WordDetailScreen
  * Phase 2 主界面：两 Tab（查词 / 生词本）+ 词条详情 / 本详情覆盖层。
  * Phase 4 Step 4：+ 学习会话全屏覆盖层（生词本详情 → 开始学习）。
  * Phase 6：+ 第三 Tab（勋章墙，FR-13）。
+ * Phase 8：+ 第四 Tab（设置，FR-15）。
  * 简单状态导航（无 nav 依赖）；UI 只渲染状态 + 转发意图（ARCHITECTURE §4）。
  */
 class MainActivity : ComponentActivity() {
@@ -80,6 +83,12 @@ private fun VocabularyBoosterRoot() {
                         icon = { Icon(Icons.Filled.Star, contentDescription = null) },
                         label = { Text("勋章") },
                     )
+                    NavigationBarItem(
+                        selected = tab == 3,
+                        onClick = { tab = 3; openWordText = null; openBookId = null },
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                        label = { Text("设置") },
+                    )
                 }
             }
         },
@@ -105,7 +114,8 @@ private fun VocabularyBoosterRoot() {
                     onBookClick = { openBookId = it },
                     onImportClick = { showImport = true },
                 )
-                else -> AchievementsScreen()
+                tab == 2 -> AchievementsScreen()
+                else -> SettingsScreen()
             }
         }
     }

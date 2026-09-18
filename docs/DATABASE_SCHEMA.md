@@ -190,7 +190,9 @@ CREATE TABLE AppSetting (
 );
 ```
 
-内置键（与 PROJECT_SPEC FR-15 对应）：`settings.groupSize`(10)、`settings.commandWindowMs`(4000)、`settings.playbackToggles`（六项默认全开）、`settings.ttsRate`(1.0)、`settings.ttsPitch`(1.0)、`settings.masteredAliases`（["会了","记住了","掌握了"]）。
+内置键（与 PROJECT_SPEC FR-15 对应）：`settings.groupSize`(10)、`settings.commandWindowMs`(4000)、`settings.playbackToggles`（六项默认全开）、`settings.ttsRate`(1.0)、`settings.ttsPitch`(1.0)、`settings.masteredAliases`（["会了","记住了","掌握了"]，**预登记未启用**——别名可配置性再延后，PROJECT_SPEC v1.12；v1 别名取 `CommandParser` 代码常量）。
+
+> **写路径（Phase 8 启用）**：五键经 `LearningSettingsRepository` 写方法持久化（`upsertSetting` 自 Phase 1 在位，**零迁移**）；写侧范围校验镜像读侧（groupSize ≥1、commandWindowMs >0、ttsRate/ttsPitch >0，越界拒绝写入）。
 
 > 运行时键（非设置）：`playback.position`（AUDIO_ENGINE_SPEC §5，`PlaybackPosition` 序列化——段级恢复信息；**恢复双源优先级见 AUDIO §5 裁决 L3**：SessionWord.PLAYING 为词级真相源，本键不可反写播放位；会话终态清除）。KV 表新增键**免迁移**（Phase 4 Step 0 预登记，2026-09-05）。
 
@@ -318,3 +320,4 @@ UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId 
 | 1.5 | 2026-09-04 | Step 5D 验收裁决（交集语义）：Q5 注释明确复制集合 = 当前母本 WordBookEntry ∩ SessionWord(status != 'MASTERED')；新增 Q5d `countEffectiveRemaining`（query-only）——交集为 0 → 不建空 DERIVED 本（Case 3）；§4 WordBookDeriver 事务规则同步——**无 DDL 变更，schema 版本维持 v2，无迁移** |
 | 1.6 | 2026-09-05 | Phase 4 Step 0 预登记：§2.11 补运行时键 `playback.position` 注记（KV 免迁移，双源优先级引用 AUDIO §5 裁决 L3）；§3 新增 **Q4b `selectSelectedExamples`**（播放例句装配，query-only 计划项，随 Phase 4 实施）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.7 | 2026-09-18 | Phase 7 落地回写：§3 新增 **Q6 `updateEntryPendingTranslation`**（导入补写译文，query-only）；§4 导入事务规则对齐实现——分块草案改为**单一大事务**（延迟建本空本防线 + entryOrder 续接 + 取消/失败整体回滚，见 IMPORT_SPEC v1.1 §5）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
+| 1.8 | 2026-09-18 | Phase 8 落地注记：§2.11 写路径启用（五设置键经端口写方法 + `upsertSetting`，写侧校验镜像读侧）+ `settings.masteredAliases` 标注预登记未启用（别名可配置性再延后，PROJECT_SPEC v1.12）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |

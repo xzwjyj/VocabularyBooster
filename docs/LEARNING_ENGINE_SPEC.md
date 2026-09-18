@@ -166,6 +166,8 @@ interface LearningEngine {
 - §5 / §7 / §8 的规则全部实现为纯函数（输入 SessionWord 快照 → 输出决定），状态变更薄封装在其上；
 - 测试要求：§10 十一条边界 + 100 词 ×10 组循环推进 + 派生内容一致性断言，全部 JVM commonTest。
 
+> **设置端口注记**：引擎只经 `LearningSettingsRepository` 取设置（不直读 SQLDelight / Android）；写方法自 Phase 8 设置页提供（FR-15 即时持久化，范围校验在端口实现）——写入无失效广播，生效时机由既有读取点天然满足（groupSize 会话开始固化，开关/语速/音调每段、commandWindowMs 每窗重读）。
+
 ---
 
 | 版本 | 日期 | 变更 |
@@ -175,3 +177,4 @@ interface LearningEngine {
 | 1.2 | 2026-09-03 | Phase 3 规格对齐：§8 分支 B 对齐 schema v2（Q5b 释义关系 + Q5c 例句选择逐 ID 复制，移除已废弃的 includeExamples 表述）；§3 新增 ACTIVE 会话唯一性引擎不变量（不改 schema）；§5 明确 v1 不产生 SKIPPED |
 | 1.3 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§8 步骤 3 明确派生集合 = **当前母本仍存在 entries ∩ 本会话 SessionWord(status != MASTERED)**（Q5 原文语义；entryOrder/pendingTranslation 恒取自母本行）；新增 **effectiveRemaining 空集规则**——分支 B 交集为空 → 不创建空 DERIVED 本（Case 3），会话仍 ABANDONED、derivedWordBookId = null；SessionExited 括注同步 |
 | 1.4 | 2026-09-18 | Phase 6：§11 `ExitResult` 增 `sessionCompleted`（分支 C 首退 true / 幂等重入 false）+ 事件锚点语义说明（ADR-002 快照口径的 §8 全文对齐另循 ADR-002 工作流，本版不重复改写） |
+| 1.5 | 2026-09-18 | Phase 8：§12 增设置端口注记——`LearningSettingsRepository` 写方法自 Phase 8 设置页提供（FR-15 即时持久化；写路径权威校验在 jvmTest 真实仓储）；生效时机零引擎改动（groupSize 会话固化、开关/语速/音调每段、窗口每窗重读既有事实的文字化） |

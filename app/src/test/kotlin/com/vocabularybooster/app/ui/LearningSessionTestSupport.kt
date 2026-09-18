@@ -16,6 +16,7 @@ import com.vocabularybooster.domain.repository.GrantAchievementResult
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.PlaybackContentRepository
 import com.vocabularybooster.domain.repository.PlaybackPositionRepository
+import com.vocabularybooster.domain.repository.RepositoryValidationException
 import com.vocabularybooster.learning.AdvanceResult
 import com.vocabularybooster.learning.ExitResult
 import com.vocabularybooster.learning.LearningEngine
@@ -162,7 +163,11 @@ class FakeLearningEngine(
     }
 }
 
-/** 设置 Fake：默认仅 PRONUNCIATION 段（每词单段，VM 层时序断言的最小确定形态）。 */
+/**
+ * 设置 Fake：默认仅 PRONUNCIATION 段（每词单段，VM 层时序断言的最小确定形态）。
+ * Phase 8 写路径：直写字段；[failWrites] = true 时全部 setter 抛校验异常
+ * （SettingsViewModel 失败提示路径用，异常形态同真实仓储 RepositoryValidationException）。
+ */
 class FakeLearningSettingsRepository(
     var toggles: PlaybackToggles = PlaybackToggles(
         pronunciation = true,
@@ -172,12 +177,48 @@ class FakeLearningSettingsRepository(
         example = false,
         exampleCn = false,
     ),
+    var groupSize: Int = 10,
+    var commandWindowMs: Long = 4_000L,
+    var ttsRate: Float = 1.0f,
+    var ttsPitch: Float = 1.0f,
+    var failWrites: Boolean = false,
 ) : LearningSettingsRepository {
-    override suspend fun getGroupSize(): Int = 10
+    override suspend fun getGroupSize(): Int = groupSize
     override suspend fun getPlaybackToggles(): PlaybackToggles = toggles
-    override suspend fun getCommandWindowMs(): Long = 4_000L
-    override suspend fun getTtsRate(): Float = 1.0f
-    override suspend fun getTtsPitch(): Float = 1.0f
+    override suspend fun getCommandWindowMs(): Long = commandWindowMs
+    override suspend fun getTtsRate(): Float = ttsRate
+    override suspend fun getTtsPitch(): Float = ttsPitch
+
+    override suspend fun setGroupSize(value: Int) {
+        failIfRequested()
+        groupSize = value
+    }
+
+    override suspend fun setPlaybackToggles(value: PlaybackToggles) {
+        failIfRequested()
+        toggles = value
+    }
+
+    override suspend fun setCommandWindowMs(value: Long) {
+        failIfRequested()
+        commandWindowMs = value
+    }
+
+    override suspend fun setTtsRate(value: Float) {
+        failIfRequested()
+        ttsRate = value
+    }
+
+    override suspend fun setTtsPitch(value: Float) {
+        failIfRequested()
+        ttsPitch = value
+    }
+
+    private fun failIfRequested() {
+        if (failWrites) {
+            throw RepositoryValidationException("测试注入的写入失败")
+        }
+    }
 }
 
 /** 内容 Fake：每词一个仅 PRONUNCIATION 可播的极简词条（释义/例句空，L2 空词场景之外的常规路径）。 */

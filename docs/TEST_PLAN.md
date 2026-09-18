@@ -146,9 +146,15 @@
 | TC-ARCH-02 | app 模块无状态机/业务规则（Code owner review + 抽样 Konsist 断言） |
 | TC-ARCH-03 | 共享模块 public API 显式声明（explicitApiMode 编译通过） |
 
-### 4.8 TC-UI Android 界面（androidTest，少量关键）
+### 4.8 TC-UI Android 界面（androidTest / app 单测，少量关键）
 
 词条渲染顺序快照断言（FR-2）、播放控制条状态（六控制可用性矩阵）、生词本增删改流、保存释义选择流、勋章 ceremony 出现条件。
+
+**设置页（FR-15，Phase 8 已落地 ✅）**：
+- `SettingsViewModelTest`（app 单测·JVM，6 用例）：快照加载投影 / groupSize 合法输入即时持久化 / 非数字只更新显示不持久化 / 写失败中文提示且回滚显示持久值（Fake `failWrites` 注入）/ 开关整组即时持久化 / 窗口时长与语速·音调即时持久化；
+- `SettingsUiSmokeTest`（androidTest·模拟器，1 用例）：真实 MainActivity + 真实 Koin 图——第四 Tab 进入设置页 → 切换「拼写」开关 → AppSetting KV 内 JSON 即时含 `"spelling":false`；
+- 写路径权威校验（范围镜像读侧、close/reopen 往返、越界拒绝原值不变、upsert 覆盖）在 jvmTest `LearningSettingsRepositoryTest`（Phase 8 写路径组）；
+- TC-LE-02「中途改设置不影响现有会话」既有断言即 groupSize 仅新会话生效的锁定（设置页 UI 不重测引擎语义）。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
 
@@ -243,3 +249,4 @@
 | 2.11 | 2026-09-18 | **M1–M4 延后（用户裁决，非用例变更）**：§7.1 注记——当前语音效果用户自评够用（vivo 取证性实测），先交付 MVP，正式真机统计延后至后续迭代补跑；M1–M4 结果框保持空置（不预填、不伪造）。上游：ROADMAP v1.8（Phase 5 收尾）；收尾报告 `PHASE_5_REPORT.md` |
 | 2.12 | 2026-09-18 | **Phase 6 勋章用例落地**：§4.6 TC-AC-01…05 全组 ✅ 标记 + 口径对齐实现——01 增同本重学再完成；02 改 ADR-002 会话快照口径三形态（ACTIVE/伪 COMPLETED 带未掌握/未知会话）；03 改名/加词；04 真实授予后守卫拒绝（引擎级闭环）；05 编排器双完成路径（advance + exit 分支 C）事件到达时端口 stop 已发生。测试落点：`AchievementEngineTest`（jvmTest 集成）+ `PlaybackOrchestratorStateTest` 两条顺序用例 + `LearningEngineExitTest`/`LearningEngineExitIntegrationTest` sessionCompleted 断言 + app 侧 `WordBooksViewModelTest` 删书文案 3 例 + `LearningSessionViewModelTest` 仪式页 E2/E3。上游：ACHIEVEMENT_SPEC v1.1、LEARNING_ENGINE_SPEC v1.4、DOMAIN_MODEL v1.5 |
 | 2.13 | 2026-09-18 | **Phase 7 TXT 导入用例落地**：§4.5 TC-IMP-01…08 全组 ✅ 标记 + 测试落点——commonTest `EncodingDetectorTest`（8 用例）+ `LineParserTest`（11 用例）、jvmTest `ImportEngineTest`（6 用例：守恒+事件/四层去重/补写幂等/异常回滚/取消回滚/导入词可学 PRON+SPELL）+ `ImportPerfTest`（10 万行 ≤60s + 取消 ≤1s）；口径注记——GBK 解码性能与 BOM 剥离在平台 actual 侧（真机走查）、「回填清除」以「补写后不再覆盖」等价锁定。上游：IMPORT_SPEC v1.1、DATABASE_SCHEMA v1.7、DOMAIN_MODEL v1.6 |
+| 2.14 | 2026-09-18 | **Phase 8 设置页用例落地（方案 A：别名维持常量）**：§4.8 增设置页组——`SettingsViewModelTest`（app 单测 6：加载投影/合法即时持久化/非数字不落库/写失败提示+回滚显示/开关持久化/窗口与语速·音调持久化）+ `SettingsUiSmokeTest`（androidTest 1：开关变更 → KV JSON 即时落库）；写路径权威校验组记入 jvmTest `LearningSettingsRepositoryTest`（往返/越界拒绝原值不变/覆盖）；TC-LE-02 注记 = groupSize 仅新会话既有锁定。上游：PROJECT_SPEC v1.12（FR-15 验收行 + 别名再延后）、ROADMAP v1.9（Phase 8 收敛） |
