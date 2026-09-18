@@ -261,6 +261,11 @@ FROM WordBookEntry newWbe
 JOIN WordBookEntry oldWbe ON oldWbe.wordBookId = :sourceBookId AND oldWbe.wordId = newWbe.wordId
 JOIN WordBookEntryExampleSelection wes ON wes.wordBookEntryId = oldWbe.wordBookEntryId
 WHERE newWbe.wordBookId = :newBookId;
+
+-- Q6 TXT 导入补写译文（Phase 7，IMPORT_SPEC §4 规则 3：本内已有且 pendingTranslation 缺位 → 补写；
+-- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移）
+updateEntryPendingTranslation:
+UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId = ?;
 ```
 
 ## 4. 事务规则（必须原子，违反即 bug）
@@ -270,7 +275,7 @@ WHERE newWbe.wordBookId = :newBookId;
 | `MasteryMarker`（"会了"） | `UPDATE SessionWord → MASTERED` + `INSERT WordMastery`（同一事务，LEARNING_ENGINE_SPEC §6） |
 | `WordBookDeriver`（退出分支 B 派生） | 母本存在守卫 → **Q5d `countEffectiveRemaining` 交集守卫（2026-09-04 裁决：为 0 → 不建空本，返回 null）** → `insertDerivedWordBook`（type=DERIVED + parentWordBookId + sourceSessionId）+ Q5 复制 entries（保留 entryOrder/pendingTranslation，恒取自母本行）+ 复制 WordBookEntryDefinition + 复制 WordBookEntryExampleSelection——全部或全无；**不复制** WordMastery（D4）。会话终态（terminate）独立事务，不与本事务合并 |
 | 收藏保存（FR-5） | Word upsert（首次）+ N×`WordBookEntry` + M×`WordBookEntryDefinition` + K×`WordBookEntryExampleSelection`（M/K 均可部分选择，PROJECT_SPEC v1.3） |
-| 导入（FR-14） | 分块事务：每块（如 500 行）成功才提交；取消/失败 → 已提交块保留**或**整体回滚（见 IMPORT_SPEC §6：v1 整体回滚） |
+| 导入（FR-14） | **单一大事务**（v1 落地，IMPORT_SPEC §5）：建本（延迟到首条 entry）+ N×`INSERT Word`（新词）+ M×`INSERT WordBookEntry`（新 entry，entryOrder 续接 maxEntryOrder）+ Q6 补写译文——全部或全无；取消（协程取消，每 256 行 ensureActive）/任何失败 → 整体回滚，目标本零残留 |
 | 勋章授予 | `INSERT OR IGNORE` + 唯一索引兜底（幂等，FR-13） |
 | 会话创建 | `INSERT LearningSession` + N×`INSERT SessionWord` |
 
@@ -312,3 +317,4 @@ WHERE newWbe.wordBookId = :newBookId;
 | 1.4 | 2026-09-03 | Phase 3 规格对齐注记：§2.8 ACTIVE 唯一性为引擎不变量（不设 DB 约束）；§2.9 SKIPPED 预留 v1 不产生——**无 DDL 变更，schema 版本维持 v2** |
 | 1.5 | 2026-09-04 | Step 5D 验收裁决（交集语义）：Q5 注释明确复制集合 = 当前母本 WordBookEntry ∩ SessionWord(status != 'MASTERED')；新增 Q5d `countEffectiveRemaining`（query-only）——交集为 0 → 不建空 DERIVED 本（Case 3）；§4 WordBookDeriver 事务规则同步——**无 DDL 变更，schema 版本维持 v2，无迁移** |
 | 1.6 | 2026-09-05 | Phase 4 Step 0 预登记：§2.11 补运行时键 `playback.position` 注记（KV 免迁移，双源优先级引用 AUDIO §5 裁决 L3）；§3 新增 **Q4b `selectSelectedExamples`**（播放例句装配，query-only 计划项，随 Phase 4 实施）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
+| 1.7 | 2026-09-18 | Phase 7 落地回写：§3 新增 **Q6 `updateEntryPendingTranslation`**（导入补写译文，query-only）；§4 导入事务规则对齐实现——分块草案改为**单一大事务**（延迟建本空本防线 + entryOrder 续接 + 取消/失败整体回滚，见 IMPORT_SPEC v1.1 §5）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |

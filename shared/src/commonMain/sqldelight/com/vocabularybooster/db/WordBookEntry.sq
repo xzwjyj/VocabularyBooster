@@ -32,6 +32,10 @@ SELECT MAX(entryOrder) FROM WordBookEntry WHERE wordBookId = ?;
 deleteEntryByWord:
 DELETE FROM WordBookEntry WHERE wordBookId = ? AND wordId = ?;
 
+-- —— Phase 7 TXT 导入（FR-14，IMPORT_SPEC §4 规则 3：补写译文，query-only）——
+updateEntryPendingTranslation:
+UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId = ?;
+
 -- 本内词条列表（含词文本，entryOrder 升序）
 selectEntryWordsForBook:
 SELECT wbe.wordBookEntryId, wbe.wordBookId, wbe.wordId, wbe.entryOrder, wbe.pendingTranslation, wbe.addedAt, w.text AS wordText

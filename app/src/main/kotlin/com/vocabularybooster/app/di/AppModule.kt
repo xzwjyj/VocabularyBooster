@@ -6,6 +6,7 @@ import com.vocabularybooster.app.speech.SpeechEngineKind
 import com.vocabularybooster.app.speech.SpeechEnginePolicy
 import com.vocabularybooster.app.ui.AchievementsViewModel
 import com.vocabularybooster.app.ui.BookDetailViewModel
+import com.vocabularybooster.app.ui.ImportViewModel
 import com.vocabularybooster.app.ui.LearningSessionViewModel
 import com.vocabularybooster.app.ui.LookupViewModel
 import com.vocabularybooster.app.ui.WordBooksViewModel
@@ -99,6 +100,8 @@ val appModule = module {
     viewModel { WordBooksViewModel(get()) }
     viewModel { BookDetailViewModel(get()) }
     viewModel { AchievementsViewModel(get()) } // Phase 6：勋章墙
+    single { ImportEngineFactory(androidContext(), get(), get(), get()) } // Phase 7：TXT 导入
+    viewModel { ImportViewModel(get(), get()) }
 
     // Phase 4 Step 4：学习会话屏——ViewModel 只委托应用级 PlaybackOrchestrator 单例
     viewModel { LearningSessionViewModel(get(), get(), get()) } // Phase 6：+ 勋章仓储/事件总线（仪式页快照）

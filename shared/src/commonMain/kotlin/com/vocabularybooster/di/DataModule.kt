@@ -1,6 +1,7 @@
 package com.vocabularybooster.di
 
 import com.vocabularybooster.data.SqlDelightAchievementRepository
+import com.vocabularybooster.data.SqlDelightImportRepository
 import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
 import com.vocabularybooster.data.SqlDelightPlaybackContentRepository
@@ -19,6 +20,7 @@ import com.vocabularybooster.domain.repository.PlaybackContentRepository
 import com.vocabularybooster.domain.repository.PlaybackPositionRepository
 import com.vocabularybooster.domain.repository.WordBookRepository
 import com.vocabularybooster.domain.repository.WordRepository
+import com.vocabularybooster.importing.ImportRepository
 import com.vocabularybooster.platform.DatabaseDriverFactoryProvider
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -52,6 +54,10 @@ public val sharedDataModule: Module = module {
     }
     single<PlaybackContentRepository> {
         SqlDelightPlaybackContentRepository(database = get())
+    }
+    // Phase 7：TXT 导入仓储（单一大事务 + 整体回滚，IMPORT_SPEC §5）
+    single<ImportRepository> {
+        SqlDelightImportRepository(database = get())
     }
     single {
         SeedDictionaryProvider(SEED_DICTIONARY_JSON)

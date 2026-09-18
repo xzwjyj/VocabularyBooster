@@ -112,6 +112,10 @@ interface DatabaseDriverFactoryProvider { fun create(): SqlDriver }
 
 // 日志
 interface LogSink { fun log(level: LogLevel, tag: String, message: String, error: Throwable? = null) }
+
+// TXT 导入（IMPORT_SPEC §1，Phase 7）—— 文件访问为平台端口；检测/解析/去重/事务全在共享纯 Kotlin
+interface FileBytesSource { suspend fun readChunk(maxBytes: Int): ByteArray? }   // null = EOF
+interface TextLineSource { fun lines(encoding: DetectedEncoding): Flow<String> } // 解码用平台原生 charset
 ```
 
 平台实现矩阵：
@@ -123,6 +127,8 @@ interface LogSink { fun log(level: LogLevel, tag: String, message: String, error
 | `SpeechCommandRecognizer` | 系统 `SpeechRecognizer`（`EXTRA_PREFER_OFFLINE`，NFR-4）+ 响应看门狗（E4：1500ms 零回调判死）；**缺席时内置 Vosk 离线引擎兜底；在场但运行时可用性级失败（显式错误或看门狗判死）时窗口内回退 + 进程内降级**（E1/E2/E3/E4，2026-09-14，中文小模型打包 APK，DI 启动探测 + app 层回退代理，端口契约不变） | `SFSpeechRecognizer` |
 | `DatabaseDriverFactoryProvider` | `AndroidSqliteDriver` | `NSqliteDriver` |
 | `LogSink` | `android.util.Log` | `os_log` |
+| `FileBytesSource` | `ContentResolver` + `InputStream`（SAF Uri；无随机访问 → 每次读取重开流并跳到 offset，Phase 7） | `FileHandle` |
+| `TextLineSource` | `ContentResolver` + `InputStreamReader`（平台 charset 解码——UTF-8/UTF-16/GB18030，首行剥离 BOM） | `FileHandle` + `String(decodingAs:)` |
 
 ## 6. 分层职责与降级策略（错误处理）
 

@@ -115,18 +115,18 @@
 
 > **TC-AE 编号裁决（L5，2026-09-05）**：沿用 TEST_PLAN/ROADMAP 既有 `TC-<模块>-<序号>` 体系，新增自 TC-AE-13 顺序递增（后续新增从 TC-AE-20 起）；**不设 Phase 专属第二编号体系**。
 
-### 4.5 TC-IMP 导入（IMPORT_SPEC §9 九条边界）
+### 4.5 TC-IMP 导入（IMPORT_SPEC §9 九条边界，Phase 7 已落地 ✅）
 
 | ID | 用例 |
 |---|---|
-| TC-IMP-01 | UTF-8 / BOM / GB18030 样例逐字节断言（BOM 剥离） |
-| TC-IMP-02 | 六种分隔符 + 分隔符优先级 + 译文含逗号整段保留 |
-| TC-IMP-03 | 守恒断言：报告计数恒等式 |
-| TC-IMP-04 | 性能：10 万行 GBK 内存 Fake 源 ≤ 60s（JVM 基准）+ 取消 ≤1s 回滚 |
-| TC-IMP-05 | 去重三层：文件内/本内/全局复用（词行数不变） |
-| TC-IMP-06 | 非法行（数字/中文开头/超长）→ invalid + 样例收集 |
-| TC-IMP-07 | 事务：中途异常 → 目标本零变化 |
-| TC-IMP-08 | pendingTranslation 落库与回填清除后的状态 |
+| TC-IMP-01 ✅ | UTF-8 / BOM / GB18030 样例逐字节断言（BOM 剥离）——commonTest `EncodingDetectorTest`（8 用例：BOM×3 / UTF-8 严格含 overlong·代理区·超平面拒绝 / GB18030 双+四字节兜底 / 零容忍非法序列 / head 末尾截断容忍 / 空输入）；BOM **剥离**在 androidMain actual（`ContentResolverTextLineSource` 首行剥离），真机走查覆盖 |
+| TC-IMP-02 ✅ | 六种分隔符 + 分隔符优先级 + 译文含逗号整段保留——commonTest `LineParserTest`（11 用例：Tab/2+空格/单空格/半全角逗号/分号/冒号 + 优先级穿透与回退 + 译文整段含逗号 + 63/64 与 256/257 双边界 + 尾分隔符 trim） |
+| TC-IMP-03 ✅ | 守恒断言：报告计数恒等式——jvmTest `ImportEngineTest.conservationIdentityHoldsAndEventPublishedAfterCommit`（恒等式 + 单一 `ImportFinished` + 检测/解析 wiring） |
+| TC-IMP-04 ✅ | 性能：10 万行内存 Fake 源 ≤ 60s（JVM 基准，实测 ~3s）+ 取消 ≤1s 回滚——jvmTest `ImportPerfTest`（GBK 字节级解码在平台 actual 侧，JVM 基准以行源为准） |
+| TC-IMP-05 ✅ | 去重三层：文件内/本内/全局复用（词行数不变）——jvmTest `ImportEngineTest.dedupLayersSplitAcrossFileGlobalAndBookScopes`（四层分桶 + entryOrder 续接 + updated 计数） |
+| TC-IMP-06 ✅ | 非法行（数字/中文开头/超长）→ invalid + 样例收集——`LineParserTest` 非法分类组 + `ImportEngineTest` 守恒用例（invalid=3 计入恒等式；样例封顶 20 条由报告携带） |
+| TC-IMP-07 ✅ | 事务：中途异常 → 目标本零变化——jvmTest `ImportEngineTest.midStreamExceptionRollsBackEverythingAndPublishesNothing` + `cancellationMidImportRollsBackInPlace`（取消路径 + `ImportPerfTest` ≤1s 计时断言） |
+| TC-IMP-08 ✅ | pendingTranslation 落库与回填清除后的状态——jvmTest `ImportEngineTest.pendingTranslationBackfillsOnceAndNeverOverwrites`（缺位补写恰一次 / 已有译文永不覆盖 / 纯重复轮零事件）；「正式释义回填清除」= DictionaryProvider 未来 Phase，v1 以「补写后不再覆盖」等价锁定 |
 
 ### 4.6 TC-AC 勋章（ACHIEVEMENT_SPEC §6，Phase 6 已落地 ✅）
 
@@ -242,3 +242,4 @@
 | 2.10 | 2026-09-18 | **近音字集证据增补（用户裁决）**：TC-AE-10 末字集 +「呀」——自管管线轻声首测取证（vosk_diag.log 三窗：了[命中]/**呀[零掌握→本裁决]**/回来[命中]）：轻声「会了」（arm rms 2559）解码为单字「呀」（元音 a/e 弱音频混淆）；tailCharNearLeHits +「呀」「好呀」用例。上游：PROJECT_SPEC v1.11 / AUDIO_ENGINE_SPEC v2.3 |
 | 2.11 | 2026-09-18 | **M1–M4 延后（用户裁决，非用例变更）**：§7.1 注记——当前语音效果用户自评够用（vivo 取证性实测），先交付 MVP，正式真机统计延后至后续迭代补跑；M1–M4 结果框保持空置（不预填、不伪造）。上游：ROADMAP v1.8（Phase 5 收尾）；收尾报告 `PHASE_5_REPORT.md` |
 | 2.12 | 2026-09-18 | **Phase 6 勋章用例落地**：§4.6 TC-AC-01…05 全组 ✅ 标记 + 口径对齐实现——01 增同本重学再完成；02 改 ADR-002 会话快照口径三形态（ACTIVE/伪 COMPLETED 带未掌握/未知会话）；03 改名/加词；04 真实授予后守卫拒绝（引擎级闭环）；05 编排器双完成路径（advance + exit 分支 C）事件到达时端口 stop 已发生。测试落点：`AchievementEngineTest`（jvmTest 集成）+ `PlaybackOrchestratorStateTest` 两条顺序用例 + `LearningEngineExitTest`/`LearningEngineExitIntegrationTest` sessionCompleted 断言 + app 侧 `WordBooksViewModelTest` 删书文案 3 例 + `LearningSessionViewModelTest` 仪式页 E2/E3。上游：ACHIEVEMENT_SPEC v1.1、LEARNING_ENGINE_SPEC v1.4、DOMAIN_MODEL v1.5 |
+| 2.13 | 2026-09-18 | **Phase 7 TXT 导入用例落地**：§4.5 TC-IMP-01…08 全组 ✅ 标记 + 测试落点——commonTest `EncodingDetectorTest`（8 用例）+ `LineParserTest`（11 用例）、jvmTest `ImportEngineTest`（6 用例：守恒+事件/四层去重/补写幂等/异常回滚/取消回滚/导入词可学 PRON+SPELL）+ `ImportPerfTest`（10 万行 ≤60s + 取消 ≤1s）；口径注记——GBK 解码性能与 BOM 剥离在平台 actual 侧（真机走查）、「回填清除」以「补写后不再覆盖」等价锁定。上游：IMPORT_SPEC v1.1、DATABASE_SCHEMA v1.7、DOMAIN_MODEL v1.6 |

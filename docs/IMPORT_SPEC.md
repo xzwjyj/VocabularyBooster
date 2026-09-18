@@ -1,8 +1,9 @@
 # IMPORT_SPEC — TXT 导入规格
 
-> 状态：Phase 0 定稿 ｜ 版本 1.0 ｜ 日期：2026-09-01
+> 状态：Phase 7 已落地 ｜ 版本 1.1 ｜ 日期：2026-09-18
 > 上游：PROJECT_SPEC FR-14 ｜ 存储：DATABASE_SCHEMA §2.1 `Word`、§2.5 `WordBookEntry.pendingTranslation`
-> 位置：`shared/import/`，解析/去重/流程控制为纯 Kotlin；文件字节读取为平台端口。
+> 位置：`shared/commonMain/…/importing/`，解析/去重/流程控制为纯 Kotlin；文件字节读取为平台端口。
+> 落地注记：Kotlin 包名取 `importing`（`import` 是关键字，不可作包名）。
 
 ---
 
@@ -36,6 +37,9 @@ detect(head: ByteArray):
 
 - 不支持 Big5（非目标，简体场景）。
 - 决策只依赖头部字节 → 输出可复现，单测覆盖各编码样例文件。
+- **落地口径（v1.1）**：① 无「置信度」字段——BOM/UTF-8 严格校验/GB18030 三级瀑布输出确定性决策；
+  ② 第 4 步为**零容忍**（阈值 = 0）：head 内任一 GB18030 非法序列 → `Unsupported(reason)`，UI 呈现原因并终止（v1 不提供强制指定编码，用户须转存文件后重试）；
+  ③ head 末尾不完整多字节序列视为**截断**（head 是前缀切块，不算非法）——UTF-8 与 GB18030 同口径。
 
 ## 3. 行解析规则（LineParser，纯函数）
 
@@ -52,7 +56,7 @@ detect(head: ByteArray):
 
 1. **文件内去重**：按 `normalizedText` 首见保留，后续 → `duplicatesInFile++`；
 2. **全局复用**：`Word.normalizedText` 已存在 → 复用已有 `wordId`（不插新行），`reusedWords++`；
-3. **目标本去重**：`(wordBookId, wordId)` 已存在 → 跳过（`duplicatesInBook++`）；已存在但**本行带译文而库里 pendingTranslation 为空** → 补写译文（视为 `updated`）；
+3. **目标本去重**：`(wordBookId, wordId)` 已存在 → 跳过（`duplicatesInBook++`）；已存在但**本行带译文而库里 pendingTranslation 为空** → 补写译文（同时 `duplicatesInBook++` 与 `updated++`——`updated ⊆ duplicatesInBook`，v1.1 落地口径，守恒式见 §6）；
 4. 通过 → 插入 `WordBookEntry(entryOrder = 本内当前最大值+1, pendingTranslation = 译文)`，`imported++`。
 
 ## 5. 导入流程（ImportEngine）
@@ -62,14 +66,17 @@ chooseFile → chooseTargetBook(已有 | 新建名称)
    → readHead → EncodingDetector（失败 → §2 第 4 步交互）
    → preview：解析前 20 行（合法/非法标记）→ 用户确认
    → 执行导入：
-        lines(chunk 500 行/事务块)
-        对每行: LineParser → 去重 → SQL 批写
-        进度回调: linesRead / imported / errors（节流 100ms）
-        取消: 置 cancel 标志 → 当前块结束即回滚
-   → 结果: ImportReport(见 §6) → 事件 ImportFinished
+        lines(单一大事务内逐行流式)
+        对每行: LineParser → 去重 → SQL 写
+        进度回调: linesRead / imported / invalid（节流 100ms，注入 Clock）
+        取消: 协程取消 → 每 256 行 ensureActive → 事务回滚后向上传播
+   → 结果: ImportReport(见 §6) → 事件 ImportFinished（仅当 imported+reused+updated > 0）
 ```
 
-**事务策略（v1）**：整个导入 = **单一大事务**（10 万行内 SQLite 完全可行，速度优于分块提交）；取消 / 任何失败 → **整体回滚**，目标本保持导入前原样（DATABASE_SCHEMA §4）。
+**事务策略（v1，已落地）**：整个导入 = **单一大事务**（10 万行内 SQLite 完全可行，速度优于分块提交）；取消 / 任何失败 → **整体回滚**，目标本保持导入前原样（DATABASE_SCHEMA §4）。落地细节：
+- 事务载体 = `ImportRepository.withImportTransaction`（SQLDelight 同步事务 + `runBlocking(outerJob)` 桥接——外层协程取消经父 Job 传播至事务体内 `ensureActive`，回滚 ≤1s，铁律 10 时间全走注入 `Clock`）；
+- **新建本延迟创建**（空本防线）：目标本 id 在首条 entry 插入时才创建——全空 / 全非法 / 全重复文件**不建空本**（边界 #1/#2）；
+- 零有效写入（imported = reused = updated = 0）→ 不发布 `ImportFinished`。
 
 ## 6. ImportReport（结果报告，五项计数 + 样例）
 
@@ -126,3 +133,4 @@ data class ImportReport(
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
+| 1.1 | 2026-09-18 | Phase 7 落地回写：包名 `importing`（`import` 为关键字）；§2 落地口径（无置信度字段 / GB18030 零容忍阈值=0 / head 末尾截断容忍）；§4 `updated ⊆ duplicatesInBook` 口径；§5 流程图对齐实现（单一大事务 + 协程取消 ensureActive 每 256 行 + 进度三字段 + 延迟建本空本防线 + 零有效写入不发布事件）+ `withImportTransaction` 事务载体（runBlocking 父 Job 桥接） |

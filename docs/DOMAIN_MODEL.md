@@ -280,12 +280,12 @@ completion = masteredEntryCount / entryCount
 | `WordBookCompleted` ✅ v1 | sessionId, wordBookId | 勋章引擎（FR-13）、学习完成仪式页 |
 | `SessionExited` | sessionId, derivedWordBookId? | UI、统计 |
 | `AchievementUnlocked` ✅ v1 | achievementId, type(String), wordBookId? | UI（仪式页快照补填） |
-| `ImportFinished` | 目标本、五项计数报告 | UI、统计 |
+| `ImportFinished` ✅ v1 | targetWordBookId, imported, reusedWords, duplicatesInFile, duplicatesInBook, updated, invalid（六项计数；提交后仅当至少一行有效写入才发布，IMPORT_SPEC §5） | UI、统计 |
 | `PlaybackConfigChanged` | 开关集 | 播放编排器 |
 
 **落地形态（v1.5，Phase 6）**：分发载体 = shared 端口 `DomainEventBus`（`events: SharedFlow<DomainEvent>` + `publish`），
 默认实现 `DefaultDomainEventBus`（进程内 `MutableSharedFlow`，buffer 64 / DROP_OLDEST——发布绝不阻塞播放路径）；
-`DomainEvent` 为 `@Serializable sealed interface`。v1 实现上表两枚 ✅ 事件（✅ = 已落地，其余预留：
+`DomainEvent` 为 `@Serializable sealed interface`。v1 实现上表三枚 ✅ 事件（✅ = 已落地，其余预留：
 新增事件 = 加 sealed 子类，不改总线契约）；`AchievementUnlocked.type` 为 String（事件层不绑枚举）。
 
 ## 10. 领域服务（纯 Kotlin，归属 shared 包）
@@ -313,3 +313,4 @@ completion = masteredEntryCount / entryCount
 | 1.3 | 2026-09-03 | Phase 3 规格对齐：§2.9/§8.3 SKIPPED 裁决——v1 引擎不产生，保留为 schema 预留扩展状态；所有算法不依赖 |
 | 1.4 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§2.4 DERIVED「未掌握词快照」补边界——以退出时刻母本仍存在的 entry 为界（当前母本 WordBookEntry ∩ 本会话 SessionWord 非 MASTERED），交集为空不建空本；§10 WordBookDeriver 职责同步 |
 | 1.5 | 2026-09-18 | Phase 6 落地形态：§9 载荷对齐实现（WordBookCompleted = sessionId+wordBookId；AchievementUnlocked = achievementId+type(String)+wordBookId?）+ 落地形态段（DomainEventBus 端口 / DefaultDomainEventBus / ✅ 标记 v1 已实现两事件） |
+| 1.6 | 2026-09-18 | Phase 7 落地形态：§9 `ImportFinished` ✅——载荷对齐实现（targetWordBookId + 六项计数，原「五项计数报告」口径修正）；✅ 事件计数 两枚 → 三枚 |

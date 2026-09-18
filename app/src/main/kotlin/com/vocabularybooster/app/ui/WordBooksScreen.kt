@@ -29,10 +29,11 @@ import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookType
 import org.koin.androidx.compose.koinViewModel
 
-/** 生词本管理（FR-4）：列表 + 创建 / 重命名 / 删除 + 进入本详情。 */
+/** 生词本管理（FR-4）：列表 + 创建 / 重命名 / 删除 + 进入本详情 + TXT 导入入口（FR-14）。 */
 @Composable
 fun WordBooksScreen(
     onBookClick: (Long) -> Unit,
+    onImportClick: () -> Unit = {},
     viewModel: WordBooksViewModel = koinViewModel(),
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -42,6 +43,10 @@ fun WordBooksScreen(
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("生词本", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = onImportClick,
+                modifier = Modifier.testTag("import_entry"),
+            ) { Text("导入") }
             Button(onClick = { showCreateDialog = true }) { Text("新建") }
         }
         viewModel.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }

@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.vocabularybooster.app.ui.AchievementsScreen
 import com.vocabularybooster.app.ui.BookDetailScreen
+import com.vocabularybooster.app.ui.ImportScreen
 import com.vocabularybooster.app.ui.LearningSessionScreen
 import com.vocabularybooster.app.ui.LookupScreen
 import com.vocabularybooster.app.ui.WordBooksScreen
@@ -55,10 +56,11 @@ private fun VocabularyBoosterRoot() {
     var openWordText by rememberSaveable { mutableStateOf<String?>(null) }
     var openBookId by rememberSaveable { mutableStateOf<Long?>(null) }
     var learningBookId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showImport by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         bottomBar = {
-            if (learningBookId == null) {
+            if (learningBookId == null && !showImport) {
                 NavigationBar {
                     NavigationBarItem(
                         selected = tab == 0 && openWordText == null,
@@ -88,6 +90,7 @@ private fun VocabularyBoosterRoot() {
                     bookId = learningBookId!!,
                     onExit = { learningBookId = null },
                 )
+                showImport -> ImportScreen(onDone = { showImport = false })
                 openWordText != null -> WordDetailScreen(
                     wordText = openWordText!!,
                     onBack = { openWordText = null },
@@ -98,7 +101,10 @@ private fun VocabularyBoosterRoot() {
                     onStartLearning = { learningBookId = it },
                 )
                 tab == 0 -> LookupScreen(onWordClick = { openWordText = it })
-                tab == 1 -> WordBooksScreen(onBookClick = { openBookId = it })
+                tab == 1 -> WordBooksScreen(
+                    onBookClick = { openBookId = it },
+                    onImportClick = { showImport = true },
+                )
                 else -> AchievementsScreen()
             }
         }
