@@ -18,6 +18,7 @@ import com.vocabularybooster.data.seed.SEED_DICTIONARY_JSON
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
+import com.vocabularybooster.domain.event.DefaultDomainEventBus
 import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
 import com.vocabularybooster.learning.DefaultLearningEngine
@@ -105,6 +106,7 @@ class BookDeletedRecoveryUiSmokeTest {
                     // 真实识别 actual（未授予 RECORD_AUDIO → 窗口降级纯倒计时，本用例语义不受影响）
                     recognizer = AndroidSpeechCommandRecognizer(context),
                     commandParser = CommandParser(),
+                    eventBus = DefaultDomainEventBus(),
                     scope = scope,
                 )
             }

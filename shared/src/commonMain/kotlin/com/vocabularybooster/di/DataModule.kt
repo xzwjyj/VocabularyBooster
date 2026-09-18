@@ -1,5 +1,6 @@
 package com.vocabularybooster.di
 
+import com.vocabularybooster.data.SqlDelightAchievementRepository
 import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
 import com.vocabularybooster.data.SqlDelightPlaybackContentRepository
@@ -11,6 +12,7 @@ import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
 import com.vocabularybooster.domain.dictionary.DictionaryProvider
+import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.domain.repository.LearningSessionRepository
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.PlaybackContentRepository
@@ -37,6 +39,10 @@ public val sharedDataModule: Module = module {
     }
     single<LearningSessionRepository> {
         SqlDelightLearningSessionRepository(database = get(), clock = get())
+    }
+    // Phase 6：勋章仓储（表/索引自 schema v1 在位，零迁移）
+    single<AchievementRepository> {
+        SqlDelightAchievementRepository(database = get())
     }
     single<LearningSettingsRepository> {
         SqlDelightLearningSettingsRepository(database = get())

@@ -1,5 +1,7 @@
 package com.vocabularybooster.playback
 
+import com.vocabularybooster.domain.event.DomainEvent
+import com.vocabularybooster.domain.event.DomainEventBus
 import com.vocabularybooster.domain.model.SessionSnapshot
 import com.vocabularybooster.domain.model.SessionWord
 import com.vocabularybooster.domain.model.SessionWordStatus
@@ -70,6 +72,7 @@ public class PlaybackOrchestrator(
     private val synthesizer: SpeechSynthesizer,
     private val recognizer: SpeechCommandRecognizer,
     private val commandParser: CommandParser,
+    private val eventBus: DomainEventBus,
     private val scope: CoroutineScope,
 ) {
 
@@ -209,10 +212,13 @@ public class PlaybackOrchestrator(
     /**
      * Exit（§3 exit 行 / §8 退出三分支）：cancelAndJoin → 停端口 → 引擎 exitSession →
      * 清 playback.position → Stopped。终态重入幂等；Idle 无会话可退 = 安全 no-op 返回 null。
+     * 分支 C（sessionCompleted=true）→ 发布 WordBookCompleted（Phase 6；NonCancellable：
+     * 会话已终态化，COMPLETED 会话不可 resume——发布被取消截断则勋章无自愈重发路径）。
      */
     public suspend fun exit(): ExitResult = controlMutex.withLock {
         when (_state.value) {
-            PlaybackState.Completed, PlaybackState.Stopped -> return@withLock ExitResult(derivedWordBookId = null)
+            PlaybackState.Completed, PlaybackState.Stopped ->
+                return@withLock ExitResult(derivedWordBookId = null)
             else -> Unit
         }
         val sid = sessionId ?: return@withLock ExitResult(derivedWordBookId = null)
@@ -221,6 +227,9 @@ public class PlaybackOrchestrator(
         val result = engine.exitSession(sid)
         positionRepository.clear()
         _state.value = PlaybackState.Stopped
+        if (result.sessionCompleted) {
+            withContext(NonCancellable) { publishBookCompleted(sid) }
+        }
         result
     }
 
@@ -423,6 +432,12 @@ public class PlaybackOrchestrator(
 
     // —— 会话/词装载 ——
 
+    /**
+     * 当前（或最近一次接入的）会话所属生词本；未接入过会话 → null。
+     * 只读定位信息（Phase 6）：完成仪式页按书查 BOOK_COMPLETED 勋章用，不参与播放裁决。
+     */
+    public fun activeWordBookId(): Long? = sessionId?.let { sessionWordBookId }
+
     private fun adoptSession(snapshot: SessionSnapshot) {
         sessionId = snapshot.session.sessionId
         sessionWordBookId = snapshot.session.wordBookId
@@ -516,11 +531,25 @@ public class PlaybackOrchestrator(
         }
     }
 
-    /** 终态完成（TC-AE-14）：先停全部播放端口 → 清 playback.position（§5）→ 暴露 Completed。 */
+    /** 终态完成（TC-AE-14）：先停全部播放端口 → 清 playback.position（§5）→ 暴露 Completed →
+     *  发布完成事件（Phase 6，TC-AC-05：事件必须在端口停止之后）。 */
     private suspend fun finishAsCompleted() {
         stopPorts()
         positionRepository.clear()
         _state.value = PlaybackState.Completed
+        sessionId?.let { publishBookCompleted(it) }
+    }
+
+    /**
+     * 发布 WordBookCompleted（Phase 6，FR-8/TC-AC-05 顺序锚点）：
+     * 仅在 stopPorts 之后调用（[finishAsCompleted] / [exit] 分支 C 两锚点）。
+     * 重复发布（终态会话 resume → finishAsCompleted 重入）由消费侧防御复核 +
+     * 幂等授予兜住（ACHIEVEMENT_SPEC §2 三层幂等）。
+     */
+    private suspend fun publishBookCompleted(sid: Long) {
+        eventBus.publish(
+            DomainEvent.WordBookCompleted(sessionId = sid, wordBookId = sessionWordBookId),
+        )
     }
 
     // —— 端口与状态小工具 ——

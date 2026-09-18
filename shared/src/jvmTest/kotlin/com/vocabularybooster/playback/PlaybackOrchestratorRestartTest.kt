@@ -7,6 +7,7 @@ import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightPlaybackContentRepository
 import com.vocabularybooster.data.SqlDelightPlaybackPositionRepository
 import com.vocabularybooster.data.SqlDelightWordBookRepository
+import com.vocabularybooster.domain.event.DefaultDomainEventBus
 import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
 import com.vocabularybooster.learning.AdvanceResult
@@ -61,6 +62,7 @@ class PlaybackOrchestratorRestartTest {
             synthesizer = tts,
             recognizer = recognizer,
             commandParser = CommandParser(),
+            eventBus = DefaultDomainEventBus(),
             scope = scope,
         )
     }

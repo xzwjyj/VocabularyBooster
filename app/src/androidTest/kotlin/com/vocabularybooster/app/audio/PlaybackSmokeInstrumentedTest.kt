@@ -17,6 +17,7 @@ import com.vocabularybooster.data.seed.SEED_DICTIONARY_JSON
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
+import com.vocabularybooster.domain.event.DefaultDomainEventBus
 import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
 import com.vocabularybooster.learning.DefaultLearningEngine
@@ -108,6 +109,7 @@ class PlaybackSmokeInstrumentedTest {
                 synthesizer = synthesizer,
                 recognizer = AndroidSpeechCommandRecognizer(context),
                 commandParser = CommandParser(),
+                eventBus = DefaultDomainEventBus(),
                 scope = scope,
             )
             wordBookRepository = books

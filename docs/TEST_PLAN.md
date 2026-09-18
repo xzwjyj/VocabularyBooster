@@ -128,15 +128,15 @@
 | TC-IMP-07 | 事务：中途异常 → 目标本零变化 |
 | TC-IMP-08 | pendingTranslation 落库与回填清除后的状态 |
 
-### 4.6 TC-AC 勋章（ACHIEVEMENT_SPEC §6）
+### 4.6 TC-AC 勋章（ACHIEVEMENT_SPEC §6，Phase 6 已落地 ✅）
 
 | ID | 用例 |
 |---|---|
-| TC-AC-01 | 幂等重放：同一 `WordBookCompleted` 重放 N 次 → 恰一枚勋章 |
-| TC-AC-02 | 防御复核：书未完成却收到事件 → 丢弃不授予 |
-| TC-AC-03 | 快照不可变：授予后改名 / 派生 → payload 不变 |
-| TC-AC-04 | 删除拦截：有完成勋章的书调用删除 → 拒绝 |
-| TC-AC-05 | 授予顺序：发生在播放停止与会话 COMPLETED 之后（事件次序断言） |
+| TC-AC-01 ✅ | 幂等重放：同一 `WordBookCompleted` 重放 N 次 → 恰一枚勋章；同本重学再完成 → 仍恰一枚、`AchievementUnlocked` 恰一次（jvmTest 集成：真实 JDBC + 默认总线） |
+| TC-AC-02 ✅ | 防御复核（ADR-002 会话快照口径）：ACTIVE 会话 / 伪 COMPLETED 带未掌握词 / 未知会话 → 零授予 + WARN 留痕 |
+| TC-AC-03 ✅ | 快照不可变：授予后改名 / 加词 → payload 不变（书本体照常可改名） |
+| TC-AC-04 ✅ | 删除拦截：真实授予落行后调用删除 → `BOOK_HAS_COMPLETION_MEDAL` 拒绝 |
+| TC-AC-05 ✅ | 授予顺序锚点：编排器两条完成路径（advance 自然完成 / exit 分支 C）——事件到达时端口 stop 已发生（记录型订阅者在事件到达时采样 stopCount ≥1） |
 
 ### 4.7 TC-ARCH 架构守护
 
@@ -241,3 +241,4 @@
 | 2.9 | 2026-09-18 | **平台 actual 缺陷修正（非语义）**：TC-AE-27 注**冲刷双触发**——能量持续判据（连续 3 块越限才武装；单块噪声尖峰不武装/不重置尾静默——插桩静默窗实证底噪尖峰 150–204 越过固定门限 120）+ **假设稳定冲刷**（非空 partial 700ms 无改进即冲刷——诊断文件实证环境底噪 117–142 **持续**贴门限、能量尾静默永不积累 → 轻声冲刷失效 = 用户首词零识别候选根因；partial 仅作裁决信号，final-only 命令语义不变）——与**窗口事件诊断文件** `vosk_diag.log`（vivo logd 间歇整进程吞应用日志——用户首词失败测试会话零日志，取证对冲）。既有四用例语义不变。上游：AUDIO_ENGINE_SPEC v2.2 §8 |
 | 2.10 | 2026-09-18 | **近音字集证据增补（用户裁决）**：TC-AE-10 末字集 +「呀」——自管管线轻声首测取证（vosk_diag.log 三窗：了[命中]/**呀[零掌握→本裁决]**/回来[命中]）：轻声「会了」（arm rms 2559）解码为单字「呀」（元音 a/e 弱音频混淆）；tailCharNearLeHits +「呀」「好呀」用例。上游：PROJECT_SPEC v1.11 / AUDIO_ENGINE_SPEC v2.3 |
 | 2.11 | 2026-09-18 | **M1–M4 延后（用户裁决，非用例变更）**：§7.1 注记——当前语音效果用户自评够用（vivo 取证性实测），先交付 MVP，正式真机统计延后至后续迭代补跑；M1–M4 结果框保持空置（不预填、不伪造）。上游：ROADMAP v1.8（Phase 5 收尾）；收尾报告 `PHASE_5_REPORT.md` |
+| 2.12 | 2026-09-18 | **Phase 6 勋章用例落地**：§4.6 TC-AC-01…05 全组 ✅ 标记 + 口径对齐实现——01 增同本重学再完成；02 改 ADR-002 会话快照口径三形态（ACTIVE/伪 COMPLETED 带未掌握/未知会话）；03 改名/加词；04 真实授予后守卫拒绝（引擎级闭环）；05 编排器双完成路径（advance + exit 分支 C）事件到达时端口 stop 已发生。测试落点：`AchievementEngineTest`（jvmTest 集成）+ `PlaybackOrchestratorStateTest` 两条顺序用例 + `LearningEngineExitTest`/`LearningEngineExitIntegrationTest` sessionCompleted 断言 + app 侧 `WordBooksViewModelTest` 删书文案 3 例 + `LearningSessionViewModelTest` 仪式页 E2/E3。上游：ACHIEVEMENT_SPEC v1.1、LEARNING_ENGINE_SPEC v1.4、DOMAIN_MODEL v1.5 |

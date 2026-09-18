@@ -134,7 +134,9 @@ public class DefaultLearningEngine(
         val snapshot = sessionRepository.getSessionWithWords(sessionId)
             ?: throw RepositoryValidationException("会话不存在：sessionId=$sessionId")
         // 已终态（COMPLETED/ABANDONED）重复退出：幂等 no-op，零写入（endedAt 保持首次终态时刻）
-        if (snapshot.session.status != SessionStatus.ACTIVE) return ExitResult(derivedWordBookId = null)
+        if (snapshot.session.status != SessionStatus.ACTIVE) {
+            return ExitResult(derivedWordBookId = null) // sessionCompleted=false：首退已发过完成事件
+        }
         // 2026-09-15: 用 session snapshot 判断，不再查 Q3（实现"母本永远可学"）
         val terminal = if (CompletionDetector.isSessionComplete(snapshot.words)) {
             SessionStatus.COMPLETED // 分支 C：会话 snapshot 全部掌握
@@ -142,7 +144,9 @@ public class DefaultLearningEngine(
             SessionStatus.ABANDONED // 分支 A/B：保存会话状态与学习历史
         }
         sessionRepository.terminateSessionIfActive(sessionId, terminal)
-        if (terminal != SessionStatus.ABANDONED) return ExitResult(derivedWordBookId = null)
+        if (terminal != SessionStatus.ABANDONED) {
+            return ExitResult(derivedWordBookId = null, sessionCompleted = true) // 分支 C（Phase 6）
+        }
         return ExitResult(
             derivedWordBookId = wordBookDeriver.derive(snapshot.session, snapshot.words), // 分支 A/B（Step 5D）
         )

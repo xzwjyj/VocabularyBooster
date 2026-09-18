@@ -5,6 +5,8 @@ import com.vocabularybooster.FixedClock
 import com.vocabularybooster.TestDb
 import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightWordBookRepository
+import com.vocabularybooster.domain.event.DefaultDomainEventBus
+import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.model.DefinitionEntry
 import com.vocabularybooster.domain.model.Example
 import com.vocabularybooster.domain.model.ExampleSourceType
@@ -64,6 +66,7 @@ class PlaybackOrchestratorStateTest {
         val content = FakePlaybackContentRepository()
         val position = FakePlaybackPositionRepository()
         val recognizer = FakeSpeechCommandRecognizer() // 默认不可用 = P4 纯倒计时形态（本文件语义不变）
+        val eventBus = DefaultDomainEventBus() // Phase 6：完成事件（TC-AC-05 用例订阅）
         val orchestrator = PlaybackOrchestrator(
             engine = engine,
             contentRepository = content,
@@ -73,6 +76,7 @@ class PlaybackOrchestratorStateTest {
             synthesizer = tts,
             recognizer = recognizer,
             commandParser = CommandParser(),
+            eventBus = eventBus,
             scope = scope,
         )
     }
@@ -682,6 +686,73 @@ class PlaybackOrchestratorStateTest {
         assertEquals(SessionStatus.COMPLETED, h.sessionRepo.getSession(1L)!!.status)
         assertIs<PlaybackState.Stopped>(h.orchestrator.state.value)
         assertNull(h.orchestrator.exit().derivedWordBookId) // 幂等
+        assertEquals(SessionStatus.COMPLETED, h.sessionRepo.getSession(1L)!!.status)
+    }
+
+    // —— TC-AC-05：完成事件发布锚点（ACHIEVEMENT_SPEC v1.1 §3：先停端口、后发事件；两条完成路径）——
+
+    @Test
+    fun advanceCompletionPublishesEventAfterPortsStopped() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha"))
+        h.registerWords(bookId, wordIds, listOf("alpha"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+
+        val events = mutableListOf<DomainEvent>()
+        val stopsAtEvent = mutableListOf<Pair<Int, Int>>()
+        backgroundScope.launch {
+            h.eventBus.events.collect {
+                events += it
+                stopsAtEvent += h.tts.stopCount to h.audio.stopCount
+            }
+        }
+
+        advanceTimeBy(600 + 300) // 6 段 + guard → 窗口
+        runCurrent()
+        assertIs<MasteryResult.Marked>(h.engine.markMastered(1L, wordIds[0], MasterySource.VOICE)) // 快照全掌握
+        advanceTimeBy(4_000) // 窗口耗尽 → advance → BookComplete → finishAsCompleted
+        runCurrent()
+
+        val event = assertIs<DomainEvent.WordBookCompleted>(events.single())
+        assertEquals(1L, event.sessionId)
+        assertEquals(bookId, event.wordBookId)
+        val (ttsStops, audioStops) = stopsAtEvent.single()
+        assertTrue(ttsStops >= 1 && audioStops >= 1, "事件到达时端口必须已停：tts=$ttsStops audio=$audioStops")
+        assertIs<PlaybackState.Completed>(h.orchestrator.state.value)
+    }
+
+    @Test
+    fun exitBranchCPublishesEventAfterPortsStopped() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha"))
+        h.registerWords(bookId, wordIds, listOf("alpha"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+
+        val events = mutableListOf<DomainEvent>()
+        val stopsAtEvent = mutableListOf<Pair<Int, Int>>()
+        backgroundScope.launch {
+            h.eventBus.events.collect {
+                events += it
+                stopsAtEvent += h.tts.stopCount to h.audio.stopCount
+            }
+        }
+
+        assertIs<MasteryResult.Marked>(h.engine.markMastered(1L, wordIds[0], MasterySource.BUTTON))
+        val exitResult = h.orchestrator.exit() // 分支 C：Q3=0 → COMPLETED → NonCancellable 发布
+        assertEquals(true, exitResult.sessionCompleted)
+        runCurrent()
+
+        assertIs<DomainEvent.WordBookCompleted>(events.single()).let {
+            assertEquals(1L, it.sessionId)
+            assertEquals(bookId, it.wordBookId)
+        }
+        val (ttsStops, audioStops) = stopsAtEvent.single()
+        assertTrue(ttsStops >= 1 && audioStops >= 1, "事件到达时端口必须已停：tts=$ttsStops audio=$audioStops")
+        assertIs<PlaybackState.Stopped>(h.orchestrator.state.value)
         assertEquals(SessionStatus.COMPLETED, h.sessionRepo.getSession(1L)!!.status)
     }
 

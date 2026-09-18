@@ -118,9 +118,10 @@ public sealed interface AdvanceResult {
     public data class NextWord(val ref: WordRef, val completedGroupIndex: Int?) : AdvanceResult
 
     /**
-     * 会话队列已无未掌握词（LE spec §5 → §7）：Q3 书级裁决后返回——
-     * 书完成 → 会话已置 COMPLETED；书在会话中途新增词（规格未定义分支）→ 会话保持 ACTIVE，
-     * 终态留待退出三分支（§8）裁决。终态会话重复 advance 同样返回本值（幂等只读）。
+     * 会话完成（LE spec §5 → §7；ADR-002 会话快照口径，2026-09-15）：
+     * 返回即会话已置 COMPLETED——BookComplete ⟺ 会话快照全部掌握；
+     * 会话中途向书新增的词不入快照（「母本永远可学」，重学走新会话）。
+     * 终态会话重复 advance 同样返回本值（幂等只读）。
      */
     public data object BookComplete : AdvanceResult
 }
@@ -136,9 +137,14 @@ public data class WordRef(
 /**
  * 退出结果（LE spec §11 草图：`ExitResult(derivedWordBookId: Long?)`）。
  * 分支 A（零掌握）/ 分支 C（全部掌握）/ **分支 B 复制交集为空（Case 3 裁决 2026-09-04：
- * 当前母本词条 ∩ SessionWord 非 MASTERED = ∅ → 不建空本）**与终态幂等重入 → null；
+ * 当前母本词条 ∩ SessionWord 非 MASTERED = ∅ → 不建空本）**与终态幂等重入 → derivedWordBookId = null；
  * 分支 B（部分掌握且交集非空）→ 派生 DERIVED 本的 ID（Step 5D，WordBookDeriver）。
+ *
+ * [sessionCompleted]（Phase 6 加法，默认 false 保源兼容）：true = 分支 C（退出瞬间快照全掌握，
+ * 会话已置 COMPLETED）——编排器据此在播放端口停止后发布 WordBookCompleted（TC-AC-05 顺序锚点）。
+ * 分支 A/B 与终态幂等重入恒 false（完成事件在首次终态化路径上已发布/永不发布）。
  */
 public data class ExitResult(
     val derivedWordBookId: Long?,
+    val sessionCompleted: Boolean = false,
 )

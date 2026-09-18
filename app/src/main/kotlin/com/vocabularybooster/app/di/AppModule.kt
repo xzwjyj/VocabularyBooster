@@ -4,6 +4,7 @@ import android.speech.SpeechRecognizer
 import com.vocabularybooster.app.speech.FallbackSpeechCommandRecognizer
 import com.vocabularybooster.app.speech.SpeechEngineKind
 import com.vocabularybooster.app.speech.SpeechEnginePolicy
+import com.vocabularybooster.app.ui.AchievementsViewModel
 import com.vocabularybooster.app.ui.BookDetailViewModel
 import com.vocabularybooster.app.ui.LearningSessionViewModel
 import com.vocabularybooster.app.ui.LookupViewModel
@@ -88,6 +89,7 @@ val appModule = module {
             synthesizer = get(),
             recognizer = get(),
             commandParser = get(),
+            eventBus = get(), // Phase 6：与勋章引擎同一总线实例（发布/订阅对偶）
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         )
     }
@@ -96,7 +98,8 @@ val appModule = module {
     viewModel { WordDetailViewModel(get(), get()) }
     viewModel { WordBooksViewModel(get()) }
     viewModel { BookDetailViewModel(get()) }
+    viewModel { AchievementsViewModel(get()) } // Phase 6：勋章墙
 
     // Phase 4 Step 4：学习会话屏——ViewModel 只委托应用级 PlaybackOrchestrator 单例
-    viewModel { LearningSessionViewModel(get()) }
+    viewModel { LearningSessionViewModel(get(), get(), get()) } // Phase 6：+ 勋章仓储/事件总线（仪式页快照）
 }

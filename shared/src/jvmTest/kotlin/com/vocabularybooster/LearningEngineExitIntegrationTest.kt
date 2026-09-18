@@ -146,7 +146,7 @@ class LearningEngineExitIntegrationTest {
                 assertIs<MasteryResult.Marked>(engine.markMastered(sessionId, wordId, MasterySource.BUTTON))
             }
             clock.advanceMillis(5_000)
-            assertEquals(ExitResult(derivedWordBookId = null), engine.exitSession(sessionId))
+            assertEquals(ExitResult(derivedWordBookId = null, sessionCompleted = true), engine.exitSession(sessionId)) // 分支 C：完成事件锚点（Phase 6）
         } finally {
             db.close()
         }

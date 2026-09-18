@@ -1,5 +1,8 @@
 package com.vocabularybooster.app.ui
 
+import com.vocabularybooster.domain.model.Achievement
+import com.vocabularybooster.domain.model.AchievementType
+import com.vocabularybooster.domain.model.BookCompletedPayload
 import com.vocabularybooster.domain.model.LearningSession
 import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.model.PlaybackToggles
@@ -8,6 +11,8 @@ import com.vocabularybooster.domain.model.SessionStatus
 import com.vocabularybooster.domain.model.SessionWord
 import com.vocabularybooster.domain.model.SessionWordStatus
 import com.vocabularybooster.domain.model.Word
+import com.vocabularybooster.domain.repository.AchievementRepository
+import com.vocabularybooster.domain.repository.GrantAchievementResult
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.PlaybackContentRepository
 import com.vocabularybooster.domain.repository.PlaybackPositionRepository
@@ -234,6 +239,35 @@ class FakeSpeechCommandRecognizer(
             throw e
         }
     }
+}
+
+/** 勋章仓储 Fake（Phase 6）：预置/按需授予 BOOK_COMPLETED，授予与查询可观测（手写 Fake，无 mock 框架）。 */
+class FakeAchievementRepository : AchievementRepository {
+
+    val grants = mutableListOf<Pair<Long, BookCompletedPayload>>()
+    val medalsByBook = mutableMapOf<Long, Achievement>()
+
+    override suspend fun grantBookCompleted(
+        wordBookId: Long,
+        payload: BookCompletedPayload,
+    ): GrantAchievementResult {
+        grants += wordBookId to payload
+        medalsByBook[wordBookId]?.let { return GrantAchievementResult(it, firstGrant = false) }
+        val granted = Achievement(
+            achievementId = (medalsByBook.size + 1).toLong(),
+            type = AchievementType.BOOK_COMPLETED,
+            wordBookId = wordBookId,
+            payload = payload,
+            earnedAt = payload.finishedAt,
+        )
+        medalsByBook[wordBookId] = granted
+        return GrantAchievementResult(granted, firstGrant = true)
+    }
+
+    override suspend fun getAchievements(): List<Achievement> =
+        medalsByBook.values.sortedByDescending { it.earnedAt }
+
+    override suspend fun getBookCompletedFor(wordBookId: Long): Achievement? = medalsByBook[wordBookId]
 }
 
 /** 测试快照助手：两词单组会话（groupSize=10 → groupIndex 0）。 */

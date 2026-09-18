@@ -54,6 +54,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.koin.android)
     implementation(libs.koin.androidx.compose)
+    implementation(libs.kotlinx.datetime) // Phase 6：shared 域模型公开 API 暴露 Instant（Achievement.earnedAt 等），app main 消费需在编译类路径（与既有 test 源集同版本目录项）
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.datetime)

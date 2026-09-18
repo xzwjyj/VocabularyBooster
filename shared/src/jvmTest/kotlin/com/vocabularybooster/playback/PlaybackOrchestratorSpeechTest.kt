@@ -1,5 +1,6 @@
 package com.vocabularybooster.playback
 
+import com.vocabularybooster.domain.event.DefaultDomainEventBus
 import com.vocabularybooster.domain.model.LearningSession
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SessionSnapshot
@@ -100,6 +101,7 @@ class PlaybackOrchestratorSpeechTest {
             synthesizer = FakeSpeechSynthesizer(),
             recognizer = recognizer,
             commandParser = CommandParser(),
+            eventBus = DefaultDomainEventBus(),
             scope = scope,
         )
 

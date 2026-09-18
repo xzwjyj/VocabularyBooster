@@ -5,6 +5,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vocabularybooster.domain.event.DomainEvent
+import com.vocabularybooster.domain.event.DomainEventBus
+import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.learning.ExitResult
 import com.vocabularybooster.learning.ResumeResult
 import com.vocabularybooster.learning.StartResult
@@ -27,6 +30,8 @@ import kotlinx.coroutines.launch
 @Suppress("TooManyFunctions") // 每个公开函数 = 规格定义的一个 UI 入口（§6 五控制 + 冲突三分支 + 生命周期 + 状态映射）
 class LearningSessionViewModel(
     private val orchestrator: PlaybackOrchestrator,
+    private val achievementRepository: AchievementRepository,
+    private val eventBus: DomainEventBus,
 ) : ViewModel() {
 
     /** 学习屏 UI 状态（PlaybackState 的 app 层 immutable 投影）。 */
@@ -59,11 +64,29 @@ class LearningSessionViewModel(
     /** 展示连续性：最近一次携带词文本的状态（Playing/Paused/Error）；CommandWindow 映射消费。 */
     private var wordTextCache: String? = null
 
+    /** 完成仪式（Phase 6）：已请求过勋章快照的书（StateFlow 重复发射去重）。 */
+    private var ceremonyBookId: Long? = null
+
     init {
         viewModelScope.launch {
             orchestrator.state.collect { state ->
                 if (state.isTransportActive()) sessionOwned = true
-                if (!suppressingUiUpdates && sessionOwned) ui = mapToUiState(state)
+                if (!suppressingUiUpdates && sessionOwned) {
+                    ui = mapToUiState(state)
+                    if (state is PlaybackState.Completed) ensureCeremonyMedal()
+                }
+            }
+        }
+        // Phase 6：勋章授予事件 → 仪式页刷新（首查可能早于异步授予落库，事件兜住竞态）
+        viewModelScope.launch {
+            eventBus.events.collect { event ->
+                val unlockedBookId = (event as? DomainEvent.AchievementUnlocked)?.wordBookId
+                if (unlockedBookId != null &&
+                    unlockedBookId == orchestrator.activeWordBookId() &&
+                    ui is LearningUiState.Completed
+                ) {
+                    loadCeremonyMedal(unlockedBookId)
+                }
             }
         }
     }
@@ -197,6 +220,37 @@ class LearningSessionViewModel(
         exitResult = null
         pendingBookId = null
         wordTextCache = null
+        ceremonyBookId = null
+    }
+
+    // —— 完成仪式（Phase 6，ACHIEVEMENT_SPEC §3）：Completed 态按会话所属书解析勋章快照 ——
+
+    /** StateFlow 重复发射去重：每本书只主动查一次；授予竞态（授予晚于首查）由 AchievementUnlocked 事件刷新兜住。 */
+    private fun ensureCeremonyMedal() {
+        val bookId = orchestrator.activeWordBookId() ?: return
+        if (ceremonyBookId == bookId) return
+        ceremonyBookId = bookId
+        loadCeremonyMedal(bookId)
+    }
+
+    private fun loadCeremonyMedal(bookId: Long) {
+        viewModelScope.launch {
+            runCatching { achievementRepository.getBookCompletedFor(bookId) }
+                // 失败静默：仪式页保持通用完成文案（勋章授予失败隔离语义，不阻断呈现）
+                .onSuccess { achievement ->
+                    if (ui is LearningUiState.Completed) {
+                        ui = LearningUiState.Completed(
+                            medal = achievement?.let {
+                                CompletedMedal(
+                                    bookName = it.payload.bookName,
+                                    wordCount = it.payload.wordCount,
+                                    finishedAtEpochMs = it.earnedAt.toEpochMilliseconds(),
+                                )
+                            },
+                        )
+                    }
+                }
+        }
     }
 
     /** PlaybackState → UI 投影（词文本缓存随携带态刷新，供 CommandWindow 显示延续）。 */
@@ -247,6 +301,13 @@ private fun ResumeResult.Reason.toNotice(): LearningNotice = when (this) {
     -> LearningNotice.SessionUnavailable
 }
 
+/** 完成仪式快照（Phase 6，ACHIEVEMENT_SPEC §3）：书名/词数/完成时刻（epoch 毫秒，格式化在 Screen）。 */
+data class CompletedMedal(
+    val bookName: String,
+    val wordCount: Int,
+    val finishedAtEpochMs: Long,
+)
+
 /** 学习屏 UI 状态（PlaybackState 的 app 层投影；Paused(error) 单列为 Error，AUDIO §9）。 */
 sealed interface LearningUiState {
     data object Loading : LearningUiState
@@ -275,7 +336,8 @@ sealed interface LearningUiState {
         val listening: Boolean,
     ) : LearningUiState
 
-    data object Completed : LearningUiState
+    /** 完成（编排器权威终态）：medal = BOOK_COMPLETED 快照（Phase 6 仪式页）；null = 未获得/加载中。 */
+    data class Completed(val medal: CompletedMedal?) : LearningUiState
 
     data object Stopped : LearningUiState
 
@@ -311,7 +373,7 @@ private fun PlaybackState.toUiState(cachedWordText: String?): LearningUiState = 
         totalMs = totalMs,
         listening = listening, // Phase 5 Step 1：监听/降级形态透传（编排器为唯一事实源）
     )
-    PlaybackState.Completed -> LearningUiState.Completed
+    PlaybackState.Completed -> LearningUiState.Completed(medal = null) // 勋章快照经 ensureCeremonyMedal 异步补填
     PlaybackState.Stopped -> LearningUiState.Stopped
 }
 

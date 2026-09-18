@@ -5,12 +5,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
 import com.vocabularybooster.domain.model.Word
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import com.vocabularybooster.domain.model.WordDetail
+import com.vocabularybooster.domain.repository.AchievementRepository
+import com.vocabularybooster.domain.repository.WordBookDeletionException
 import com.vocabularybooster.domain.repository.WordBookRepository
 import com.vocabularybooster.domain.repository.WordRepository
 import kotlinx.coroutines.launch
@@ -162,13 +165,49 @@ class WordBooksViewModel(
         wordBookRepository.renameWordBook(wordBookId, newName)
     }
 
-    fun deleteBook(wordBookId: Long) = launchAction { wordBookRepository.deleteWordBook(wordBookId) }
+    /** 删除（FR-4 拦截规则 → 中文文案，Phase 6）：勋章本不可删 / 有派生子本先删派生本。 */
+    fun deleteBook(wordBookId: Long) {
+        viewModelScope.launch {
+            runCatching { wordBookRepository.deleteWordBook(wordBookId) }
+                .onSuccess { message = null }
+                .onFailure { e ->
+                    message = when (e) {
+                        is WordBookDeletionException -> when (e.reason) {
+                            WordBookDeletionException.Reason.BOOK_HAS_COMPLETION_MEDAL ->
+                                "该生词本已获得完成勋章，不能删除"
+                            WordBookDeletionException.Reason.HAS_DERIVED_CHILDREN ->
+                                "该生词本存在派生生词本，请先删除派生本"
+                        }
+                        else -> e.message
+                    }
+                }
+        }
+    }
 
     private fun launchAction(block: suspend () -> Unit) {
         viewModelScope.launch {
             runCatching { block() }
                 .onFailure { message = it.message }
                 .onSuccess { message = null }
+        }
+    }
+}
+
+/** 勋章墙（FR-13，Phase 6）：只读列表（earnedAt 倒序），全部类型统一渲染。 */
+class AchievementsViewModel(
+    private val achievementRepository: AchievementRepository,
+) : ViewModel() {
+
+    var achievements by mutableStateOf<List<Achievement>>(emptyList())
+        private set
+    var message by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        viewModelScope.launch {
+            runCatching { achievementRepository.getAchievements() }
+                .onSuccess { achievements = it }
+                .onFailure { message = "勋章加载失败：${it.message}" }
         }
     }
 }

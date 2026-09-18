@@ -69,7 +69,7 @@ class LearningEngineExitTest {
 
         val result = engine.exitSession(sessionId)
 
-        assertEquals(ExitResult(derivedWordBookId = null), result) // 分支 A：不派生
+        assertEquals(ExitResult(derivedWordBookId = null, sessionCompleted = false), result) // 分支 A：不派生、无完成事件
         assertEquals(SessionStatus.ABANDONED, repo.sessions[sessionId]?.status)
         assertEquals(0L, repo.sessions[sessionId]?.endedAt?.toEpochMilliseconds()) // endedAt 已写
         assertEquals(listOf(sessionId to SessionStatus.ABANDONED), repo.terminateSessionCalls)
@@ -131,7 +131,8 @@ class LearningEngineExitTest {
         wordIds.forEach { engine.playAndMaster(sessionId, it) } // 全掌握，未跑最终 advance → 仍 ACTIVE
         repo.unmasteredEntryCounts[wordBookId] = 0 // Q3 = 0 → 分支 C
 
-        assertEquals(ExitResult(derivedWordBookId = null), engine.exitSession(sessionId))
+        val result = engine.exitSession(sessionId)
+        assertEquals(ExitResult(derivedWordBookId = null, sessionCompleted = true), result) // 分支 C：完成事件锚点
 
         assertEquals(SessionStatus.COMPLETED, repo.sessions[sessionId]?.status)
         assertEquals(listOf(sessionId to SessionStatus.COMPLETED), repo.terminateSessionCalls)
@@ -177,6 +178,7 @@ class LearningEngineExitTest {
 
         assertEquals(SessionStatus.COMPLETED, repo.sessions[sessionId]?.status) // snapshot 全部 mastered → COMPLETED
         assertNull(result.derivedWordBookId) // COMPLETED 不派生
+        assertEquals(true, result.sessionCompleted) // 分支 C：编排器据此发布完成事件
     }
 
     // —— 终态幂等与 endedAt 不可变 ——
@@ -190,7 +192,7 @@ class LearningEngineExitTest {
 
         val second = engine.exitSession(sessionId)
 
-        assertEquals(ExitResult(derivedWordBookId = null), second)
+        assertEquals(ExitResult(derivedWordBookId = null, sessionCompleted = false), second) // 幂等重入：零事件
         assertEquals(SessionStatus.ABANDONED, repo.sessions[sessionId]?.status) // 不改判为其它终态
         assertEquals(1, repo.terminateSessionCalls.size) // 幂等：零重复写入，endedAt 不刷新
     }
@@ -207,7 +209,8 @@ class LearningEngineExitTest {
 
         val result = engine.exitSession(sessionId)
 
-        assertEquals(ExitResult(derivedWordBookId = null), result) // COMPLETED 保持 COMPLETED
+        // COMPLETED 保持 COMPLETED；幂等重入零事件（首退已发）
+        assertEquals(ExitResult(derivedWordBookId = null, sessionCompleted = false), result)
         assertEquals(SessionStatus.COMPLETED, repo.sessions[sessionId]?.status)
         assertEquals(1, repo.updateSessionStatusCalls.size) // 完成写入不被触碰
         assertTrue(repo.terminateSessionCalls.isEmpty()) // 幂等短路：零终态写入

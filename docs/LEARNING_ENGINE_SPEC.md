@@ -152,12 +152,13 @@ interface LearningEngine {
     suspend fun resumeSession(sessionId: Long): ResumeResult
     suspend fun markMastered(sessionId: Long, wordId: Long, source: MasterySource): MasteryResult
     suspend fun advance(sessionId: Long): AdvanceResult        // WordRef | BookComplete
-    suspend fun exitSession(sessionId: Long): ExitResult      // ExitResult(derivedWordBookId: Long?)
+    suspend fun exitSession(sessionId: Long): ExitResult      // ExitResult(derivedWordBookId: Long?, sessionCompleted: Boolean)
     fun abandon(reason: AbandonReason)
 }
 ```
 
 - `WordRef` 只带 `sessionId/wordId/groupIndex/orderInGroup`；分段内容查询属播放引擎（缓存策略见 AUDIO_ENGINE_SPEC §3）。
+- `ExitResult.sessionCompleted`（v1.4，Phase 6）：仅退出**首次**裁决为分支 C 时为 `true`（终态幂等重入恒 `false`——首退已发过完成事件）。播放编排器以此字段为唯一锚点发布 `WordBookCompleted(sessionId, wordBookId)`（ACHIEVEMENT_SPEC §2），advance 自然完成路径不经此字段（由编排器在 `finishAsCompleted` 直接发布）。
 
 ## 12. 确定性与可测性
 
@@ -173,3 +174,4 @@ interface LearningEngine {
 | 1.1 | 2026-09-01 | 冻结 D1–D4：§8 重写为退出三分支；边界情形 #7 更新、新增 #11；"父本"统一改称"母本" |
 | 1.2 | 2026-09-03 | Phase 3 规格对齐：§8 分支 B 对齐 schema v2（Q5b 释义关系 + Q5c 例句选择逐 ID 复制，移除已废弃的 includeExamples 表述）；§3 新增 ACTIVE 会话唯一性引擎不变量（不改 schema）；§5 明确 v1 不产生 SKIPPED |
 | 1.3 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§8 步骤 3 明确派生集合 = **当前母本仍存在 entries ∩ 本会话 SessionWord(status != MASTERED)**（Q5 原文语义；entryOrder/pendingTranslation 恒取自母本行）；新增 **effectiveRemaining 空集规则**——分支 B 交集为空 → 不创建空 DERIVED 本（Case 3），会话仍 ABANDONED、derivedWordBookId = null；SessionExited 括注同步 |
+| 1.4 | 2026-09-18 | Phase 6：§11 `ExitResult` 增 `sessionCompleted`（分支 C 首退 true / 幂等重入 false）+ 事件锚点语义说明（ADR-002 快照口径的 §8 全文对齐另循 ADR-002 工作流，本版不重复改写） |

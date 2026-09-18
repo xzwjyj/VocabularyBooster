@@ -1,6 +1,11 @@
 package com.vocabularybooster.app.ui
 
 import androidx.lifecycle.ViewModelStore
+import com.vocabularybooster.domain.event.DefaultDomainEventBus
+import com.vocabularybooster.domain.event.DomainEvent
+import com.vocabularybooster.domain.model.Achievement
+import com.vocabularybooster.domain.model.AchievementType
+import com.vocabularybooster.domain.model.BookCompletedPayload
 import com.vocabularybooster.learning.MasterySource
 import com.vocabularybooster.learning.ResumeResult
 import com.vocabularybooster.learning.StartResult
@@ -18,6 +23,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.datetime.Instant
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -47,6 +53,8 @@ class LearningSessionViewModelTest {
     private lateinit var recognizer: FakeSpeechCommandRecognizer
     private lateinit var viewModelStore: ViewModelStore
     private lateinit var orchestrator: PlaybackOrchestrator
+    private lateinit var achievements: FakeAchievementRepository
+    private lateinit var eventBus: DefaultDomainEventBus
 
     /**
      * 编排器驱动 scope：共享 runTest 调度器（advanceUntilIdle 可推进其任务）的独立 scope。
@@ -67,6 +75,8 @@ class LearningSessionViewModelTest {
         content = FakePlaybackContentRepository().apply { textsByWordId = LearningSessionFixtures.contentTexts() }
         position = FakePlaybackPositionRepository()
         recognizer = FakeSpeechCommandRecognizer() // 默认不可用 = P4 纯倒计时（既有用例时序不变）
+        achievements = FakeAchievementRepository()
+        eventBus = DefaultDomainEventBus()
     }
 
     @After
@@ -88,10 +98,12 @@ class LearningSessionViewModelTest {
             synthesizer = synthesizer,
             recognizer = recognizer,
             commandParser = CommandParser(),
+            eventBus = eventBus,
             scope = orchestratorScope,
         )
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        return LearningSessionViewModel(orchestrator).also { viewModelStore.put("learning", it) }
+        return LearningSessionViewModel(orchestrator, achievements, eventBus)
+            .also { viewModelStore.put("learning", it) }
     }
 
     // —— A. 初始状态 ——
@@ -232,9 +244,68 @@ class LearningSessionViewModelTest {
         testScheduler.runCurrent()
         advanceUntilIdle()
 
-        assertEquals(LearningUiState.Completed, vm.ui) // E：完成权威 = 引擎裁决（UI 不重判）
+        assertEquals(LearningUiState.Completed(medal = null), vm.ui) // E：完成权威 = 引擎裁决（UI 不重判）
         assertTrue(position.clearCount > 0) // 完成清除位置存档（§5）
     }
+
+    // —— E2/E3. 完成仪式勋章快照（Phase 6：首查命中 + AchievementUnlocked 事件刷新）——
+
+    @Test
+    fun completedShowsCeremonyMedalWhenAlreadyGranted() = runTest {
+        engine.advanceWordIds = listOf(LearningSessionFixtures.WORD_BOOST)
+        achievements.medalsByBook[LearningSessionFixtures.BOOK_ID] = grantedMedal()
+        val vm = assembleWithStore()
+        vm.start(LearningSessionFixtures.BOOK_ID)
+        advanceUntilIdle()
+
+        synthesizer.releaseLast() // 段完成 → 窗口倒计时走完 → advance → BookComplete → Completed
+        testScheduler.advanceTimeBy(300 + 4_000 + 100)
+        testScheduler.runCurrent()
+        advanceUntilIdle()
+
+        val medal = (vm.ui as LearningUiState.Completed).medal ?: error("仪式页应呈现勋章快照")
+        assertEquals("考研核心词", medal.bookName)
+        assertEquals(2, medal.wordCount)
+        assertEquals(1_760_000_000_000L, medal.finishedAtEpochMs)
+    }
+
+    @Test
+    fun achievementUnlockedEventRefreshesCeremonyAfterInitialMiss() = runTest {
+        engine.advanceWordIds = listOf(LearningSessionFixtures.WORD_BOOST)
+        val vm = assembleWithStore()
+        vm.start(LearningSessionFixtures.BOOK_ID)
+        advanceUntilIdle()
+        synthesizer.releaseLast()
+        testScheduler.advanceTimeBy(300 + 4_000 + 100)
+        testScheduler.runCurrent()
+        advanceUntilIdle()
+        assertEquals(LearningUiState.Completed(medal = null), vm.ui) // 首查未命中（授予竞态窗口）
+
+        // 异步授予完成（勋章引擎发布事件）→ 仪式页刷新补填
+        achievements.medalsByBook[LearningSessionFixtures.BOOK_ID] = grantedMedal()
+        eventBus.publish(
+            DomainEvent.AchievementUnlocked(
+                achievementId = 1L,
+                type = "BOOK_COMPLETED",
+                wordBookId = LearningSessionFixtures.BOOK_ID,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("考研核心词", (vm.ui as LearningUiState.Completed).medal?.bookName)
+    }
+
+    private fun grantedMedal(): Achievement = Achievement(
+        achievementId = 1L,
+        type = AchievementType.BOOK_COMPLETED,
+        wordBookId = LearningSessionFixtures.BOOK_ID,
+        payload = BookCompletedPayload(
+            bookName = "考研核心词",
+            wordCount = 2,
+            finishedAt = Instant.fromEpochMilliseconds(1_760_000_000_000L),
+        ),
+        earnedAt = Instant.fromEpochMilliseconds(1_760_000_000_000L),
+    )
 
     // —— F. STOPPED 投影 + K. Exit 命令转发 ——
 

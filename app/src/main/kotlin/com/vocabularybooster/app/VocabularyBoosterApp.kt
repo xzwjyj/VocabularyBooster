@@ -3,6 +3,7 @@ package com.vocabularybooster.app
 import android.app.Application
 import android.util.Log
 import com.vocabularybooster.app.di.appModule
+import com.vocabularybooster.achievement.AchievementEngine
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.di.sharedCoreModule
@@ -34,6 +35,10 @@ class VocabularyBoosterApp : Application() {
         // TTS 异步初始化提前启动（speak 仍不假定 ready，见 TtsSpeechSynthesizer）
         koinApp.koin.get<AudioPlayer>()
         koinApp.koin.get<SpeechSynthesizer>()
+        // Phase 6：勋章引擎订阅领域事件（DB 密集 → IO scope；冷启动即订阅，
+        // 先于任何 UI 与完成事件——SharedFlow 无 replay，迟订阅丢历史事件）
+        koinApp.koin.get<AchievementEngine>()
+            .start(CoroutineScope(SupervisorJob() + Dispatchers.IO))
         // 首启词库导入：幂等（ensureSeeded 空库才导）；失败仅记日志，不阻断启动
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { seedImporter.ensureSeeded(seedProvider) }

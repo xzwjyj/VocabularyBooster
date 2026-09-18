@@ -1,5 +1,6 @@
 package com.vocabularybooster.data
 
+import com.vocabularybooster.db.Achievement as AchievementRow
 import com.vocabularybooster.db.Example as ExampleRow
 import com.vocabularybooster.db.LearningSession as LearningSessionRow
 import com.vocabularybooster.db.SelectEntryWordsForBook
@@ -7,6 +8,9 @@ import com.vocabularybooster.db.SelectWordBookSummaries
 import com.vocabularybooster.db.SessionWord as SessionWordRow
 import com.vocabularybooster.db.Word as WordRow
 import com.vocabularybooster.db.WordBook as WordBookRow
+import com.vocabularybooster.domain.model.Achievement
+import com.vocabularybooster.domain.model.AchievementType
+import com.vocabularybooster.domain.model.BookCompletedPayload
 import com.vocabularybooster.domain.model.Example
 import com.vocabularybooster.domain.model.ExampleSourceType
 import com.vocabularybooster.domain.model.LearningSession
@@ -18,6 +22,7 @@ import com.vocabularybooster.domain.model.WordBook
 import com.vocabularybooster.domain.model.WordBookType
 import com.vocabularybooster.domain.model.WordBookWord
 import kotlinx.datetime.Instant
+import kotlinx.serialization.json.Json
 
 /**
  * db 行 → 领域模型映射（DOMAIN_MODEL 实体一一对应）。
@@ -108,4 +113,21 @@ internal fun SessionWordRow.toDomain(): SessionWord = SessionWord(
     status = runCatching { SessionWordStatus.valueOf(status) }
         .getOrElse { error("Unknown SessionWordStatus in DB: $status") },
     masteredAt = masteredAt?.let(Instant::fromEpochMilliseconds),
+)
+
+// —— Achievement（Phase 6，FR-13）：payloadJson 编解码 + 行映射 ——
+
+// 与位置仓储同配置：未知字段忽略（前向兼容）
+private val achievementJson = Json { ignoreUnknownKeys = true }
+
+internal fun BookCompletedPayload.toJsonString(): String = achievementJson.encodeToString(this)
+
+/** type/payload 未知值 fail-fast（脏数据显式暴露，同枚举列约定）。 */
+internal fun AchievementRow.toDomain(): Achievement = Achievement(
+    achievementId = achievementId,
+    type = runCatching { AchievementType.valueOf(type) }
+        .getOrElse { error("Unknown AchievementType in DB: $type") },
+    wordBookId = wordBookId,
+    payload = achievementJson.decodeFromString<BookCompletedPayload>(payloadJson),
+    earnedAt = Instant.fromEpochMilliseconds(earnedAt),
 )

@@ -285,17 +285,42 @@ private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterW
 
         is LearningUiState.Completed -> {
             Spacer(Modifier.padding(top = 32.dp))
-            Text("🎉", style = MaterialTheme.typography.displayLarge, modifier = Modifier.testTag("learning_state"))
+            Text("🏆", style = MaterialTheme.typography.displayLarge, modifier = Modifier.testTag("learning_state"))
             Text(
                 "学习完成！",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(top = 16.dp),
             )
-            Text(
-                "本生词本的全部单词已掌握",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            val medal = state.medal
+            if (medal != null) {
+                // Phase 6 完成仪式（ACHIEVEMENT_SPEC §3）：书名/词数/完成日期（勋章快照）
+                Text(
+                    "《${medal.bookName}》",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .testTag("ceremony_book_name"),
+                )
+                Text(
+                    "完整掌握 ${medal.wordCount} 个单词",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    "完成于 ${formatDate(medal.finishedAtEpochMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .testTag("ceremony_medal_date"),
+                )
+            } else {
+                Text(
+                    "本生词本的全部单词已掌握",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
             Button(
                 onClick = onExit,
                 modifier = Modifier
@@ -374,3 +399,8 @@ private fun noticeMessage(notice: LearningNotice): String = when (notice) {
     is LearningNotice.StartError -> notice.message ?: "发生未知错误"
     is LearningNotice.CommandError -> notice.message ?: "发生未知错误"
 }
+
+/** 完成仪式日期（Phase 6）：epoch 毫秒 → 本地日期（minSdk 26，java.time 直用）。 */
+private fun formatDate(epochMs: Long): String =
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        .format(java.time.Instant.ofEpochMilli(epochMs).atZone(java.time.ZoneId.systemDefault()))

@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.vocabularybooster.app.ui.AchievementsScreen
 import com.vocabularybooster.app.ui.BookDetailScreen
 import com.vocabularybooster.app.ui.LearningSessionScreen
 import com.vocabularybooster.app.ui.LookupScreen
@@ -32,6 +34,7 @@ import com.vocabularybooster.app.ui.WordDetailScreen
 /**
  * Phase 2 主界面：两 Tab（查词 / 生词本）+ 词条详情 / 本详情覆盖层。
  * Phase 4 Step 4：+ 学习会话全屏覆盖层（生词本详情 → 开始学习）。
+ * Phase 6：+ 第三 Tab（勋章墙，FR-13）。
  * 简单状态导航（无 nav 依赖）；UI 只渲染状态 + 转发意图（ARCHITECTURE §4）。
  */
 class MainActivity : ComponentActivity() {
@@ -69,6 +72,12 @@ private fun VocabularyBoosterRoot() {
                         icon = { Icon(Icons.Filled.List, contentDescription = null) },
                         label = { Text("生词本") },
                     )
+                    NavigationBarItem(
+                        selected = tab == 2,
+                        onClick = { tab = 2; openWordText = null; openBookId = null },
+                        icon = { Icon(Icons.Filled.Star, contentDescription = null) },
+                        label = { Text("勋章") },
+                    )
                 }
             }
         },
@@ -89,7 +98,8 @@ private fun VocabularyBoosterRoot() {
                     onStartLearning = { learningBookId = it },
                 )
                 tab == 0 -> LookupScreen(onWordClick = { openWordText = it })
-                else -> WordBooksScreen(onBookClick = { openBookId = it })
+                tab == 1 -> WordBooksScreen(onBookClick = { openBookId = it })
+                else -> AchievementsScreen()
             }
         }
     }
