@@ -1,4 +1,4 @@
-# CLAUDE.md — VocabularyBooster 工程协作规范
+# AGENTS.md — VocabularyBooster 工程协作规范
 
 英语单词学习 App：查词 → 生词本 → 分组循环朗读 + 语音命令"会了" → 完成勋章。Android（Compose）先行，核心逻辑 Kotlin Multiplatform 共享，未来 iOS（SwiftUI）复用核心、不重写。
 
@@ -75,18 +75,3 @@
 | 加平台能力 | ARCHITECTURE §5 端口矩阵 + 平台 actual |
 | 加/改用例 | TEST_PLAN 矩阵 |
 | Phase 收尾 | docs/reports/PHASE_N_REPORT.md + ROADMAP 状态 |
-
-## 智能体协作协议（docs/agent-sync/）
-
-- **协作文件**：
-  - `SPEC_CHANGE_REQUEST.md`：规格变更请求模板
-  - **AUDIT_REPORT.md**：审计报告模板
-  - `IMPLEMENTATION_PLAN.md`：实现计划模板
-  - **DECISION_LOG.md**：决策记录
-- **流程**：
-  1. 任何代码/规格变更前，先创建 `SPEC_CHANGE_REQUEST.md`
-  2. 执行审计 → 输出 `AUDIT_REPORT.md`
-  3. 制定实现计划 → `IMPLEMENTATION_PLAN.md`
-  4. 用户批准后执行
-  5. 决策记录到 `DECISION_LOG.md`
-- **禁止**：未经批准修改 Kotlin/SQL/Gradle 代码
