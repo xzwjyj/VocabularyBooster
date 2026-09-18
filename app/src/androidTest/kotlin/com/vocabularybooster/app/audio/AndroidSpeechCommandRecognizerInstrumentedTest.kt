@@ -45,7 +45,7 @@ class AndroidSpeechCommandRecognizerInstrumentedTest {
         assumeTrue("设备无语音识别服务：识别路径转手动冒烟", recognizer.isAvailable.value)
     }
 
-    /** 静默窗口 → Timeout（deadline 制：软错误重挂不越过窗口预算，绝不产生命令）。 */
+    /** 静默窗口 → Timeout（deadline 制：软错误重挂不越过窗口预算，绝不产生命令）；E4 看门狗零误触断言。 */
     @Test
     fun silenceWithinWindow_returnsTimeout() = runBlocking {
         grantRecordAudio()
@@ -56,6 +56,7 @@ class AndroidSpeechCommandRecognizerInstrumentedTest {
         val result = withTimeout(15_000) { recognizer.listenOnce(windowMs = 2_000) }
 
         assertEquals(RecognitionResult.Timeout, result)
+        assertTrue("E4 看门狗零误触：健康服务安静窗口（回调持续到达）不得判死降级", recognizer.isAvailable.value)
         val elapsed = System.currentTimeMillis() - startedAt
         assertTrue("窗口预算耗尽应约 2s（软错误重挂在预算内），实际 ${elapsed}ms", elapsed in 1_500..6_000)
     }

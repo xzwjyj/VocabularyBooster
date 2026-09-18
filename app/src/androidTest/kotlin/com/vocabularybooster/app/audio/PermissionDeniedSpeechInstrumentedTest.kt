@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vocabularybooster.platform.AndroidSpeechCommandRecognizer
+import com.vocabularybooster.platform.VoskSpeechCommandRecognizer
 import com.vocabularybooster.speech.RecognitionResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -52,5 +53,24 @@ class PermissionDeniedSpeechInstrumentedTest {
 
         assertEquals(RecognitionResult.Unavailable, result)
         assertFalse("硬失败应拉低 isAvailable（后续窗口前置门降级）", recognizer.isAvailable.value)
+    }
+
+    /**
+     * TC-AE-27 权限拒绝（E1 内置引擎路径）：Vosk actual 构造即 isAvailable=false（无系统服务假设，
+     * 任何机型确定性成立），listenOnce 前置门直接 Unavailable——不建录音会话、不触发模型加载。
+     */
+    @Test
+    fun permissionDenied_voskActual_frontGateUnavailable() = runBlocking {
+        val denied = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        assumeTrue("RECORD_AUDIO 已被授予（非全新安装态）：转手动矩阵", denied)
+        val recognizer = withContext(Dispatchers.Main.immediate) { VoskSpeechCommandRecognizer(context) }
+
+        assertFalse("权限缺失 → 构造即不可用（资产在场不弥补权限）", recognizer.isAvailable.value)
+
+        val result = withTimeout(10_000) { recognizer.listenOnce(windowMs = 3_000) }
+
+        assertEquals(RecognitionResult.Unavailable, result)
+        assertFalse(recognizer.isAvailable.value)
     }
 }
