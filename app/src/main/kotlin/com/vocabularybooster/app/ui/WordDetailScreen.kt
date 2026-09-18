@@ -40,6 +40,10 @@ fun WordDetailScreen(
 ) {
     LaunchedEffect(wordText) { viewModel.load(wordText) }
     var showSaveDialog by remember { mutableStateOf(false) }
+    // 打开对话框前重置 saved 状态，避免上一次保存的粘滞状态导致对话框开即关
+    LaunchedEffect(showSaveDialog) {
+        if (showSaveDialog) viewModel.resetSaved()
+    }
     val detail = viewModel.detail
 
     Column(Modifier.fillMaxSize()) {

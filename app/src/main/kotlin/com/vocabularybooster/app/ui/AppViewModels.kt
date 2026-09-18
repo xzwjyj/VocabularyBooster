@@ -82,6 +82,12 @@ class WordDetailViewModel(
 
     fun load(wordText: String) {
         viewModelScope.launch {
+            // 加载新词前清空旧词的选中状态，避免跨词残留导致校验失败
+            selectedDefinitions = emptySet()
+            selectedExamples = emptyMap()
+            selectedBooks = emptySet()
+            message = null
+            saved = false
             detail = wordRepository.lookup(wordText)
             loadFailed = detail == null
             books = wordBookRepository.getWordBooks()
@@ -102,6 +108,11 @@ class WordDetailViewModel(
         val current = selectedExamples[definitionEntryId].orEmpty()
         val next = if (exampleId in current) current - exampleId else current + exampleId
         selectedExamples = selectedExamples + (definitionEntryId to next)
+    }
+
+    /** 重置保存状态，用于每次打开保存对话框时清除上一次粘滞的 saved 状态。 */
+    fun resetSaved() {
+        saved = false
     }
 
     fun onNewBookNameChange(value: String) {
