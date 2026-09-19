@@ -1,5 +1,7 @@
 package com.vocabularybooster.app.ui
 
+import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,17 +10,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.vocabularybooster.speech.TtsVoice
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.round
 
@@ -140,6 +151,114 @@ fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) {
             onValueChange = { viewModel.onPitchChange(snapToRateStep(it)) },
             tag = "settings_pitch_slider",
         )
+
+        SectionHeader("语音音色")
+        Text(
+            "音色随设备语音引擎而异；更高自然度的音色可在系统设置下载后回到此处选择，变更下一朗读段生效",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        var voiceDialogLang by remember { mutableStateOf<String?>(null) }
+        VoiceRow(
+            label = "英语音色",
+            current = voiceDisplayName(viewModel.voicesEn, viewModel.voiceEnId),
+            tag = "settings_voice_en_row",
+        ) { voiceDialogLang = "en" }
+        VoiceRow(
+            label = "中文音色",
+            current = voiceDisplayName(viewModel.voicesZh, viewModel.voiceZhId),
+            tag = "settings_voice_zh_row",
+        ) { voiceDialogLang = "zh" }
+        val context = LocalContext.current
+        TextButton(
+            onClick = {
+                // 直达系统语音设置（下载高自然度音色）；无对应设置页的 ROM 静默失败不崩溃
+                runCatching { context.startActivity(Intent("com.android.settings.TTS_SETTINGS")) }
+            },
+            modifier = Modifier.testTag("settings_open_system_tts"),
+        ) { Text("打开系统语音设置") }
+
+        voiceDialogLang?.let { langKey ->
+            val voices = if (langKey == "en") viewModel.voicesEn else viewModel.voicesZh
+            val selectedId = if (langKey == "en") viewModel.voiceEnId else viewModel.voiceZhId
+            val onSelect: (String?) -> Unit = if (langKey == "en") {
+                viewModel::onVoiceEnChange
+            } else {
+                viewModel::onVoiceZhChange
+            }
+            AlertDialog(
+                onDismissRequest = { voiceDialogLang = null },
+                title = { Text(if (langKey == "en") "英语音色" else "中文音色") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        VoiceOptionRow(
+                            label = "跟随系统（默认）",
+                            selected = selectedId == null,
+                            tag = "settings_voice_option_default",
+                        ) {
+                            onSelect(null)
+                            voiceDialogLang = null
+                        }
+                        if (voices.isEmpty()) {
+                            Text(
+                                "引擎暂无可用音色（可在系统语音设置检查引擎）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                        voices.forEachIndexed { index, voice ->
+                            VoiceOptionRow(
+                                label = voice.displayName +
+                                    (voice.qualityLabel?.let { " · $it" } ?: ""),
+                                selected = selectedId == voice.id,
+                                tag = "settings_voice_option_$index",
+                            ) {
+                                onSelect(voice.id)
+                                voiceDialogLang = null
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { voiceDialogLang = null }) { Text("取消") }
+                },
+            )
+        }
+    }
+}
+
+/** 当前音色显示名（未选/已失效 → 跟随系统）。 */
+private fun voiceDisplayName(voices: List<TtsVoice>, selectedId: String?): String =
+    voices.firstOrNull { it.id == selectedId }?.displayName ?: "跟随系统（默认）"
+
+@Composable
+private fun VoiceRow(label: String, current: String, tag: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp)
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f))
+        Text(current, color = MaterialTheme.colorScheme.secondary)
+    }
+}
+
+@Composable
+private fun VoiceOptionRow(label: String, selected: Boolean, tag: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp)
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label)
     }
 }
 

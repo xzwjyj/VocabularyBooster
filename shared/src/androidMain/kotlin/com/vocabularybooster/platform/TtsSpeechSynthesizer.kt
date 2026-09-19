@@ -4,11 +4,14 @@ import android.content.Context
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import com.vocabularybooster.domain.model.Lang
+import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.speech.Readiness
 import com.vocabularybooster.speech.SegmentResult
 import com.vocabularybooster.speech.SpeakRequest
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.speech.TtsVoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +38,7 @@ import java.util.Locale
  */
 public class TtsSpeechSynthesizer(
     context: Context,
+    private val settings: LearningSettingsRepository,
 ) : SpeechSynthesizer {
 
     private val appContext: Context = context.applicationContext
@@ -107,12 +111,7 @@ public class TtsSpeechSynthesizer(
     override suspend fun speak(request: SpeakRequest): SegmentResult = withContext(Dispatchers.Main.immediate) {
         ensureNotReleased()
         awaitReady()
-        val available = tts.setLanguage(TtsLocales.localeFor(request.lang))
-        if (available == TextToSpeech.LANG_MISSING_DATA || available == TextToSpeech.LANG_NOT_SUPPORTED) {
-            throw IllegalStateException(
-                "TTS 语言不可用（${request.lang.tag}，setLanguage=$available）——不静默改播其他语言"
-            )
-        }
+        applyVoiceOrLanguage(request.lang)
         tts.setSpeechRate(request.rate)
         tts.setPitch(request.pitch)
 
@@ -135,6 +134,58 @@ public class TtsSpeechSynthesizer(
                 pendingUtteranceId = null
                 pendingUtterance = null
             }
+        }
+    }
+
+    /**
+     * FR-19（Phase 8.6）：当前引擎音色枚举（en-US / zh-CN 各自列出，未就绪 → 空）。
+     * 主线程限定；排除需联网的特征（`features` 含 network 前缀键）。
+     * 排序：精确 locale（en_US / zh_CN）优先 → 品质高优先 → 名称稳定序。
+     */
+    override fun availableVoices(lang: Lang): List<TtsVoice> {
+        ensureOnMainThread()
+        if (_readiness.value != Readiness.READY || released) return emptyList()
+        val target = TtsLocales.localeFor(lang)
+        return tts.voices.orEmpty()
+            .asSequence()
+            .filter { it.locale.language == target.language }
+            .filterNot { voice -> voice.features.any { it.startsWith("network") } }
+            .sortedWith(
+                compareByDescending<Voice> { it.locale == target }
+                    .thenByDescending { it.quality >= VOICE_QUALITY_HIGH }
+                    .thenBy { it.name },
+            )
+            .map { voice ->
+                TtsVoice(
+                    id = voice.name,
+                    displayName = "${voice.name}（${voice.locale.toLanguageTag()}）",
+                    qualityLabel = if (voice.quality >= VOICE_QUALITY_HIGH) "高" else "标准",
+                )
+            }
+            .toList()
+    }
+
+    /**
+     * 段前音色应用（FR-19）：已选音色且当前引擎仍可用 → `setVoice`（音色隐含 locale）；
+     * 未选 / 已失效 / 应用失败 → 既有 `setLanguage` 兜底（行为零回归）。
+     * 音色应用先行——部分引擎切换音色会重置语速/音调，随后统一重设（调用方顺序已定）。
+     */
+    private suspend fun applyVoiceOrLanguage(lang: Lang) {
+        val selectedId = runCatching {
+            when (lang) {
+                Lang.EN_US -> settings.getTtsVoiceEn()
+                Lang.ZH_CN -> settings.getTtsVoiceZh()
+            }
+        }.getOrNull()
+        if (selectedId != null) {
+            val voice = tts.voices.orEmpty().firstOrNull { it.name == selectedId }
+            if (voice != null && tts.setVoice(voice) != TextToSpeech.ERROR) return
+        }
+        val available = tts.setLanguage(TtsLocales.localeFor(lang))
+        if (available == TextToSpeech.LANG_MISSING_DATA || available == TextToSpeech.LANG_NOT_SUPPORTED) {
+            throw IllegalStateException(
+                "TTS 语言不可用（${lang.tag}，setLanguage=$available）——不静默改播其他语言"
+            )
         }
     }
 
@@ -190,6 +241,9 @@ public class TtsSpeechSynthesizer(
     private companion object {
         /** 初始化等待上限：模拟器引擎绑定可能偏慢；超时 → UNAVAILABLE（speak 抛异常，不挂死）。 */
         const val INIT_TIMEOUT_MS: Long = 10_000L
+
+        /** 平台 Voice.QUALITY_HIGH（400）：音色排序与品质标签依据。 */
+        const val VOICE_QUALITY_HIGH: Int = 400
     }
 }
 

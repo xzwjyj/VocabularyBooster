@@ -89,7 +89,7 @@ class BookDeletedRecoveryUiSmokeTest {
                 words = SqlDelightWordRepository(database)
                 SeedImporter(database, clock).ensureSeeded(SeedDictionaryProvider(SEED_DICTIONARY_JSON))
                 audioPlayer = Media3AudioPlayer(context)
-                synthesizer = TtsSpeechSynthesizer(context)
+                synthesizer = TtsSpeechSynthesizer(context, settings)
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
                 engine = DefaultLearningEngine(
                     sessionRepository = sessions,

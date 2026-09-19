@@ -19,7 +19,21 @@ public interface SpeechSynthesizer {
 
     /** 立即停止（Pause/Exit 用）。 */
     public fun stop()
+
+    /**
+     * 当前引擎可用的音色枚举（FR-19，Phase 8.6 加法扩展，L6 先例）。
+     * 引擎未就绪 → 空列表（UI 层等待 readiness 再刷新）；音色随设备已装引擎而异。
+     */
+    public fun availableVoices(lang: Lang): List<TtsVoice>
 }
+
+/** 平台中立音色描述（id = 平台音色标识，用于设置持久化与 speak 前应用）。 */
+public data class TtsVoice(
+    val id: String,
+    val displayName: String,
+    /** 品质标签（如「高」/「标准」），仅供 UI 展示。 */
+    val qualityLabel: String? = null,
+)
 
 public enum class Readiness { INITIALIZING, READY, UNAVAILABLE }
 

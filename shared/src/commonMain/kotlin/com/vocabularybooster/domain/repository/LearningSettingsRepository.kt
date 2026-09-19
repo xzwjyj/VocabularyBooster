@@ -11,6 +11,7 @@ import com.vocabularybooster.domain.model.PlaybackToggles
  * 生效时机由既有读取点天然满足：开关/语速/音调下一 Segment、commandWindowMs 下一窗口、
  * groupSize 仅新会话（FR-6 第 4 条）——写入无失效广播。
  */
+@Suppress("TooManyFunctions") // 裁决 L6：设置全部键走本端口加法扩展，不另建第二设置端口（FR-15/FR-19）
 public interface LearningSettingsRepository {
 
     /** `settings.groupSize`：会话分组大小来源（LE spec §4，调用前已确定值）。 */
@@ -47,6 +48,23 @@ public interface LearningSettingsRepository {
 
     /** 写 `settings.ttsPitch`；值必须 > 0，否则 [RepositoryValidationException]。 */
     public suspend fun setTtsPitch(value: Float)
+
+    // —— Phase 8.6 TTS 音色（FR-19，L6 加法扩展）：null = 跟随系统默认（setLanguage 兜底） ——
+
+    /**
+     * `settings.ttsVoiceEn`：英语朗读音色 id。**缺键或值损坏均返回 null**（音色为设备相关数据，
+     * 可因卸载自然失效——热路径防御性降级，不抛损坏异常；与其他键的损坏语义不同，特此注明）。
+     */
+    public suspend fun getTtsVoiceEn(): String?
+
+    /** `settings.ttsVoiceZh`：中文朗读音色 id；语义同 [getTtsVoiceEn]。 */
+    public suspend fun getTtsVoiceZh(): String?
+
+    /** 写英语音色 id；null = 清除（跟随系统）；非空必须非空白，否则 [RepositoryValidationException]。 */
+    public suspend fun setTtsVoiceEn(value: String?)
+
+    /** 写中文音色 id；null = 清除；语义同 [setTtsVoiceEn]。 */
+    public suspend fun setTtsVoiceZh(value: String?)
 
     public companion object {
         /** 内置默认值（DATABASE_SCHEMA §2.11）；不进入 GroupSplitter——纯函数保持由调用方传入。 */

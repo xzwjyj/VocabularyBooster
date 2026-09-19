@@ -31,6 +31,7 @@ class SettingsUiSmokeTest {
     fun setUp() {
         runBlocking {
             koin.get<VocabularyDatabase>().appSettingQueries.deleteSetting("settings.playbackToggles")
+            koin.get<VocabularyDatabase>().appSettingQueries.deleteSetting("settings.ttsVoiceEn")
         }
     }
 
@@ -45,6 +46,30 @@ class SettingsUiSmokeTest {
         rule.waitUntil(10_000) {
             db.appSettingQueries.selectSetting("settings.playbackToggles").executeAsOneOrNull()
                 ?.contains("\"spelling\":false") == true
+        }
+    }
+
+    /**
+     * Phase 8.6（FR-19）音色冒烟：进入设置 → 打开英语音色选择 → 选第一个真实音色 →
+     * KV 落库。模拟器引擎音色枚举可能为空（引擎未就绪/无音色）→ assume 跳过不判失败。
+     */
+    @Test
+    fun voiceSelectionPersistsImmediately() {
+        rule.onNodeWithText("设置").performClick()
+        rule.onNode(hasTestTag("settings_voice_en_row")).performClick()
+
+        val optionsReady = runCatching {
+            rule.waitUntil(15_000) {
+                runCatching { rule.onNode(hasTestTag("settings_voice_option_0")).assertExists() }.isSuccess
+            }
+        }.isSuccess
+        org.junit.Assume.assumeTrue("engine reported no en-US voices", optionsReady)
+
+        rule.onNode(hasTestTag("settings_voice_option_0")).performClick()
+
+        val db = koin.get<VocabularyDatabase>()
+        rule.waitUntil(10_000) {
+            db.appSettingQueries.selectSetting("settings.ttsVoiceEn").executeAsOneOrNull() != null
         }
     }
 }

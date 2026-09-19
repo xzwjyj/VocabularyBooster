@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
  * （不静默吞损坏数据）。写方法自 Phase 8 设置页：同范围校验、拒绝越界写入，
  * `upsertSetting` 落库（query 自 Phase 1 在位——零迁移）。
  */
+@Suppress("TooManyFunctions") // 端口实现——键数随 FR-15/FR-19 加法扩展（L6：不拆分端口）
 public class SqlDelightLearningSettingsRepository(
     private val database: VocabularyDatabase,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -114,12 +115,41 @@ public class SqlDelightLearningSettingsRepository(
         database.appSettingQueries.upsertSetting(TTS_PITCH_KEY, json.encodeToString(value))
     }
 
+    // —— Phase 8.6 TTS 音色（FR-19）：读 = 缺键/损坏均 null（设备相关数据可自然失效，热路径防御性降级）；
+    // 写 = null 清键（deleteSetting，缺键即默认），非空白经 JSON 编码 upsert ——
+
+    override suspend fun getTtsVoiceEn(): String? = getVoiceId(TTS_VOICE_EN_KEY)
+
+    override suspend fun getTtsVoiceZh(): String? = getVoiceId(TTS_VOICE_ZH_KEY)
+
+    override suspend fun setTtsVoiceEn(value: String?): Unit = setVoiceId(TTS_VOICE_EN_KEY, value)
+
+    override suspend fun setTtsVoiceZh(value: String?): Unit = setVoiceId(TTS_VOICE_ZH_KEY, value)
+
+    private suspend fun getVoiceId(key: String): String? = withContext(dispatcher) {
+        val raw = database.appSettingQueries.selectSetting(key).executeAsOneOrNull() ?: return@withContext null
+        runCatching { json.decodeFromString<String>(raw) }.getOrNull() // 损坏 → null（音色失效同级降级）
+    }
+
+    private suspend fun setVoiceId(key: String, value: String?): Unit = withContext(dispatcher) {
+        if (value != null && value.isBlank()) {
+            throw RepositoryValidationException("音色 id 必须非空白（key=$key）——清除请传 null")
+        }
+        if (value == null) {
+            database.appSettingQueries.deleteSetting(key)
+        } else {
+            database.appSettingQueries.upsertSetting(key, json.encodeToString(value))
+        }
+    }
+
     private companion object {
         const val GROUP_SIZE_KEY = "settings.groupSize"
         const val PLAYBACK_TOGGLES_KEY = "settings.playbackToggles"
         const val COMMAND_WINDOW_KEY = "settings.commandWindowMs"
         const val TTS_RATE_KEY = "settings.ttsRate"
         const val TTS_PITCH_KEY = "settings.ttsPitch"
+        const val TTS_VOICE_EN_KEY = "settings.ttsVoiceEn"
+        const val TTS_VOICE_ZH_KEY = "settings.ttsVoiceZh"
 
         // 前向兼容：未来新增开关键不破坏旧值读取（未知键忽略，缺省字段取默认）
         val json = Json { ignoreUnknownKeys = true }

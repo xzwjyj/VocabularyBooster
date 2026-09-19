@@ -251,6 +251,15 @@ internal class FakeLearningSettingsRepository(
     override suspend fun setTtsPitch(value: Float) {
         ttsPitch = value
     }
+
+    // Phase 8.6（FR-19）音色键良性桩（引擎测试不涉音色）
+    override suspend fun getTtsVoiceEn(): String? = null
+
+    override suspend fun getTtsVoiceZh(): String? = null
+
+    override suspend fun setTtsVoiceEn(value: String?) = Unit
+
+    override suspend fun setTtsVoiceZh(value: String?) = Unit
 }
 
 /**

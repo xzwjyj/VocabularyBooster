@@ -29,7 +29,9 @@ import com.vocabularybooster.playback.PlaybackState
 import com.vocabularybooster.playback.SegmentType
 import com.vocabularybooster.platform.AndroidSpeechCommandRecognizer
 import com.vocabularybooster.platform.Media3AudioPlayer
+import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.platform.TtsSpeechSynthesizer
+import org.koin.core.context.GlobalContext
 import com.vocabularybooster.speech.CommandParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,7 +92,7 @@ class PlaybackSmokeInstrumentedTest {
             driver = AndroidSqliteDriver(VocabularyDatabase.Schema, context) // in-memory（name=null）
             database = VocabularyDatabase(driver)
             audioPlayer = Media3AudioPlayer(context)
-            synthesizer = TtsSpeechSynthesizer(context)
+            synthesizer = TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>())
             val settings = SqlDelightLearningSettingsRepository(database)
             val sessions = SqlDelightLearningSessionRepository(database, clock)
             val books = SqlDelightWordBookRepository(database, clock)

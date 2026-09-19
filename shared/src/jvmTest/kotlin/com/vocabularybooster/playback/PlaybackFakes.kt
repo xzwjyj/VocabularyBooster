@@ -1,5 +1,6 @@
 package com.vocabularybooster.playback
 
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
@@ -11,6 +12,7 @@ import com.vocabularybooster.speech.SegmentResult
 import com.vocabularybooster.speech.SpeakRequest
 import com.vocabularybooster.speech.SpeechCommandRecognizer
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.speech.TtsVoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +55,9 @@ internal class FakeSpeechSynthesizer(
     override fun stop() {
         stopCount++
     }
+
+    /** FR-19 加法扩展（Phase 8.6）：播放引擎测试不涉音色，恒空。 */
+    override fun availableVoices(lang: Lang): List<TtsVoice> = emptyList()
 }
 
 /** Fake 文件音频：[failPrepare]/[failPlay] 注入 §9 降级路径；[pauseOffsetMs] 为 pause() 回传值。 */
@@ -156,6 +161,15 @@ internal class FakeLearningSettingsRepository(
     override suspend fun setTtsPitch(value: Float) {
         ttsPitch = value
     }
+
+    // Phase 8.6（FR-19）音色键良性桩（播放测试不涉音色）
+    override suspend fun getTtsVoiceEn(): String? = null
+
+    override suspend fun getTtsVoiceZh(): String? = null
+
+    override suspend fun setTtsVoiceEn(value: String?) = Unit
+
+    override suspend fun setTtsVoiceZh(value: String?) = Unit
 }
 
 /**

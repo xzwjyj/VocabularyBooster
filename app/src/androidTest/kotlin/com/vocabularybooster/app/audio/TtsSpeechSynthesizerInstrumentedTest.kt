@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vocabularybooster.domain.model.Lang
+import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.platform.TtsSpeechSynthesizer
+import org.koin.core.context.GlobalContext
 import com.vocabularybooster.speech.Readiness
 import com.vocabularybooster.speech.SpeakRequest
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +37,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
 
     @Test
     fun initialization_reachesTerminalState() = runBlocking {
-        val tts = withContext(Dispatchers.Main.immediate) { TtsSpeechSynthesizer(context) }
+        val tts = withContext(Dispatchers.Main.immediate) { TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>()) }
         val terminal = withTimeout(20_000) { tts.readiness.first { it != Readiness.INITIALIZING } }
         assertTrue(terminal == Readiness.READY || terminal == Readiness.UNAVAILABLE)
         withContext(Dispatchers.Main.immediate) { tts.release() }
@@ -43,7 +45,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
 
     @Test
     fun initializationFailure_contractIsException() = runBlocking {
-        val tts = withContext(Dispatchers.Main.immediate) { TtsSpeechSynthesizer(context) }
+        val tts = withContext(Dispatchers.Main.immediate) { TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>()) }
         val terminal = withTimeout(20_000) { tts.readiness.first { it != Readiness.INITIALIZING } }
         if (terminal == Readiness.UNAVAILABLE) {
             try {
@@ -62,7 +64,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
     @Test
     fun englishSpeak_completesViaUtteranceCallback() = runBlocking {
         withContext(Dispatchers.Main.immediate) {
-            val tts = TtsSpeechSynthesizer(context)
+            val tts = TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>())
             try {
                 val terminal = withTimeout(20_000) { tts.readiness.first { it != Readiness.INITIALIZING } }
                 assumeTrue("设备无 TTS 引擎：英语朗读转手动冒烟", terminal == Readiness.READY)
@@ -78,7 +80,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
     @Test
     fun chineseSpeak_languageContract() = runBlocking {
         withContext(Dispatchers.Main.immediate) {
-            val tts = TtsSpeechSynthesizer(context)
+            val tts = TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>())
             try {
                 val terminal = withTimeout(20_000) { tts.readiness.first { it != Readiness.INITIALIZING } }
                 assumeTrue("设备无 TTS 引擎：中文朗读转手动冒烟", terminal == Readiness.READY)
@@ -115,7 +117,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
     @Test
     fun rateAndPitch_appliedWithoutFailure() = runBlocking {
         withContext(Dispatchers.Main.immediate) {
-            val tts = TtsSpeechSynthesizer(context)
+            val tts = TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>())
             try {
                 val terminal = withTimeout(20_000) { tts.readiness.first { it != Readiness.INITIALIZING } }
                 assumeTrue("设备无 TTS 引擎：rate/pitch 用例转手动冒烟", terminal == Readiness.READY)
@@ -132,7 +134,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
     @Test
     fun stop_actuallyStopsUtterance() = runBlocking {
         withContext(Dispatchers.Main.immediate) {
-            val tts = TtsSpeechSynthesizer(context)
+            val tts = TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>())
             try {
                 val terminal = withTimeout(20_000) { tts.readiness.first { it != Readiness.INITIALIZING } }
                 assumeTrue("设备无 TTS 引擎：stop 用例转手动冒烟", terminal == Readiness.READY)
@@ -162,7 +164,7 @@ class TtsSpeechSynthesizerInstrumentedTest {
     @Test
     fun release_thenSpeak_throws() = runBlocking {
         withContext(Dispatchers.Main.immediate) {
-            val tts = TtsSpeechSynthesizer(context)
+            val tts = TtsSpeechSynthesizer(context, GlobalContext.get().get<LearningSettingsRepository>())
             tts.release()
             try {
                 withTimeout(5_000) { tts.speak(englishRequest("released")) }

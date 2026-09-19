@@ -3,6 +3,7 @@ package com.vocabularybooster.app.ui
 import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.AchievementType
 import com.vocabularybooster.domain.model.BookCompletedPayload
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.LearningSession
 import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.model.PlaybackToggles
@@ -34,6 +35,7 @@ import com.vocabularybooster.speech.SegmentResult
 import com.vocabularybooster.speech.SpeakRequest
 import com.vocabularybooster.speech.SpeechCommandRecognizer
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.speech.TtsVoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -69,6 +71,9 @@ class FakeSpeechSynthesizer : SpeechSynthesizer {
         stopCount++
         gates.forEach { it.cancel() }
     }
+
+    /** FR-19 加法扩展（Phase 8.6）：会话 VM 测试不涉音色，恒空；设置页测试用可编程列表。 */
+    override fun availableVoices(lang: Lang): List<TtsVoice> = emptyList()
 
     /** 放行当前挂起的 utterance（完成）。 */
     fun releaseLast(completed: Boolean = true) {
@@ -167,7 +172,9 @@ class FakeLearningEngine(
  * 设置 Fake：默认仅 PRONUNCIATION 段（每词单段，VM 层时序断言的最小确定形态）。
  * Phase 8 写路径：直写字段；[failWrites] = true 时全部 setter 抛校验异常
  * （SettingsViewModel 失败提示路径用，异常形态同真实仓储 RepositoryValidationException）。
+ * Phase 8.6（FR-19）：+两音色键字段。
  */
+@Suppress("LongParameterList") // 测试 Fake：一键一字段直排（Phase 8.6 音色两键后为 8）
 class FakeLearningSettingsRepository(
     var toggles: PlaybackToggles = PlaybackToggles(
         pronunciation = true,
@@ -181,6 +188,8 @@ class FakeLearningSettingsRepository(
     var commandWindowMs: Long = 4_000L,
     var ttsRate: Float = 1.0f,
     var ttsPitch: Float = 1.0f,
+    var ttsVoiceEn: String? = null,
+    var ttsVoiceZh: String? = null,
     var failWrites: Boolean = false,
 ) : LearningSettingsRepository {
     override suspend fun getGroupSize(): Int = groupSize
@@ -188,6 +197,8 @@ class FakeLearningSettingsRepository(
     override suspend fun getCommandWindowMs(): Long = commandWindowMs
     override suspend fun getTtsRate(): Float = ttsRate
     override suspend fun getTtsPitch(): Float = ttsPitch
+    override suspend fun getTtsVoiceEn(): String? = ttsVoiceEn
+    override suspend fun getTtsVoiceZh(): String? = ttsVoiceZh
 
     override suspend fun setGroupSize(value: Int) {
         failIfRequested()
@@ -212,6 +223,16 @@ class FakeLearningSettingsRepository(
     override suspend fun setTtsPitch(value: Float) {
         failIfRequested()
         ttsPitch = value
+    }
+
+    override suspend fun setTtsVoiceEn(value: String?) {
+        failIfRequested()
+        ttsVoiceEn = value
+    }
+
+    override suspend fun setTtsVoiceZh(value: String?) {
+        failIfRequested()
+        ttsVoiceZh = value
     }
 
     private fun failIfRequested() {

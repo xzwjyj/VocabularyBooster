@@ -30,6 +30,38 @@ class LearningSettingsRepositoryTest {
         assertEquals(1.0f, repo.getTtsPitch())
     }
 
+    // —— Phase 8.6（FR-19）：音色两键——写/读/清除（null）/损坏防御性降级（与其他键语义不同：热路径不抛） ——
+
+    @Test
+    fun voiceKeysRoundTripAndClear() = runTest {
+        val db = TestDb.inMemory()
+        val repo = newRepo(db)
+        assertEquals(null, repo.getTtsVoiceEn()) // 缺键 = null（跟随系统）
+        assertEquals(null, repo.getTtsVoiceZh())
+        repo.setTtsVoiceEn("en-voice-1")
+        repo.setTtsVoiceZh("zh-voice-1")
+        assertEquals("en-voice-1", repo.getTtsVoiceEn())
+        assertEquals("zh-voice-1", repo.getTtsVoiceZh())
+        repo.setTtsVoiceEn(null) // 清除 = 删键
+        repo.setTtsVoiceZh(null)
+        assertEquals(null, repo.getTtsVoiceEn())
+        assertEquals(null, repo.getTtsVoiceZh())
+        assertEquals(null, db.database.appSettingQueries.selectSetting("settings.ttsVoiceEn").executeAsOneOrNull())
+        // 空白拒绝（清除请传 null）
+        assertFailsWith<RepositoryValidationException> { repo.setTtsVoiceEn(" ") }
+    }
+
+    @Test
+    fun corruptVoiceValueDegradesToNullNotException() = runTest {
+        val db = TestDb.inMemory()
+        db.database.appSettingQueries.upsertSetting("settings.ttsVoiceEn", "not-json")
+        db.database.appSettingQueries.upsertSetting("settings.ttsVoiceZh", "not-json")
+        val repo = newRepo(db)
+        // 音色为设备相关数据可自然失效——热路径防御性降级，不抛损坏异常（端口 KDoc 注记）
+        assertEquals(null, repo.getTtsVoiceEn())
+        assertEquals(null, repo.getTtsVoiceZh())
+    }
+
     @Test
     fun storedValuesAreReadBack() = runTest {
         val db = TestDb.inMemory()

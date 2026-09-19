@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.vocabularybooster.app.di.ImportEngineFactory
 import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.DefinitionSelection
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SaveWordRequest
 import com.vocabularybooster.domain.model.Word
@@ -26,11 +27,16 @@ import com.vocabularybooster.importing.ImportReport
 import com.vocabularybooster.importing.ImportTarget
 import com.vocabularybooster.importing.ParsedLine
 import com.vocabularybooster.importing.PreviewLine
+import com.vocabularybooster.speech.Readiness
+import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.speech.TtsVoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** 查词（FR-1）：查询 → 结果列表。 */
 class LookupViewModel(
@@ -383,6 +389,7 @@ sealed interface ImportUiState {
  */
 class SettingsViewModel(
     private val settingsRepository: LearningSettingsRepository,
+    private val synthesizer: SpeechSynthesizer,
 ) : ViewModel() {
 
     var loaded by mutableStateOf(false)
@@ -404,6 +411,18 @@ class SettingsViewModel(
     var message by mutableStateOf<String?>(null)
         private set
 
+    // —— Phase 8.6 TTS 音色（FR-19）：null id = 跟随系统默认 ——
+
+    /** 引擎可用音色（引擎未就绪时为空——init 内等待就绪后枚举）。 */
+    var voicesEn by mutableStateOf<List<TtsVoice>>(emptyList())
+        private set
+    var voicesZh by mutableStateOf<List<TtsVoice>>(emptyList())
+        private set
+    var voiceEnId by mutableStateOf<String?>(null)
+        private set
+    var voiceZhId by mutableStateOf<String?>(null)
+        private set
+
     init {
         viewModelScope.launch {
             runCatching {
@@ -413,8 +432,18 @@ class SettingsViewModel(
                 toggles = settingsRepository.getPlaybackToggles()
                 ttsRate = settingsRepository.getTtsRate()
                 ttsPitch = settingsRepository.getTtsPitch()
+                voiceEnId = settingsRepository.getTtsVoiceEn()
+                voiceZhId = settingsRepository.getTtsVoiceZh()
             }.onFailure { message = "设置加载失败：${it.message}" }
             loaded = true
+        }
+        // 音色枚举须等引擎就绪（INITIALIZING → READY/UNAVAILABLE，上限 5s；超时保持空列表）
+        viewModelScope.launch {
+            withTimeoutOrNull(VOICE_ENUM_WAIT_MS) {
+                synthesizer.readiness.first { it != Readiness.INITIALIZING }
+            }
+            voicesEn = synthesizer.availableVoices(Lang.EN_US)
+            voicesZh = synthesizer.availableVoices(Lang.ZH_CN)
         }
     }
 
@@ -481,6 +510,35 @@ class SettingsViewModel(
                 }
                 .onFailure { e -> message = "保存失败：${e.message}" }
         }
+    }
+
+    /** 选英语音色（null = 跟随系统）；变更下一朗读段生效。 */
+    fun onVoiceEnChange(id: String?) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setTtsVoiceEn(id) }
+                .onSuccess {
+                    voiceEnId = id
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    /** 选中文音色（null = 跟随系统）；变更下一朗读段生效。 */
+    fun onVoiceZhChange(id: String?) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setTtsVoiceZh(id) }
+                .onSuccess {
+                    voiceZhId = id
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    private companion object {
+        /** 引擎就绪等待上限（对齐 [com.vocabularybooster.platform.TtsSpeechSynthesizer] 初始化节奏）。 */
+        const val VOICE_ENUM_WAIT_MS: Long = 5_000L
     }
 }
 
