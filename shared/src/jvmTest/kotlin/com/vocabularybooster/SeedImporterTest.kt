@@ -46,7 +46,7 @@ class SeedImporterTest {
         val provider = SeedDictionaryProvider(SEED_DICTIONARY_JSON)
         newImporter(db).ensureSeeded(provider)
 
-        val repo = SqlDelightWordRepository(db.database, DispatchersForTest)
+        val repo = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest)
         val detail = repo.lookup("  BOOST ")!!
         assertEquals("boost", detail.word.text)
         // 种子契约：每条释义至少 1 例句
@@ -84,7 +84,7 @@ class SeedImporterTest {
         val report = newImporter(db).import(stubWords)
 
         assertEquals(1, report.insertedWords)
-        val detail = SqlDelightWordRepository(db.database, DispatchersForTest).lookup("stubword")!!
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("stubword")!!
         assertEquals("StubWord", detail.word.text) // 原文保留大小写，归一化命中
         assertEquals(1, detail.entries.size)
         assertEquals(1, detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!.size)

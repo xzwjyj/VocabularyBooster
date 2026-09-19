@@ -110,8 +110,14 @@ fun WordDetailScreen(
 @Composable
 private fun DefinitionBlock(definition: DefinitionWithExamples) {
     Column(Modifier.padding(vertical = 8.dp)) {
-        Text(definition.entry.meaningEN, style = MaterialTheme.typography.bodyLarge)
-        Text(definition.entry.meaningCN, style = MaterialTheme.typography.bodyMedium)
+        // Phase 8.6（FR-18）：全量词典导入的词条可能单侧释义为空（ECDICT 部分词无英文释义）——
+        // 空白侧不渲染，避免空行
+        if (definition.entry.meaningEN.isNotBlank()) {
+            Text(definition.entry.meaningEN, style = MaterialTheme.typography.bodyLarge)
+        }
+        if (definition.entry.meaningCN.isNotBlank()) {
+            Text(definition.entry.meaningCN, style = MaterialTheme.typography.bodyMedium)
+        }
         definition.examples.forEach { example ->
             Column(Modifier.padding(top = 6.dp, start = 12.dp)) {
                 Text(example.sentence, style = MaterialTheme.typography.bodyMedium)

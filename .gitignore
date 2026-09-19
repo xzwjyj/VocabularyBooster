@@ -35,3 +35,9 @@ desktop.ini
 
 # ===== Kotlin session data =====
 .kotlin/
+
+# ===== Phase 8.6 FR-18 随包全量词典（>100MB 不入 git；再生见 tools/dict/README.md）=====
+app/src/main/assets/dict/
+tools/dict/stardict.db
+tools/dict/*.zip
+tools/dict/__pycache__/

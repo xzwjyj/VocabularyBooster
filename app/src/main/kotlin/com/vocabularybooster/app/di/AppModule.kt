@@ -2,6 +2,7 @@ package com.vocabularybooster.app.di
 
 import android.speech.SpeechRecognizer
 import com.vocabularybooster.app.speech.FallbackSpeechCommandRecognizer
+import com.vocabularybooster.data.dictionary.FallbackDictionaryProvider
 import com.vocabularybooster.app.speech.SpeechEngineKind
 import com.vocabularybooster.app.speech.SpeechEnginePolicy
 import com.vocabularybooster.app.ui.AchievementsViewModel
@@ -14,6 +15,7 @@ import com.vocabularybooster.app.ui.StatsViewModel
 import com.vocabularybooster.app.ui.WordBooksViewModel
 import com.vocabularybooster.app.ui.WordSelectionEditorViewModel
 import com.vocabularybooster.app.ui.WordDetailViewModel
+import com.vocabularybooster.platform.BundledDictionaryProvider
 import com.vocabularybooster.playback.AudioPlayer
 import com.vocabularybooster.playback.PlaybackOrchestrator
 import com.vocabularybooster.platform.AndroidDatabaseDriverFactoryProvider
@@ -27,6 +29,7 @@ import com.vocabularybooster.platform.VoskSpeechCommandRecognizer
 import com.vocabularybooster.speech.CommandParser
 import com.vocabularybooster.speech.SpeechCommandRecognizer
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.domain.dictionary.DictionaryProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -83,6 +86,14 @@ val appModule = module {
         }
     }
     single { CommandParser() }
+    // Phase 8.6（FR-18）：复合词典源——精选种子优先（含例句），随包全量词典兜底（无例句）；
+    // DictionaryProvider 全库唯一绑定在此（Koin 4 无 override；sharedDataModule 不再定义）
+    single<DictionaryProvider> {
+        FallbackDictionaryProvider(
+            primary = get(),
+            fallback = BundledDictionaryProvider(androidContext()),
+        )
+    }
     single {
         PlaybackOrchestrator(
             engine = get(),

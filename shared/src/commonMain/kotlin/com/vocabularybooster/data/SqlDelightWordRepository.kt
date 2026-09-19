@@ -1,6 +1,9 @@
 package com.vocabularybooster.data
 
+import com.vocabularybooster.data.dictionary.FallbackDictionaryProvider
+import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
+import com.vocabularybooster.domain.dictionary.DictionaryProvider
 import com.vocabularybooster.domain.model.Word
 import com.vocabularybooster.domain.model.WordDetail
 import com.vocabularybooster.domain.model.toNormalizedWordText
@@ -12,17 +15,39 @@ import kotlinx.coroutines.withContext
 /**
  * WordRepository 的 SQLDelight 实现（Phase 2）。
  * 派发器注入（NFR-9）；排序恒走 Q1（架构铁律 3）。
+ * Phase 8.6（FR-18）按需导入：DB miss 且词典源（[FallbackDictionaryProvider] 复合：
+ * 种子优先 → 随包全量兜底）命中时，经 [SeedImporter] 导入该单词（幂等、单事务，
+ * 与种子同代码路径）后重读返回——查词覆盖全量词典，库只长不缩。
+ * 两个依赖可空：缺省（纯 DB 模式，测试/手工 Koin 图）行为与 Phase 2 完全一致。
  */
 public class SqlDelightWordRepository(
     private val database: VocabularyDatabase,
+    private val dictionaryProvider: DictionaryProvider? = null,
+    private val seedImporter: SeedImporter? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : WordRepository {
 
     override suspend fun lookup(text: String): WordDetail? = withContext(dispatcher) {
+        readFromDb(text) ?: importOnDemand(text)?.let { readFromDb(text) }
+    }
+
+    /** FR-18：miss → 源命中 → 导入 → true；未装配词典或源未收录返回 false。 */
+    private suspend fun importOnDemand(text: String): Boolean {
+        val provider = dictionaryProvider ?: return false
+        val word = provider.lookup(text)
+        return if (word == null || seedImporter == null) {
+            false
+        } else {
+            seedImporter.import(listOf(word))
+            true
+        }
+    }
+
+    private fun readFromDb(text: String): WordDetail? {
         val row = database.wordQueries
             .selectByNormalizedText(text.toNormalizedWordText())
             .executeAsOneOrNull()
-            ?: return@withContext null
+            ?: return null
         val entries = database.definitionEntryQueries
             .selectDefinitionsForWord(row.wordId)
             .executeAsList()
@@ -33,7 +58,7 @@ public class SqlDelightWordRepository(
                 .executeAsList()
                 .map { it.toDomain() }
         }
-        WordDetail(
+        return WordDetail(
             word = row.toDomain(),
             entries = entries.map { it.toDomain() },
             examplesByEntryId = examplesByEntryId,

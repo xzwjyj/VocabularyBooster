@@ -36,7 +36,7 @@ class PartOfSpeechOrderingTest {
             )
         }
 
-        val detail = SqlDelightWordRepository(db.database, DispatchersForTest).lookup("shuffle")!!
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("shuffle")!!
 
         // (partOfSpeech, definitionOrder) 全序断言
         assertEquals(

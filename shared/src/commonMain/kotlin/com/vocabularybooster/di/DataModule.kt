@@ -13,7 +13,6 @@ import com.vocabularybooster.data.seed.SEED_DICTIONARY_JSON
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
-import com.vocabularybooster.domain.dictionary.DictionaryProvider
 import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.domain.repository.LearningSessionRepository
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
@@ -35,8 +34,15 @@ public val sharedDataModule: Module = module {
     single {
         VocabularyDatabase(get<DatabaseDriverFactoryProvider>().create())
     }
+    // Phase 8.6（FR-18）：WordRepository 按需导入装配——DictionaryProvider 绑定由平台
+    // 模块提供（Android = FallbackDictionaryProvider 种子优先→随包全量兜底；Koin 4 无
+    // override，全库只此一处定义）；手工 Koin 图缺绑定时 getOrNull 降级纯 DB 模式
     single<WordRepository> {
-        SqlDelightWordRepository(database = get())
+        SqlDelightWordRepository(
+            database = get(),
+            dictionaryProvider = getOrNull(),
+            seedImporter = get(),
+        )
     }
     single<WordBookRepository> {
         SqlDelightWordBookRepository(database = get(), clock = get())
@@ -67,9 +73,6 @@ public val sharedDataModule: Module = module {
     }
     single {
         SeedDictionaryProvider(SEED_DICTIONARY_JSON)
-    }
-    single<DictionaryProvider> {
-        get<SeedDictionaryProvider>()
     }
     single {
         SeedImporter(database = get(), clock = get())

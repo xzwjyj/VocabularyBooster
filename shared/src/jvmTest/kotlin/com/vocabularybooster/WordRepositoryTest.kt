@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 /** WordRepository（FR-1 查词 + 前缀搜索）。 */
 class WordRepositoryTest {
 
-    private fun newRepo(db: TestDb): WordRepository = SqlDelightWordRepository(db.database, DispatchersForTest)
+    private fun newRepo(db: TestDb): WordRepository = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest)
 
     /** 词 + 2 释义（noun 先插、verb 后插，验证 Q1 排序与插入序无关）+ 2 例句。 */
     private fun TestDb.seedBoostFamily() {
