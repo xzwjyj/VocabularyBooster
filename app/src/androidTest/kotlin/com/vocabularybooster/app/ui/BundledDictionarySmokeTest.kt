@@ -28,7 +28,8 @@ class BundledDictionarySmokeTest {
         val provider = BundledDictionaryProvider(targetContext)
         val word = provider.lookup("  Serendipity ")
         org.junit.Assume.assumeTrue("bundled dict asset absent", word != null)
-        assertEquals("Serendipity", word!!.text)
+        // text = 词典头词（ECDICT 惯例小写），非查询原文——大小写归一只用于命中
+        assertEquals("serendipity", word!!.text)
         assertTrue(word.definitions.isNotEmpty())
 
         val phrase = provider.lookup("take off")
