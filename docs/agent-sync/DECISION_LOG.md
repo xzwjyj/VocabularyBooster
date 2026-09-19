@@ -111,3 +111,18 @@
 **环境备注**：当日 jvmTest 曾三次 native 崩溃（sqlite-jdbc `NativeDB.prepare_utf8`，十万行导入基准）——stash 基线复现证明与本次改动无关，根因 = 系统内存压力（16G 仅 ~2G 空闲时必崩；停 Gradle 守护进程 + 重试即过）。后续门禁若再现，先查空闲内存。
 
 **状态**：已实现；vivo 装包走查待用户执行（编辑预填一致 / 增删生效 / 队列位置不变）
+
+### ADR-007: Phase 8.6 打磨批执行决策（bug list 四项）
+
+**日期**：2026-09-19（用户批准 IMPLEMENTATION_PLAN_BUGLIST 后执行；四项实现顺序 图标→TTS→统计→词典，外部数据风险置底）
+
+**决策**：
+- **FR-18 词典**：数据源 = ECDICT 1.0.28 sqlite 发行包（MIT；GitHub release `ecdict-sqlite-28.zip`，无裸 CSV——stardict 包为二进制格式弃用）。子集口径 = `bnc IS NOT NULL`（入词频表 846,281 条，未入表长尾为噪声）+ 字符集 `[A-Za-z][A-Za-z \-']{0,39}` 过滤 → **836,398 条**（449,387 词 + 387,011 短语；含音标 217,591），落位于用户裁决"全量 ~77 万词"。义项上限 8/词；EN↔CN 仅双方都有第 i 行时按位配对，剩余单侧成条不伪造关联；无词性前缀行 → `other`@90（DOMAIN_MODEL §3.1 逃逸口）
+- **资产形态偏差（对 PLAN 的两处修正）**：① definitions 列由对象 JSON 改为**紧凑数组 JSON** `[["pos","en","cn"],…]`（对象键开销 ~95B/义项会使资产膨胀至 ~200MB；数组编码后 ~90MB，APK 实测 +36MB）；② 产物 `app/src/main/assets/dict/ecdict.sqlite`（DictEntry WITHOUT ROWID，normalized PK ≡ `toNormalizedWordText()`）**不入 git**（.gitignore），再生 = `tools/dict/convert.py` + README 三步（~10s）
+- **接线**：`FallbackDictionaryProvider`（种子优先→随包兜底）；DB miss → `SeedImporter.import(单词)` 幂等按需导入后重读；两依赖可空（手工 Koin 图保持纯 DB 行为）。**Koin 4 无 override** → `DictionaryProvider` 全库唯一绑定移至 appModule（DataModule 撤销绑定）；Android actual 资产缺席/损坏 → 永久 null 降级（查词增强非硬依赖，CI 无资产时冒烟 assume 跳过）
+- **FR-20 统计口径**（Q8/Q9 query-only 零迁移）：学习 = 按 wordId 最早 masteredAt 的本地日（跨本去重）；复习 = 事件日**严格晚于**首掌日（同日重复既非学亦非复）；时长 = endedAt−startedAt 按结束日归集（ACTIVE 未结束行不计）。**分桶在 Kotlin**（注入 Clock/TimeZone——SQL strftime 'unixepoch' 为 UTC 会错本地日界）；窗口 日=近 30 天 / 月=近 12 个月 / 年=首事件年至今年，零值填充
+- **FR-19 音色 + 图标**：详见 c991efb / 8d6c71f commit（音色键损坏读→null 防御性降级——设备数据可自然失效，与设置键"损坏即抛"语义不同，已在端口 KDoc 注明）
+
+**测试**：jvmTest +11（统计 7：首掌去重/晚日复习+同日不算/时长归结束日含跨午夜/ACTIVE 不计/空库零值+窗口填充/月年上卷/注入时区日界；词典 3：命中导入后 DB 供数/未收录 null 且库零增长/DB 命中不打扰源）+ 既有 3 文件位置参数改命名；app unit +3（StatsViewModel 投影/粒度切换/失败提示）；androidTest +3（统计卡冒烟 / 词典资产冒烟 / 词典 Koin 全链路）；FR-19 组随 c991efb。**最终门禁（2026-09-19 收尾，含三个修复 commit 后树态）**：connected 54 执行/49 过/5 skip/0 失败；jvmTest 28/29 类分批全绿（ImportPerfTest 被机器级原生故障阻塞——当日 0 时段门禁 290/0 含它通过、import 路径零改动，复核命令与取证见 PHASE_8_6_REPORT §4）；detekt×2 / checkPlatformBoundaries / testDebugUnitTest×2 绿；APK 实测 **130.3MB**（词典资产 85.8MB）。**收尾补修**：Koin 复合绑定自引用（`get()` 按接口类型解析回自身 → StackOverflow，改 `get<SeedDictionaryProvider>()`——真实图首启即崩、connected 首跑捕获）；统计冒烟 unmerged 树断言（clickable 卡 mergeDescendants 吞内层 tag）。
+
+**状态**：已实现并全量门禁收尾（`8d6c71f` 图标 + `c991efb` 音色 + `bd46150` 统计 + `dd17820` 词典 + 收尾修复三 commit）；ImportPerfTest 待重启机器后单跑复核；vivo 装机走查待用户执行（图标目视 / 音色切换 / 统计卡与图表 / 全量查词含短语）
