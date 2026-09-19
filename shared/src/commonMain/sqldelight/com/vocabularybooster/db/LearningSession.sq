@@ -25,3 +25,10 @@ SELECT * FROM LearningSession WHERE status = 'ACTIVE' ORDER BY sessionId DESC LI
 
 selectLastInsertRowId:
 SELECT last_insert_rowid();
+
+-- Q9 学习统计·会话时长流（FR-20，Phase 8.6）：已结束会话（endedAt 非空；崩溃未恢复的
+-- ACTIVE 行不计时长——口径见 PROJECT_SPEC FR-20）；时长 = endedAt - startedAt，
+-- 按结束日归集（Kotlin 分桶，注入 TimeZone）。
+-- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
+selectEndedSessions:
+SELECT startedAt, endedAt FROM LearningSession WHERE endedAt IS NOT NULL;

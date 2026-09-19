@@ -4,6 +4,7 @@ import com.vocabularybooster.data.SqlDelightAchievementRepository
 import com.vocabularybooster.data.SqlDelightImportRepository
 import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
+import com.vocabularybooster.data.SqlDelightLearningStatsRepository
 import com.vocabularybooster.data.SqlDelightPlaybackContentRepository
 import com.vocabularybooster.data.SqlDelightPlaybackPositionRepository
 import com.vocabularybooster.data.SqlDelightWordBookRepository
@@ -16,6 +17,7 @@ import com.vocabularybooster.domain.dictionary.DictionaryProvider
 import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.domain.repository.LearningSessionRepository
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
+import com.vocabularybooster.domain.repository.LearningStatsRepository
 import com.vocabularybooster.domain.repository.PlaybackContentRepository
 import com.vocabularybooster.domain.repository.PlaybackPositionRepository
 import com.vocabularybooster.domain.repository.WordBookRepository
@@ -48,6 +50,10 @@ public val sharedDataModule: Module = module {
     }
     single<LearningSettingsRepository> {
         SqlDelightLearningSettingsRepository(database = get())
+    }
+    // Phase 8.6：学习统计仓储（FR-20；Q8/Q9 query-only 零迁移，分桶走注入 Clock/TimeZone）
+    single<LearningStatsRepository> {
+        SqlDelightLearningStatsRepository(database = get(), clock = get())
     }
     single<PlaybackPositionRepository> {
         SqlDelightPlaybackPositionRepository(database = get())

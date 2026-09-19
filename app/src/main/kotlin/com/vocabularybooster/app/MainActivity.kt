@@ -31,6 +31,7 @@ import com.vocabularybooster.app.ui.ImportScreen
 import com.vocabularybooster.app.ui.LearningSessionScreen
 import com.vocabularybooster.app.ui.LookupScreen
 import com.vocabularybooster.app.ui.SettingsScreen
+import com.vocabularybooster.app.ui.StatsDetailScreen
 import com.vocabularybooster.app.ui.WordBooksScreen
 import com.vocabularybooster.app.ui.WordDetailScreen
 
@@ -60,6 +61,7 @@ private fun VocabularyBoosterRoot() {
     var openBookId by rememberSaveable { mutableStateOf<Long?>(null) }
     var learningBookId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showImport by rememberSaveable { mutableStateOf(false) }
+    var showStats by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         bottomBar = {
@@ -100,6 +102,7 @@ private fun VocabularyBoosterRoot() {
                     onExit = { learningBookId = null },
                 )
                 showImport -> ImportScreen(onDone = { showImport = false })
+                showStats -> StatsDetailScreen(onBack = { showStats = false })
                 openWordText != null -> WordDetailScreen(
                     wordText = openWordText!!,
                     onBack = { openWordText = null },
@@ -114,7 +117,7 @@ private fun VocabularyBoosterRoot() {
                     onBookClick = { openBookId = it },
                     onImportClick = { showImport = true },
                 )
-                tab == 2 -> AchievementsScreen()
+                tab == 2 -> AchievementsScreen(onOpenStats = { showStats = true })
                 else -> SettingsScreen()
             }
         }

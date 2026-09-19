@@ -63,3 +63,10 @@ WHERE sessionId = :sessionId
     SELECT wbe.wordId FROM WordBookEntry wbe
     WHERE wbe.wordBookId = (SELECT wordBookId FROM LearningSession WHERE sessionId = :sessionId)
   );
+
+-- Q8 学习统计·掌握事件流（FR-20，Phase 8.6）：全部掌握事件（wordId, masteredAt）——
+-- Kotlin 侧分桶（注入 TimeZone，本地日界正确；SQL strftime 'unixepoch' 为 UTC 会错日界）。
+-- 学习 = 首次掌握（Kotlin 侧按 wordId 取 MIN）；复习 = 事件日严格晚于该词首次掌握日的事件。
+-- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
+selectMasteredEvents:
+SELECT wordId, masteredAt FROM SessionWord WHERE masteredAt IS NOT NULL;

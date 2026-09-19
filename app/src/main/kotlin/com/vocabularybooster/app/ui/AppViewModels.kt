@@ -10,14 +10,18 @@ import com.vocabularybooster.app.di.ImportEngineFactory
 import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.Lang
+import com.vocabularybooster.domain.model.LearningStatsSummary
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SaveWordRequest
+import com.vocabularybooster.domain.model.StatsGranularity
+import com.vocabularybooster.domain.model.StatsPoint
 import com.vocabularybooster.domain.model.Word
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import com.vocabularybooster.domain.model.WordDetail
 import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
+import com.vocabularybooster.domain.repository.LearningStatsRepository
 import com.vocabularybooster.domain.repository.WordBookDeletionException
 import com.vocabularybooster.domain.repository.WordBookRepository
 import com.vocabularybooster.domain.repository.WordRepository
@@ -240,6 +244,49 @@ class AchievementsViewModel(
                 .onSuccess { achievements = it }
                 .onFailure { message = "勋章加载失败：${it.message}" }
         }
+    }
+}
+
+/** 学习统计（FR-20，Phase 8.6）：勋章页汇总卡与统计详情曲线共享同一 activity 作用域实例。 */
+class StatsViewModel(
+    private val statsRepository: LearningStatsRepository,
+) : ViewModel() {
+
+    var summary by mutableStateOf<LearningStatsSummary?>(null)
+        private set
+    var granularity by mutableStateOf(StatsGranularity.DAY)
+        private set
+    var points by mutableStateOf<List<StatsPoint>>(emptyList())
+        private set
+    var message by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            runCatching { statsRepository.summary() }
+                .onSuccess {
+                    summary = it
+                    message = null
+                }
+                .onFailure { message = "统计加载失败：${it.message}" }
+            loadSeries()
+        }
+    }
+
+    fun onGranularityChange(value: StatsGranularity) {
+        if (value == granularity) return
+        granularity = value
+        viewModelScope.launch { loadSeries() }
+    }
+
+    private suspend fun loadSeries() {
+        runCatching { statsRepository.series(granularity) }
+            .onSuccess { points = it }
+            .onFailure { message = "统计加载失败：${it.message}" }
     }
 }
 
