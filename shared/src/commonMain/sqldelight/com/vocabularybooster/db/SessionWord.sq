@@ -70,3 +70,10 @@ WHERE sessionId = :sessionId
 -- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
 selectMasteredEvents:
 SELECT wordId, masteredAt FROM SessionWord WHERE masteredAt IS NOT NULL;
+
+-- 测试支援（Phase 8.6 StatsCardUiSmokeTest 确定性起点：清其他冒烟遗留的掌握事件——
+-- 今日学习数只读本表掌握事件）。不连带清 LearningSession：DERIVED 本的
+-- sourceSessionId 外键（无级联）会拦会话删除，且会话残留不影响本断言口径。
+-- 生产零调用；query-only 无 DDL
+deleteAllSessionWords:
+DELETE FROM SessionWord;

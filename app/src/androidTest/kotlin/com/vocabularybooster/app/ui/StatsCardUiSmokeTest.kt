@@ -17,9 +17,9 @@ import org.koin.core.context.GlobalContext
 
 /**
  * 统计卡 UI 冒烟（Phase 8.6，TC-UI 统计组；需模拟器）：真实 MainActivity + 真实 Koin 图 +
- * 真实文件库。@Before 清空会话两表（统计只读 SessionWord/LearningSession——其他冒烟
- * 遗留的掌握事件会污染口径；无生产 delete-all query，走 driver 原生 SQL）→
- * 种当日一个掌握事件 → 勋章页统计卡「今日学习」显示 1 词。
+ * 真实文件库。@Before 清空 SessionWord 掌握事件（今日学习数唯一污染源——前序冒烟会
+ * 掌握种子词；不清 LearningSession：DERIVED 本 sourceSessionId 外键无级联会拦删，
+ * 且会话残留不影响本断言）→ 种当日一个掌握事件 → 勋章页统计卡「今日学习」显示 1 词。
  * 种入与断言同取设备时钟，跨午夜竞态概率 ~1/86400，冒烟可接受。
  */
 @RunWith(AndroidJUnit4::class)
@@ -33,8 +33,7 @@ class StatsCardUiSmokeTest {
     fun setUp() {
         val db = koin.get<VocabularyDatabase>()
         runBlocking {
-            db.driver.execute(null, "DELETE FROM SessionWord", 0)
-            db.driver.execute(null, "DELETE FROM LearningSession", 0)
+            db.sessionWordQueries.deleteAllSessionWords()
         }
     }
 
@@ -43,10 +42,14 @@ class StatsCardUiSmokeTest {
         val db = koin.get<VocabularyDatabase>()
         val now = System.currentTimeMillis()
         runBlocking {
-            db.wordBookQueries.insertOriginalWordBook("stats-smoke", null, now, now)
+            db.wordBookQueries.insertOriginalWordBook("stats-smoke-$now", null, now, now)
             val bookId = db.wordBookQueries.selectLastInsertRowId().executeAsOne()
-            db.wordQueries.insertWord("statssmokeword", "statssmokeword", null, null, null, now, now)
-            val wordId = db.wordQueries.selectLastInsertRowId().executeAsOne()
+            // 幂等：本词可能已由上次运行种入（am instrument 重跑不卸载不清库）
+            val wordId = db.wordQueries.selectByNormalizedText("statssmokeword").executeAsOneOrNull()?.wordId
+                ?: run {
+                    db.wordQueries.insertWord("statssmokeword", "statssmokeword", null, null, null, now, now)
+                    db.wordQueries.selectLastInsertRowId().executeAsOne()
+                }
             db.learningSessionQueries.insertSession(bookId, "ABANDONED", 10, now, now)
             val sessionId = db.learningSessionQueries.selectLastInsertRowId().executeAsOne()
             db.sessionWordQueries.insertSessionWord(sessionId, wordId, 0, 0, "PENDING")
@@ -54,10 +57,16 @@ class StatsCardUiSmokeTest {
         }
 
         rule.onNodeWithText("勋章").performClick()
-        rule.waitUntil(15_000) {
-            runCatching {
-                rule.onNode(hasTestTag("stats_today_learned_value")).assertTextEquals("1 词")
-            }.isSuccess
+        try {
+            rule.waitUntil(15_000) {
+                runCatching {
+                    // 统计卡整体 clickable（mergeDescendants）——值文本断言必须走 unmerged 树
+                    rule.onNode(hasTestTag("stats_today_learned_value"), useUnmergedTree = true)
+                        .assertTextEquals("1 词")
+                }.isSuccess
+            }
+        } catch (e: Throwable) {
+            error("统计卡未显示今日学习 1 词：${e.message}")
         }
     }
 }
