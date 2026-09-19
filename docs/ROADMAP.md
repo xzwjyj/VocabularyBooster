@@ -19,6 +19,7 @@
 | 7 | TXT 导入 | 2 |
 | 8 | 设置与打磨（i18n / 无障碍 / 性能） | 4–7 |
 | **8.5** | 生词本词条选择编辑（FR-17） | 2 |
+| **8.6** | 打磨批（bug list 四项：FR-18 全量词典 / FR-19 音色 / FR-20 统计 / 图标） | 2–8 |
 | 9 | 稳定化 + Alpha 发布 | 全部 |
 | iOS | iOS 引导（需 macOS） | 核心稳定后 |
 
@@ -92,6 +93,12 @@
 **裁决**：查词保存流（FR-5）不预填——修改选择的正规入口 = 本详情「编辑」（PROJECT_SPEC v1.13 FR-5 注记）；≥1 释义守卫（全不勾请用「移除」）；掌握/会话零接触；生效时点 = 该词下一次播放（粒度同 FR-10 开关）。
 **出口**：FR-17 验收行全过（自动化 + 走查）；全量门禁绿（jvmTest / shared unit / app unit / detekt×2 / checkPlatformBoundaries / assembleDebug / connected）。
 
+## Phase 8.6 — 打磨批（bug list 四项，2026-09-19 立项；用户裁决：词典全量 77 万 / TTS 本地音色）
+
+**背景**：用户 bug list（2026-09-19）四项——词典收录不全 / 语音机械不自然 / 勋章页统计缺失 / 默认图标。
+**交付**：FR-18 全量离线词典（ECDICT→只读 SQLite 随包 + DB 未命中按需导入，幂等）｜FR-19 TTS 音色（端口枚举 + 设置两键 + 系统语音设置直达，失效回退）｜FR-20 学习统计（勋章页统计卡 + 日/月/年图表，SessionWord/LearningSession 聚合 query-only 零迁移）｜自适应矢量图标（manifest 原无 icon）。实现顺序：图标 → TTS → 统计 → 词典（外部数据风险置底）；词典产物 >100MB 由工具再生成、不入 git。
+**出口**：FR-18/19/20 验收行全过 + 图标装机目视；全量门禁绿；bug list.md 逐项注释销项。
+
 ## Phase 9 — 稳定化与 Alpha
 
 **交付**：全手动矩阵回归（TEST_PLAN §7）；完整 FR 验收清单走查；alpha 出包。
@@ -128,3 +135,4 @@
 | 1.8 | 2026-09-18 | **Phase 4/5 标记完成 + M1–M4 延后（用户裁决）**：Phase 4 Step 0–4 分步验收后并入 Phase 5 checkpoint（`7ccb04c`）；Phase 5 以 MVP 口径收尾（自动化出口全绿 + vivo 取证性实测；真机 M1–M4 正式统计延后至后续迭代——用户裁决语音效果自评够用，先交付 MVP；补跑按 checklist 原样执行、结果不预填）。收尾报告 `docs/reports/PHASE_5_REPORT.md`；TEST_PLAN v2.11 §7.1 同步注记 |
 | 1.9 | 2026-09-18 | **Phase 8 范围收敛（用户裁决）**：交付收敛为设置页单项（FR-15 五项——端口写方法 + 设置 UI + 第四 Tab）；「会了」别名可配置性再延后（PROJECT_SPEC v1.12）；i18n 校对 / TalkBack / NFR-2 逐项测量延后至 MVP 后打磨批（与 M1–M4 同口径）。协议文档：docs/agent-sync/ `*_PHASE8.md` |
 | 1.10 | 2026-09-19 | **新增 Phase 8.5（用户 2026-09-19 vivo 走查后提出）**：生词本词条选择编辑（FR-17）——已保存词增删释义/例句选择；端口 +2 + Q7 query-only（零迁移）+ 编辑 UI；裁决查词保存流不预填。上游 PROJECT_SPEC v1.13（FR-17 + FR-5 注记）；协议文档：docs/agent-sync/ `*_PHASE8_5.md` |
+| 1.11 | 2026-09-19 | **新增 Phase 8.6 打磨批（bug list 四项，用户裁决：词典全量 77 万 / TTS 本地音色）**：FR-18 全量离线词典 + 按需导入 / FR-19 TTS 音色选择 / FR-20 学习统计 / 应用图标。上游 PROJECT_SPEC v1.14；协议文档：docs/agent-sync/ `*_BUGLIST.md` |

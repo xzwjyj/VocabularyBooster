@@ -90,6 +90,7 @@ interface SpeechSynthesizer {
     val readiness: StateFlow<Readiness>                       // Ready / Initializing / Unavailable
     suspend fun speak(request: SpeakRequest): SegmentResult  // 播完返回（request 含 utteranceId/text/lang/rate/pitch）
     fun stop()                                                // 立即停止（Pause/Exit 用）
+    fun availableVoices(lang: Lang): List<TtsVoice>           // 当前引擎音色枚举（FR-19，Phase 8.6；未选/失效 → setLanguage 兜底）
 }
 
 // file audio —— 例句原声

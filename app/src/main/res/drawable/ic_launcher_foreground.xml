@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标前景（Phase 8.6 bug#4）：翻开的书本 + 朗读声波 —— 「循环朗读单词」意象。
+     纯白单色（兼作 Android 13+ 主题图标 monochrome）；内容位于 66dp 安全区内。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 声波源点 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,46 m-3,0 a3,3 0 1 1 6,0 a3,3 0 1 1 -6,0" />
+
+    <!-- 三道朗读声波（圆弧，向上张开） -->
+    <path
+        android:pathData="M48,40 A6,6 0 0 1 60,40"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M42,40 A12,12 0 0 1 66,40"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M36,40 A18,18 0 0 1 72,40"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- 翻开的书本（左页） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M25,62 C33,56 43,55 51.5,59.5 L51.5,78 C43,74 33,75 25,81 Z" />
+    <!-- 翻开的书本（右页） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M83,62 C75,56 65,55 56.5,59.5 L56.5,78 C65,74 75,75 83,81 Z" />
+</vector>

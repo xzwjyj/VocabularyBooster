@@ -274,7 +274,22 @@ UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId 
 -- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
 deleteEntryDefinitionsForEntry:
 DELETE FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;
+
+-- Q8 学习统计·掌握事件流（FR-20，Phase 8.6）：全部掌握事件（wordId, masteredAt）——
+-- Kotlin 侧分桶（注入 TimeZone，本地日界正确；SQL strftime 'unixepoch' 为 UTC 会错日界）。
+-- 学习=首次掌握（Kotlin 侧按 wordId 取 MIN），复习=今日前已有掌握的再掌握事件。
+-- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
+selectMasteredEvents:
+SELECT wordId, masteredAt FROM SessionWord WHERE masteredAt IS NOT NULL;
+
+-- Q9 学习统计·会话时长流（FR-20，Phase 8.6）：已结束会话（endedAt 非空；崩溃未恢复的 ACTIVE
+-- 行不计时长——口径见 PROJECT_SPEC FR-20）；时长 = endedAt - startedAt，按结束日归集（Kotlin 分桶）。
+-- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
+selectEndedSessions:
+SELECT startedAt, endedAt FROM LearningSession WHERE endedAt IS NOT NULL;
 ```
+
+> **全量词典（FR-18，Phase 8.6）**：随包只读 SQLite（`assets/dict/ecdict.sqlite`，ECDICT 转换产物，工具再生成、不入 git）是 **App 数据库之外的独立文件**，不进本 schema（App 库只在查词按需导入时经既有 `insertWord`/`insertDefinitionEntry`/`insertExample` 写入词条——零新查询）。
 
 ## 4. 事务规则（必须原子，违反即 bug）
 
@@ -314,6 +329,8 @@ DELETE FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;
 | FR-14 导入译文暂存 / 词复用 / 去重 | `WordBookEntry.pendingTranslation` + `Word.normalizedText` 唯一复用 |
 | FR-15 设置 | `AppSetting` KV（结构化 JSON） |
 | FR-17 词条选择编辑 | Q7 `deleteEntryDefinitionsForEntry` + 既有 `deleteExampleSelectionsForEntry` / `selectEntryDefinitions` / `selectExampleSelections`（整组替换，零 DDL） |
+| FR-18 全量词典按需导入 | 随包只读 SQLite（独立文件）+ 既有 `insertWord`/`insertDefinitionEntry`/`insertExample`（零新查询） |
+| FR-20 学习统计 | Q8 `selectMasteredEvents` + Q9 `selectEndedSessions`（Kotlin 分桶，零 DDL） |
 
 ---
 
@@ -329,3 +346,4 @@ DELETE FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;
 | 1.7 | 2026-09-18 | Phase 7 落地回写：§3 新增 **Q6 `updateEntryPendingTranslation`**（导入补写译文，query-only）；§4 导入事务规则对齐实现——分块草案改为**单一大事务**（延迟建本空本防线 + entryOrder 续接 + 取消/失败整体回滚，见 IMPORT_SPEC v1.1 §5）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.8 | 2026-09-18 | Phase 8 落地注记：§2.11 写路径启用（五设置键经端口写方法 + `upsertSetting`，写侧校验镜像读侧）+ `settings.masteredAliases` 标注预登记未启用（别名可配置性再延后，PROJECT_SPEC v1.12）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.9 | 2026-09-19 | Phase 8.5 落地注记：§3 新增 **Q7 `deleteEntryDefinitionsForEntry`**（词条选择编辑 FR-17，与既有 `deleteExampleSelectionsForEntry` 配对，`updateWordSelections` 单事务内定向替换）+ §6 需求映射 +FR-17 行——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
+| 1.10 | 2026-09-19 | Phase 8.6 落地注记：§3 新增 **Q8 `selectMasteredEvents` + Q9 `selectEndedSessions`**（学习统计 FR-20 事件/时长流，Kotlin 侧注入 TimeZone 分桶）+ 全量词典注记（FR-18 随包只读 SQLite 为 App 库外独立文件，按需导入走既有 insert 查询）+ §6 需求映射 +FR-18/FR-20 行——**无 DDL、无索引、无 FK 变更，schema 维持 v2，无迁移** |

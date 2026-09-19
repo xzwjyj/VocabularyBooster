@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标背景（Phase 8.6 bug#4）：品牌靛蓝纯色 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#4338CA"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+</vector>
