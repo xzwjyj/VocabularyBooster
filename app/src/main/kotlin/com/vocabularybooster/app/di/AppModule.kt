@@ -11,6 +11,7 @@ import com.vocabularybooster.app.ui.LearningSessionViewModel
 import com.vocabularybooster.app.ui.LookupViewModel
 import com.vocabularybooster.app.ui.SettingsViewModel
 import com.vocabularybooster.app.ui.WordBooksViewModel
+import com.vocabularybooster.app.ui.WordSelectionEditorViewModel
 import com.vocabularybooster.app.ui.WordDetailViewModel
 import com.vocabularybooster.playback.AudioPlayer
 import com.vocabularybooster.playback.PlaybackOrchestrator
@@ -100,6 +101,7 @@ val appModule = module {
     viewModel { WordDetailViewModel(get(), get()) }
     viewModel { WordBooksViewModel(get()) }
     viewModel { BookDetailViewModel(get()) }
+    viewModel { WordSelectionEditorViewModel(get(), get()) } // Phase 8.5：词条选择编辑（FR-17）
     viewModel { AchievementsViewModel(get()) } // Phase 6：勋章墙
     viewModel { SettingsViewModel(get()) } // Phase 8：设置页（FR-15）
     single { ImportEngineFactory(androidContext(), get(), get(), get()) } // Phase 7：TXT 导入

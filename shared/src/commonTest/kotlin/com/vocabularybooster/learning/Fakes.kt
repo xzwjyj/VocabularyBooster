@@ -1,5 +1,6 @@
 package com.vocabularybooster.learning
 
+import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.LearningSession
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SaveWordRequest
@@ -9,6 +10,7 @@ import com.vocabularybooster.domain.model.SessionWord
 import com.vocabularybooster.domain.model.SessionWordPlacement
 import com.vocabularybooster.domain.model.SessionWordStatus
 import com.vocabularybooster.domain.model.StudyQueueSnapshot
+import com.vocabularybooster.domain.model.WordBookSelectionSnapshot
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import com.vocabularybooster.domain.repository.ActiveSessionExistsException
@@ -310,4 +312,17 @@ internal class FakeWordBookRepository : WordBookRepository {
         deriveCalls += Triple(parentWordBookId, sourceSessionId, name)
         return id
     }
+
+    // Phase 8.5 编辑两方法：learning 层不驱动——良性桩（权威行为在 jvmTest WordBookRepositoryTest 编辑组）
+
+    override suspend fun getWordSelections(
+        wordBookId: Long,
+        wordId: Long,
+    ): WordBookSelectionSnapshot? = null
+
+    override suspend fun updateWordSelections(
+        wordBookId: Long,
+        wordId: Long,
+        selections: List<DefinitionSelection>,
+    ): Unit = Unit
 }

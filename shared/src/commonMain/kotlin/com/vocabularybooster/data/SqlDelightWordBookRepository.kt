@@ -3,7 +3,9 @@ package com.vocabularybooster.data
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.vocabularybooster.db.VocabularyDatabase
+import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
+import com.vocabularybooster.domain.model.WordBookSelectionSnapshot
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import com.vocabularybooster.domain.repository.RepositoryValidationException
@@ -21,7 +23,7 @@ import kotlinx.datetime.Instant
  * WordBookRepository 的 SQLDelight 实现（Phase 2，FR-4/FR-5）。
  * 删除守卫、保存校验、事务原子性全部在此层（业务规则只在 shared，架构铁律 2）。
  */
-// 端口方法数 11（Phase 2 基础 + Step 5D 派生三方法）：与 domain 端口同步豁免
+// 端口方法数 13（Phase 2 基础 + Step 5D 派生三方法 + Phase 8.5 编辑两方法）：与 domain 端口同步豁免
 @Suppress("TooManyFunctions")
 public class SqlDelightWordBookRepository(
     private val database: VocabularyDatabase,
@@ -136,6 +138,75 @@ public class SqlDelightWordBookRepository(
 
     override suspend fun getWordBookName(wordBookId: Long): String? = withContext(dispatcher) {
         database.wordBookQueries.selectWordBookById(wordBookId).executeAsOneOrNull()?.name
+    }
+
+    override suspend fun getWordSelections(
+        wordBookId: Long,
+        wordId: Long,
+    ): WordBookSelectionSnapshot? = withContext(dispatcher) {
+        // 只读快照（单事务一致性，镜像 PlaybackContentRepository 读法）：entry、两类选择行、
+        // 释义归属取自同一时刻，不出现跨时刻可观察不一致
+        database.transactionWithResult {
+            val entry = database.wordBookEntryQueries.selectEntryByWord(wordBookId, wordId)
+                .executeAsOneOrNull()
+                ?: return@transactionWithResult null
+            val selectedDefIds = database.wordBookEntryDefinitionQueries
+                .selectEntryDefinitions(entry.wordBookEntryId).executeAsList()
+                .map { it.definitionEntryId }.toSet()
+            val selectedExampleIds = database.wordBookEntryExampleSelectionQueries
+                .selectExampleSelections(entry.wordBookEntryId).executeAsList()
+                .map { it.exampleId }.toSet()
+            // 释义按 Q1（FR-2 排序）投影；例句经 Example.definitionEntryId 归属回各释义
+            // （选择行只存 (entryId, exampleId)，与播放装配 Q4/Q4b 同口径）
+            val selections = database.definitionEntryQueries
+                .selectDefinitionsForWord(wordId).executeAsList()
+                .filter { it.definitionEntryId in selectedDefIds }
+                .map { def ->
+                    DefinitionSelection(
+                        definitionEntryId = def.definitionEntryId,
+                        exampleIds = database.exampleQueries
+                            .selectExamplesForEntry(def.definitionEntryId).executeAsList()
+                            .map { it.exampleId }
+                            .filter { it in selectedExampleIds },
+                    )
+                }
+            WordBookSelectionSnapshot(entry.wordBookEntryId, selections)
+        }
+    }
+
+    override suspend fun updateWordSelections(
+        wordBookId: Long,
+        wordId: Long,
+        selections: List<DefinitionSelection>,
+    ): Unit = withContext(dispatcher) {
+        if (selections.isEmpty()) {
+            throw RepositoryValidationException("至少保留一条释义（不需要该词请用「移除」）")
+        }
+        database.transactionWithResult {
+            val entry = database.wordBookEntryQueries.selectEntryByWord(wordBookId, wordId)
+                .executeAsOneOrNull()
+                ?: throw RepositoryValidationException(
+                    "该词不在此生词本中：wordBookId=$wordBookId wordId=$wordId",
+                )
+            SaveRequestValidator(database).validateSelections(wordId, selections)
+            // 定向替换（FR-17）：只动两类选择行，词条行 entryOrder/addedAt/pendingTranslation 原样
+            database.wordBookEntryDefinitionQueries
+                .deleteEntryDefinitionsForEntry(entry.wordBookEntryId)
+            database.wordBookEntryExampleSelectionQueries
+                .deleteExampleSelectionsForEntry(entry.wordBookEntryId)
+            selections.forEach { selection ->
+                database.wordBookEntryDefinitionQueries.insertEntryDefinition(
+                    wordBookEntryId = entry.wordBookEntryId,
+                    definitionEntryId = selection.definitionEntryId,
+                )
+                selection.exampleIds.forEach { exampleId ->
+                    database.wordBookEntryExampleSelectionQueries.insertExampleSelection(
+                        wordBookEntryId = entry.wordBookEntryId,
+                        exampleId = exampleId,
+                    )
+                }
+            }
+        }
     }
 
     override suspend fun countBooksWithName(name: String): Int = withContext(dispatcher) {

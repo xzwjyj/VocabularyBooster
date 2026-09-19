@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookType
+import com.vocabularybooster.domain.model.WordBookWord
 import org.koin.androidx.compose.koinViewModel
 
 /** 生词本管理（FR-4）：列表 + 创建 / 重命名 / 删除 + 进入本详情 + TXT 导入入口（FR-14）。 */
@@ -146,15 +147,21 @@ private fun NameEditorDialog(
     )
 }
 
-/** 本内词条：列表 + 移除（FR-4）+ 开始学习入口（Phase 4 Step 4）。 */
+/** 本内词条：列表 + 编辑选择（FR-17）+ 移除（FR-4）+ 开始学习入口（Phase 4 Step 4）。 */
 @Composable
 fun BookDetailScreen(
     bookId: Long,
     onBack: () -> Unit,
     onStartLearning: (Long) -> Unit = {},
     viewModel: BookDetailViewModel = koinViewModel(),
+    editViewModel: WordSelectionEditorViewModel = koinViewModel(),
 ) {
     LaunchedEffect(bookId) { viewModel.load(bookId) }
+    var editTarget by remember { mutableStateOf<WordBookWord?>(null) }
+    // 保存成功自动关闭（saved 只在成功置位，load() 时清零——task#12 同手法）
+    LaunchedEffect(editViewModel.saved, bookId) {
+        if (editViewModel.saved) editTarget = null
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← 返回") }
@@ -190,10 +197,24 @@ fun BookDetailScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(word.wordText, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = { editTarget = word },
+                        modifier = Modifier.testTag("edit_word_button_${word.wordId}"),
+                    ) { Text("编辑") }
                     TextButton(onClick = { viewModel.removeWord(bookId, word.wordId) }) { Text("移除") }
                 }
                 HorizontalDivider()
             }
         }
+    }
+
+    editTarget?.let { word ->
+        WordSelectionEditorDialog(
+            bookId = bookId,
+            wordId = word.wordId,
+            wordText = word.wordText,
+            onDismiss = { editTarget = null },
+            viewModel = editViewModel,
+        )
     }
 }

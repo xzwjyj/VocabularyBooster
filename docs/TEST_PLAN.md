@@ -156,6 +156,12 @@
 - 写路径权威校验（范围镜像读侧、close/reopen 往返、越界拒绝原值不变、upsert 覆盖）在 jvmTest `LearningSettingsRepositoryTest`（Phase 8 写路径组）；
 - TC-LE-02「中途改设置不影响现有会话」既有断言即 groupSize 仅新会话生效的锁定（设置页 UI 不重测引擎语义）。
 
+**词条选择编辑（FR-17，Phase 8.5 已落地 ✅）**：
+- jvmTest `WordBookRepositoryTest` 编辑组（真实 JDBC，4 用例）：编辑替换往返（增删释义/例句 → 快照重读一致、未勾旧项消失）/ 词条行不重建（entryOrder·addedAt·pendingTranslation 逐字段不变）/ 校验拒绝且事务回滚（空 selections、词不在本、例句不属释义 → `RepositoryValidationException` 原选择原样）/ 掌握零接触（已掌握词编辑后 WordMastery 行仍在）；
+- app 单测 `WordSelectionEditorViewModelTest`（StandardTestDispatcher）：预填投影 / 勾选增删 / 空选择拦截文案 / 保存成功态；
+- androidTest 冒烟 `WordSelectionEditorUiSmokeTest`（模拟器）：本详情 → 编辑首词 → 取消一条释义 → DB 断言选择行减少；
+- 生效时点（该词下一次播放取新选择）不设新用例——Q4/Q4b 按词条查选择为既有事实，粒度同 TC-AE-19（L4）。
+
 ## 5. FR 追踪矩阵（需求 → 用例）
 
 | FR | 用例组 |
@@ -174,6 +180,7 @@
 | FR-13 | TC-AC 全组 |
 | FR-14 | TC-IMP 全组 |
 | FR-15 | TC-UI 设置、TC-LE-02 |
+| FR-17 | TC-UI 词条编辑组（jvmTest 仓储 + VM 单测 + 冒烟） |
 
 ## 6. 覆盖率门槛（Kover，Phase 质量门）
 
@@ -250,3 +257,4 @@
 | 2.12 | 2026-09-18 | **Phase 6 勋章用例落地**：§4.6 TC-AC-01…05 全组 ✅ 标记 + 口径对齐实现——01 增同本重学再完成；02 改 ADR-002 会话快照口径三形态（ACTIVE/伪 COMPLETED 带未掌握/未知会话）；03 改名/加词；04 真实授予后守卫拒绝（引擎级闭环）；05 编排器双完成路径（advance + exit 分支 C）事件到达时端口 stop 已发生。测试落点：`AchievementEngineTest`（jvmTest 集成）+ `PlaybackOrchestratorStateTest` 两条顺序用例 + `LearningEngineExitTest`/`LearningEngineExitIntegrationTest` sessionCompleted 断言 + app 侧 `WordBooksViewModelTest` 删书文案 3 例 + `LearningSessionViewModelTest` 仪式页 E2/E3。上游：ACHIEVEMENT_SPEC v1.1、LEARNING_ENGINE_SPEC v1.4、DOMAIN_MODEL v1.5 |
 | 2.13 | 2026-09-18 | **Phase 7 TXT 导入用例落地**：§4.5 TC-IMP-01…08 全组 ✅ 标记 + 测试落点——commonTest `EncodingDetectorTest`（8 用例）+ `LineParserTest`（11 用例）、jvmTest `ImportEngineTest`（6 用例：守恒+事件/四层去重/补写幂等/异常回滚/取消回滚/导入词可学 PRON+SPELL）+ `ImportPerfTest`（10 万行 ≤60s + 取消 ≤1s）；口径注记——GBK 解码性能与 BOM 剥离在平台 actual 侧（真机走查）、「回填清除」以「补写后不再覆盖」等价锁定。上游：IMPORT_SPEC v1.1、DATABASE_SCHEMA v1.7、DOMAIN_MODEL v1.6 |
 | 2.14 | 2026-09-18 | **Phase 8 设置页用例落地（方案 A：别名维持常量）**：§4.8 增设置页组——`SettingsViewModelTest`（app 单测 6：加载投影/合法即时持久化/非数字不落库/写失败提示+回滚显示/开关持久化/窗口与语速·音调持久化）+ `SettingsUiSmokeTest`（androidTest 1：开关变更 → KV JSON 即时落库）；写路径权威校验组记入 jvmTest `LearningSettingsRepositoryTest`（往返/越界拒绝原值不变/覆盖）；TC-LE-02 注记 = groupSize 仅新会话既有锁定。上游：PROJECT_SPEC v1.12（FR-15 验收行 + 别名再延后）、ROADMAP v1.9（Phase 8 收敛） |
+| 2.15 | 2026-09-19 | **Phase 8.5 词条选择编辑用例登记（FR-17）**：§4.8 增词条编辑组——jvmTest `WordBookRepositoryTest` 编辑组 4（替换往返/词条行不重建/校验拒绝事务回滚/掌握零接触）+ `WordSelectionEditorViewModelTest` + `WordSelectionEditorUiSmokeTest`；生效时点不设新用例（Q4/Q4b 既有事实，粒度同 TC-AE-19）。上游：PROJECT_SPEC v1.13（FR-17）、ROADMAP v1.10 |

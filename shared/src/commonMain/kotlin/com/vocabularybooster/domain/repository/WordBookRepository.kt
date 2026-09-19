@@ -1,6 +1,8 @@
 package com.vocabularybooster.domain.repository
 
+import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
+import com.vocabularybooster.domain.model.WordBookSelectionSnapshot
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import kotlinx.coroutines.flow.Flow
@@ -10,7 +12,7 @@ import kotlinx.datetime.Instant
  * 生词本仓储端口（Phase 2，FR-4/FR-5；Phase 3 Step 5D 增派生三方法）。
  * 业务规则（删除守卫、保存校验、事务原子性）只存在于 shared（架构铁律 2）。
  */
-@Suppress("TooManyFunctions") // 端口 11 方法：Phase 2 管理 7 + Step 5D 派生 3 + getWordBookName 1
+@Suppress("TooManyFunctions") // 端口 13 方法：Phase 2 管理 7 + Step 5D 派生 3 + getWordBookName 1 + Phase 8.5 编辑 2
 public interface WordBookRepository {
 
     /** 生词本列表（含词条数），SQLDelight 响应式流（ARCHITECTURE §7）。 */
@@ -66,4 +68,25 @@ public interface WordBookRepository {
         name: String,
         createdAt: Instant,
     ): Long?
+
+    /**
+     * 词条当前选择快照（FR-17，Phase 8.5）：编辑界面预填输入。
+     * 词不在本内 → null；selections 释义按 FR-2 排序，例句经 Example 归属回各释义
+     * （选择行不存释义归属，与播放装配 Q4/Q4b 同口径）。只读，不引入写事务。
+     */
+    public suspend fun getWordSelections(wordBookId: Long, wordId: Long): WordBookSelectionSnapshot?
+
+    /**
+     * 词条选择编辑（FR-17，Phase 8.5，**单事务定向替换**）：整组替换该（本,词）的
+     * WordBookEntryDefinition + WordBookEntryExampleSelection 两类选择行；
+     * **不重建 WordBookEntry 行**——entryOrder/addedAt/pendingTranslation 原样（编辑不改队列位置）。
+     * 校验镜像保存流（[SaveRequestValidator] 同规则）：词/本存在、释义属词、例句属释义；
+     * 空 selections（全不勾）→ [RepositoryValidationException]（不需要该词请用 [removeWordFromWordBook]）。
+     * 掌握状态（WordMastery/SessionWord）零接触（D4 与选择集正交）。
+     */
+    public suspend fun updateWordSelections(
+        wordBookId: Long,
+        wordId: Long,
+        selections: List<DefinitionSelection>,
+    )
 }

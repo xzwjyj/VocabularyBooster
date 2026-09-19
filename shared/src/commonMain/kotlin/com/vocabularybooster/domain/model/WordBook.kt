@@ -46,3 +46,12 @@ public data class SaveWordRequest(
     val wordBookIds: List<Long>,
     val selections: List<DefinitionSelection>,
 )
+
+/**
+ * 词条当前选择快照（FR-17，Phase 8.5）：本详情「编辑」的预填输入；
+ * selections 与 [DefinitionSelection] 同构（读/写往返同一形态），释义按 FR-2 排序投影。
+ */
+public data class WordBookSelectionSnapshot(
+    val wordBookEntryId: Long,
+    val selections: List<DefinitionSelection>,
+)

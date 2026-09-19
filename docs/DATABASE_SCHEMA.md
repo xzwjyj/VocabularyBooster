@@ -268,6 +268,12 @@ WHERE newWbe.wordBookId = :newBookId;
 -- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移）
 updateEntryPendingTranslation:
 UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId = ?;
+
+-- Q7 词条选择编辑（FR-17，Phase 8.5）：定向替换释义选择（与 WordBookEntryExampleSelection.sq 的
+-- deleteExampleSelectionsForEntry 配对，均在 updateWordSelections 单事务内）；例句选择的删除查询自 Phase 2 在位。
+-- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移
+deleteEntryDefinitionsForEntry:
+DELETE FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;
 ```
 
 ## 4. 事务规则（必须原子，违反即 bug）
@@ -307,6 +313,7 @@ UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId 
 | FR-13 勋章幂等 + 快照 | `Achievement` 唯一索引 + `payloadJson` 快照 |
 | FR-14 导入译文暂存 / 词复用 / 去重 | `WordBookEntry.pendingTranslation` + `Word.normalizedText` 唯一复用 |
 | FR-15 设置 | `AppSetting` KV（结构化 JSON） |
+| FR-17 词条选择编辑 | Q7 `deleteEntryDefinitionsForEntry` + 既有 `deleteExampleSelectionsForEntry` / `selectEntryDefinitions` / `selectExampleSelections`（整组替换，零 DDL） |
 
 ---
 
@@ -321,3 +328,4 @@ UPDATE WordBookEntry SET pendingTranslation = ? WHERE wordBookId = ? AND wordId 
 | 1.6 | 2026-09-05 | Phase 4 Step 0 预登记：§2.11 补运行时键 `playback.position` 注记（KV 免迁移，双源优先级引用 AUDIO §5 裁决 L3）；§3 新增 **Q4b `selectSelectedExamples`**（播放例句装配，query-only 计划项，随 Phase 4 实施）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.7 | 2026-09-18 | Phase 7 落地回写：§3 新增 **Q6 `updateEntryPendingTranslation`**（导入补写译文，query-only）；§4 导入事务规则对齐实现——分块草案改为**单一大事务**（延迟建本空本防线 + entryOrder 续接 + 取消/失败整体回滚，见 IMPORT_SPEC v1.1 §5）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.8 | 2026-09-18 | Phase 8 落地注记：§2.11 写路径启用（五设置键经端口写方法 + `upsertSetting`，写侧校验镜像读侧）+ `settings.masteredAliases` 标注预登记未启用（别名可配置性再延后，PROJECT_SPEC v1.12）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
+| 1.9 | 2026-09-19 | Phase 8.5 落地注记：§3 新增 **Q7 `deleteEntryDefinitionsForEntry`**（词条选择编辑 FR-17，与既有 `deleteExampleSelectionsForEntry` 配对，`updateWordSelections` 单事务内定向替换）+ §6 需求映射 +FR-17 行——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |

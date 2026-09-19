@@ -18,6 +18,7 @@
 | 6 | 勋章 | 3（事件）|
 | 7 | TXT 导入 | 2 |
 | 8 | 设置与打磨（i18n / 无障碍 / 性能） | 4–7 |
+| **8.5** | 生词本词条选择编辑（FR-17） | 2 |
 | 9 | 稳定化 + Alpha 发布 | 全部 |
 | iOS | iOS 引导（需 macOS） | 核心稳定后 |
 
@@ -84,6 +85,13 @@
 **延后**（用户裁决 2026-09-18，与 M1–M4 同批）：i18n 校对；TalkBack 无障碍 pass；NFR-2 性能预算逐项测量（导入性能项已于 Phase 7 实测达标）。
 **出口**：FR-15 验收（自动化 TC-UI 设置 + 走查）；NFR-8 权限降级既有口径不变。
 
+## Phase 8.5 — 生词本词条选择编辑（FR-17，2026-09-19 立项；自动化门禁全绿见 docs/reports/PHASE_8_5_REPORT.md，vivo 走查待用户）
+
+**背景**：用户 vivo 走查后提出——已保存词需可增删释义/例句选择；审计确认仓储层替换语义已在位（重存 = 删旧插新），缺口为 UI 入口 + 预填 + 定向写方法（不重建词条行）。
+**交付**：端口 +2（`getWordSelections` 读快照 / `updateWordSelections` 单事务整组替换）+ Q7 删除查询（query-only，schema 恒 v2）+ 本详情「编辑」入口 + 预填编辑对话框 + 编辑 VM + 测试电池（jvmTest 仓储 / VM 单测 / 模拟器冒烟）。
+**裁决**：查词保存流（FR-5）不预填——修改选择的正规入口 = 本详情「编辑」（PROJECT_SPEC v1.13 FR-5 注记）；≥1 释义守卫（全不勾请用「移除」）；掌握/会话零接触；生效时点 = 该词下一次播放（粒度同 FR-10 开关）。
+**出口**：FR-17 验收行全过（自动化 + 走查）；全量门禁绿（jvmTest / shared unit / app unit / detekt×2 / checkPlatformBoundaries / assembleDebug / connected）。
+
 ## Phase 9 — 稳定化与 Alpha
 
 **交付**：全手动矩阵回归（TEST_PLAN §7）；完整 FR 验收清单走查；alpha 出包。
@@ -119,3 +127,4 @@
 | 1.7 | 2026-09-14 | **裁决 E4（系统引擎响应看门狗）**：E3 后真机复测暴露坏服务静默死法（零回调零错误→窗口超时，用户说「会了」被吞）；系统 actual 增响应看门狗（1500ms 零回调判死→E3 同窗回退，GMS 零误触），出口 +TC-AE-29。详见 PROJECT_SPEC v1.7 / AUDIO_ENGINE_SPEC v1.5 / TEST_PLAN v2.2 |
 | 1.8 | 2026-09-18 | **Phase 4/5 标记完成 + M1–M4 延后（用户裁决）**：Phase 4 Step 0–4 分步验收后并入 Phase 5 checkpoint（`7ccb04c`）；Phase 5 以 MVP 口径收尾（自动化出口全绿 + vivo 取证性实测；真机 M1–M4 正式统计延后至后续迭代——用户裁决语音效果自评够用，先交付 MVP；补跑按 checklist 原样执行、结果不预填）。收尾报告 `docs/reports/PHASE_5_REPORT.md`；TEST_PLAN v2.11 §7.1 同步注记 |
 | 1.9 | 2026-09-18 | **Phase 8 范围收敛（用户裁决）**：交付收敛为设置页单项（FR-15 五项——端口写方法 + 设置 UI + 第四 Tab）；「会了」别名可配置性再延后（PROJECT_SPEC v1.12）；i18n 校对 / TalkBack / NFR-2 逐项测量延后至 MVP 后打磨批（与 M1–M4 同口径）。协议文档：docs/agent-sync/ `*_PHASE8.md` |
+| 1.10 | 2026-09-19 | **新增 Phase 8.5（用户 2026-09-19 vivo 走查后提出）**：生词本词条选择编辑（FR-17）——已保存词增删释义/例句选择；端口 +2 + Q7 query-only（零迁移）+ 编辑 UI；裁决查词保存流不预填。上游 PROJECT_SPEC v1.13（FR-17 + FR-5 注记）；协议文档：docs/agent-sync/ `*_PHASE8_5.md` |

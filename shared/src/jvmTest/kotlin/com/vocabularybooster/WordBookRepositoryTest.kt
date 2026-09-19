@@ -16,7 +16,8 @@ import kotlin.test.assertTrue
 
 /**
  * WordBookRepository（FR-4/FR-5）：CRUD、成员关系、保存流校验、删除守卫、
- * 多本共享词、删本不删词、重开持久化。
+ * 多本共享词、删本不删词、重开持久化；Phase 8.5 词条选择编辑组（FR-17）：
+ * 替换往返、词条行不重建、校验拒绝回滚、掌握零接触。
  */
 class WordBookRepositoryTest {
 
@@ -287,5 +288,105 @@ class WordBookRepositoryTest {
         } finally {
             reopened.close()
         }
+    }
+
+    // —— Phase 8.5 词条选择编辑组（FR-17） ——
+
+    @Test
+    fun editReplacesSelectionsRoundTrip() = runTest {
+        val db = TestDb.inMemory()
+        val repo = newRepo(db)
+        val w = db.seedWord()
+        val book = repo.createWordBook("A")
+        repo.saveWordToBooks(
+            SaveWordRequest(w.wordId, listOf(book), listOf(DefinitionSelection(w.verbDef1, w.def1Examples))),
+        )
+
+        // 预填快照：释义 FR-2 排序投影；例句经 Example 归属回释义
+        val before = repo.getWordSelections(book, w.wordId)!!
+        assertEquals(
+            listOf(DefinitionSelection(w.verbDef1, w.def1Examples)),
+            before.selections,
+        )
+
+        // 编辑：去掉例句、加释义2/3
+        repo.updateWordSelections(
+            book,
+            w.wordId,
+            listOf(DefinitionSelection(w.verbDef1), DefinitionSelection(w.verbDef2), DefinitionSelection(w.nounDef)),
+        )
+        val after = repo.getWordSelections(book, w.wordId)!!
+        assertEquals(
+            listOf(DefinitionSelection(w.verbDef1), DefinitionSelection(w.verbDef2), DefinitionSelection(w.nounDef)),
+            after.selections,
+        )
+        assertEquals(before.wordBookEntryId, after.wordBookEntryId)
+
+        // 底层行验证：未勾例句消失（替换而非叠加）
+        val rows = db.database.wordBookEntryExampleSelectionQueries
+            .selectExampleSelections(after.wordBookEntryId).executeAsList()
+        assertTrue(rows.isEmpty())
+
+        // 词不在本内 → null
+        assertEquals(null, repo.getWordSelections(book, 999L))
+    }
+
+    @Test
+    fun editKeepsEntryRowIntact() = runTest {
+        val db = TestDb.inMemory()
+        val repo = newRepo(db)
+        val w = db.seedWord()
+        val book = repo.createWordBook("A")
+        // 两词固化 entryOrder，并给目标词补导入译文（编辑必须原样保留）
+        repo.saveWordToBooks(SaveWordRequest(w.wordId, listOf(book), listOf(DefinitionSelection(w.verbDef1))))
+        db.database.wordBookEntryQueries.updateEntryPendingTranslation("临时译文", book, w.wordId)
+        val before = db.database.wordBookEntryQueries.selectEntryByWord(book, w.wordId).executeAsOne()
+
+        repo.updateWordSelections(book, w.wordId, listOf(DefinitionSelection(w.nounDef)))
+
+        val after = db.database.wordBookEntryQueries.selectEntryByWord(book, w.wordId).executeAsOne()
+        // 不重建词条行：主键与全部业务字段逐字段不变（FR-17 队列位置/导入译文不受编辑影响）
+        assertEquals(before.wordBookEntryId, after.wordBookEntryId)
+        assertEquals(before.entryOrder, after.entryOrder)
+        assertEquals(before.pendingTranslation, after.pendingTranslation)
+        assertEquals(before.addedAt, after.addedAt)
+    }
+
+    @Test
+    fun editValidationRejectsAndRollsBack() = runTest {
+        val db = TestDb.inMemory()
+        val repo = newRepo(db)
+        val w = db.seedWord()
+        val book = repo.createWordBook("A")
+        val original = listOf(DefinitionSelection(w.verbDef1, w.def1Examples))
+        repo.saveWordToBooks(SaveWordRequest(w.wordId, listOf(book), original))
+
+        // 全不勾释义 → 拒绝（不需要该词请用「移除」）
+        assertFailsWith<RepositoryValidationException> { repo.updateWordSelections(book, w.wordId, emptyList()) }
+        // 词不在本内 → 拒绝
+        assertFailsWith<RepositoryValidationException> { repo.updateWordSelections(book, 999L, listOf(DefinitionSelection(w.verbDef1))) }
+        // 例句不属于所选释义 → 拒绝
+        assertFailsWith<RepositoryValidationException> {
+            repo.updateWordSelections(book, w.wordId, listOf(DefinitionSelection(w.verbDef1, listOf(w.def2Examples[0]))))
+        }
+
+        // 事务回滚：原选择原样
+        assertEquals(original, repo.getWordSelections(book, w.wordId)!!.selections)
+    }
+
+    @Test
+    fun editLeavesMasteryUntouched() = runTest {
+        val db = TestDb.inMemory()
+        val repo = newRepo(db)
+        val w = db.seedWord()
+        val book = repo.createWordBook("A")
+        repo.saveWordToBooks(SaveWordRequest(w.wordId, listOf(book), listOf(DefinitionSelection(w.verbDef1))))
+        db.database.wordMasteryQueries.markMastered(book, w.wordId, 1_760_000_000_000L)
+
+        repo.updateWordSelections(book, w.wordId, listOf(DefinitionSelection(w.nounDef)))
+
+        // D4：掌握作用域 =（本,词），与选择集正交——编辑零接触
+        assertEquals(1L, db.database.wordMasteryQueries.countMastered(book).executeAsOne())
+        assertEquals(1L, db.database.wordQueries.countAll().executeAsOne())
     }
 }

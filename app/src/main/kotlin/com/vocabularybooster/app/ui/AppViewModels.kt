@@ -483,3 +483,93 @@ class SettingsViewModel(
         }
     }
 }
+
+/**
+ * 词条选择编辑（FR-17，Phase 8.5）：预填当前已保存选择 → 勾选增删 → 单事务整组替换。
+ * 校验在端口（铁律 2）；全不勾释义由 VM 前置拦截（与端口 ≥1 守卫同文案）。
+ * 编辑零接触掌握状态与词条行（队列位置不变，shared 层保证）。
+ */
+class WordSelectionEditorViewModel(
+    private val wordRepository: WordRepository,
+    private val wordBookRepository: WordBookRepository,
+) : ViewModel() {
+
+    var loaded by mutableStateOf(false)
+        private set
+    var detail by mutableStateOf<WordDetail?>(null)
+        private set
+    var selectedDefinitions by mutableStateOf<Set<Long>>(emptySet())
+        private set
+    var selectedExamples by mutableStateOf<Map<Long, Set<Long>>>(emptyMap())
+        private set
+    var message by mutableStateOf<String?>(null)
+        private set
+    var saved by mutableStateOf(false)
+        private set
+
+    private var bookId: Long = -1L
+    private var wordId: Long = -1L
+
+    fun load(targetBookId: Long, targetWordId: Long, wordText: String) {
+        // 每次打开清空旧状态（跨词残留防线，同 task#12 手法）
+        selectedDefinitions = emptySet()
+        selectedExamples = emptyMap()
+        message = null
+        saved = false
+        loaded = false
+        bookId = targetBookId
+        wordId = targetWordId
+        viewModelScope.launch {
+            val wordDetail = wordRepository.lookup(wordText)
+            if (wordDetail == null) {
+                detail = null
+                message = "词库中找不到「$wordText」"
+                loaded = true
+                return@launch
+            }
+            detail = wordDetail
+            runCatching { wordBookRepository.getWordSelections(targetBookId, targetWordId) }
+                .onSuccess { snapshot ->
+                    // 预填当前选择；词不在本内（snapshot=null）按空选择起绘（保存前端口会拒绝）
+                    selectedDefinitions = snapshot?.selections?.map { it.definitionEntryId }?.toSet().orEmpty()
+                    selectedExamples = snapshot?.selections
+                        ?.filter { it.exampleIds.isNotEmpty() }
+                        ?.associate { it.definitionEntryId to it.exampleIds.toSet() }
+                        .orEmpty()
+                }
+                .onFailure { message = "选择加载失败：${it.message}" }
+            loaded = true
+        }
+    }
+
+    fun toggleDefinition(definitionEntryId: Long) {
+        selectedDefinitions =
+            if (definitionEntryId in selectedDefinitions) selectedDefinitions - definitionEntryId
+            else selectedDefinitions + definitionEntryId
+    }
+
+    fun toggleExample(definitionEntryId: Long, exampleId: Long) {
+        val current = selectedExamples[definitionEntryId].orEmpty()
+        val next = if (exampleId in current) current - exampleId else current + exampleId
+        selectedExamples = selectedExamples + (definitionEntryId to next)
+    }
+
+    fun save() {
+        if (bookId < 0) return
+        if (selectedDefinitions.isEmpty()) {
+            message = "至少保留一条释义（不需要该词请用「移除」）"
+            return
+        }
+        val selections = selectedDefinitions.map { id ->
+            DefinitionSelection(id, selectedExamples[id].orEmpty().toList())
+        }
+        viewModelScope.launch {
+            runCatching { wordBookRepository.updateWordSelections(bookId, wordId, selections) }
+                .onSuccess {
+                    message = "已保存"
+                    saved = true
+                }
+                .onFailure { message = "保存失败：${it.message}" }
+        }
+    }
+}

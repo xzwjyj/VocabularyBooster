@@ -9,7 +9,8 @@
 | ADR-002 | 学习语义重构 - WordBook 与 WordMastery 解耦 | Accepted（commit `924fdc6`） | 2026-09-15 |
 | ADR-003 | Phase 6 勋章：事件驱动幂等授予 + 零迁移 | Accepted（commit `a1d282b`） | 2026-09-18 |
 | ADR-004 | Phase 7 TXT 导入：单一事务 + runBlocking 取消桥 + 零迁移 | Accepted（commit `55e5003`） | 2026-09-18 |
-| ADR-005 | Phase 8 设置页：端口写方法 + 即时持久化 + 别名维持常量 | Accepted | 2026-09-18 |
+| ADR-005 | Phase 8 设置页：端口写方法 + 即时持久化 + 别名维持常量 | Accepted（commit `fed2594`） | 2026-09-18 |
+| ADR-006 | Phase 8.5 词条选择编辑：定向替换 + 零迁移 + 保存流不预填 | Accepted | 2026-09-19 |
 
 ---
 
@@ -90,4 +91,23 @@
 
 **测试**：jvmTest +3（五键 close/reopen 往返 / 越界写拒绝原值不变 / upsert 覆盖）；app unit +6（SettingsViewModelTest：加载投影/合法即时持久化/非数字不落库/写失败提示+回滚/开关持久化/窗口与语速·音调持久化）；connected +1（SettingsUiSmokeTest 真实 App 流程 KV 落库断言）；全量 connected 44/0 failed/4 skipped 复验
 
-**状态**：已实现；vivo 真机走查同批执行（设置页五项 + task#12 保存流两场景）
+**状态**：已实现（commit `fed2594`）；vivo 真机走查通过（2026-09-19：设置页五项 + task#12 保存流两场景，task#12 修复随 `43be3dd` 提交）
+
+### ADR-006: Phase 8.5 词条选择编辑落地形态
+
+**日期**：2026-09-19（用户批准 IMPLEMENTATION_PLAN_PHASE8_5 后执行；需求源自用户 vivo 走查后提出——已保存词需可增删释义/例句选择）
+
+**决策**：
+- 审计确认仓储层替换语义已在位（`saveWordToBooks` 重存 = 删旧插新、保 entryOrder）→ 缺口收敛为 UI 入口 + 预填 + **定向写方法**（不重建 WordBookEntry 行——entryOrder/addedAt/pendingTranslation 逐字段不变，与重存路径并存）
+- 端口 +2（加法扩展，L6 先例）：`getWordSelections`（只读快照单事务；例句经 Example.definitionEntryId 归属回释义——选择行不存归属，与 Q4/Q4b 播放装配同口径）/ `updateWordSelections`（单事务：entry 存在守卫 → `SaveRequestValidator.validateSelections` 抽共用段（保存流 FR-5 与编辑 FR-17 两路同规则）→ Q7 `deleteEntryDefinitionsForEntry` + 既有 `deleteExampleSelectionsForEntry` → 重插）
+- .sq 仅 +1 删除查询（Q7，query-only）→ **schema 恒 v2 零迁移**
+- ≥1 释义守卫：VM 前置拦截 + 端口双保险（同文案"至少保留一条释义（不需要该词请用「移除」）"）
+- **查词保存流（FR-5）不预填**：修改选择的正规入口 = 本详情「编辑」（PROJECT_SPEC v1.13 FR-5 注记）——避免多本对话框按本差异化预填的复杂度
+- 掌握/会话零接触（D4 正交）；生效时点 = 该词下一次播放（段构建重读 Q4/Q4b，粒度同裁决 L4，零引擎改动）
+- 导入词空态提示（不隐藏入口）；VM load() 清旧状态 + saved 自动关对话框（task#12 手法复用）
+
+**测试**：jvmTest +4（编辑组：替换往返 / 词条行不重建 / 校验拒绝事务回滚 / 掌握零接触）——278/0；app unit +5（WordSelectionEditorViewModelTest：预填投影 / 勾选增删转发 / 空选择前置拦截 / 写失败文案 / 词库缺失提示）——46/0；connected +1（WordSelectionEditorUiSmokeTest：种子两释义 → 取消一条 → DB 选择行减少）——49 tests/0 failed/4 skipped；detekt×2 / checkPlatformBoundaries / assembleDebug 全绿
+
+**环境备注**：当日 jvmTest 曾三次 native 崩溃（sqlite-jdbc `NativeDB.prepare_utf8`，十万行导入基准）——stash 基线复现证明与本次改动无关，根因 = 系统内存压力（16G 仅 ~2G 空闲时必崩；停 Gradle 守护进程 + 重试即过）。后续门禁若再现，先查空闲内存。
+
+**状态**：已实现；vivo 装包走查待用户执行（编辑预填一致 / 增删生效 / 队列位置不变）

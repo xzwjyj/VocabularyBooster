@@ -1,6 +1,8 @@
 package com.vocabularybooster.app.ui
 
+import com.vocabularybooster.domain.model.DefinitionSelection
 import com.vocabularybooster.domain.model.SaveWordRequest
+import com.vocabularybooster.domain.model.WordBookSelectionSnapshot
 import com.vocabularybooster.domain.model.WordBookSummary
 import com.vocabularybooster.domain.model.WordBookWord
 import com.vocabularybooster.domain.repository.WordBookDeletionException
@@ -46,6 +48,18 @@ class WordBooksViewModelTest {
             name: String,
             createdAt: Instant,
         ): Long? = null
+
+        // Phase 8.5 编辑两方法：本测试不驱动——良性桩
+        override suspend fun getWordSelections(
+            wordBookId: Long,
+            wordId: Long,
+        ): WordBookSelectionSnapshot? = null
+
+        override suspend fun updateWordSelections(
+            wordBookId: Long,
+            wordId: Long,
+            selections: List<DefinitionSelection>,
+        ): Unit = Unit
     }
 
     @Test
