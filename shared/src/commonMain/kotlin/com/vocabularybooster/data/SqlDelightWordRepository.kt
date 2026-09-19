@@ -70,10 +70,35 @@ public class SqlDelightWordRepository(
         if (normalized.isEmpty()) {
             emptyList()
         } else {
-            database.wordQueries
+            // DB 搜索
+            val dbResults = database.wordQueries
                 .searchWords(normalized + "%", limit.toLong())
                 .executeAsList()
                 .map { it.toDomain() }
+                .toMutableList()
+            // 如果 DB 结果不足 limit，尝试从词典补全（FR-18）
+            val provider = dictionaryProvider
+            if (dbResults.size < limit && provider != null) {
+                val dictWord = provider.lookup(query)
+                if (dictWord != null) {
+                    // 检查是否已在 DB 结果中
+                    val normalizedDict = dictWord.text.lowercase().trim()
+                    if (dbResults.none { it.normalizedText == normalizedDict }) {
+                        // 词典中有但 DB 没有 → 尝试按需导入
+                        if (seedImporter != null) {
+                            seedImporter.import(listOf(dictWord))
+                            // 重新从 DB 读取
+                            val imported = database.wordQueries
+                                .selectByNormalizedText(normalizedDict)
+                                .executeAsOneOrNull()
+                            if (imported != null && dbResults.size < limit) {
+                                dbResults.add(imported.toDomain())
+                            }
+                        }
+                    }
+                }
+            }
+            dbResults.take(limit)
         }
     }
 }

@@ -30,7 +30,10 @@ import com.vocabularybooster.platform.VoskSpeechCommandRecognizer
 import com.vocabularybooster.speech.CommandParser
 import com.vocabularybooster.speech.SpeechCommandRecognizer
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.data.SqlDelightWordRepository
+import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.domain.dictionary.DictionaryProvider
+import com.vocabularybooster.domain.repository.WordRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -94,6 +97,15 @@ val appModule = module {
         FallbackDictionaryProvider(
             primary = get<SeedDictionaryProvider>(),
             fallback = BundledDictionaryProvider(androidContext()),
+        )
+    }
+    // 修复：sharedDataModule 先于 appModule 加载，getOrNull() 取不到 DictionaryProvider → 词典永远 null。
+    // 在 appModule 显式覆盖 WordRepository 绑定，确保 dictionaryProvider 参数在字典源就绪后构造。
+    single<WordRepository> {
+        SqlDelightWordRepository(
+            database = get(),
+            dictionaryProvider = get<DictionaryProvider>(),
+            seedImporter = get(),
         )
     }
     single {
