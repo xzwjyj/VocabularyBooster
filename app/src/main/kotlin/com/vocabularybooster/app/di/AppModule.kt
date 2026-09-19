@@ -3,6 +3,7 @@ package com.vocabularybooster.app.di
 import android.speech.SpeechRecognizer
 import com.vocabularybooster.app.speech.FallbackSpeechCommandRecognizer
 import com.vocabularybooster.data.dictionary.FallbackDictionaryProvider
+import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.app.speech.SpeechEngineKind
 import com.vocabularybooster.app.speech.SpeechEnginePolicy
 import com.vocabularybooster.app.ui.AchievementsViewModel
@@ -87,10 +88,11 @@ val appModule = module {
     }
     single { CommandParser() }
     // Phase 8.6（FR-18）：复合词典源——精选种子优先（含例句），随包全量词典兜底（无例句）；
-    // DictionaryProvider 全库唯一绑定在此（Koin 4 无 override；sharedDataModule 不再定义）
+    // DictionaryProvider 全库唯一绑定在此（Koin 4 无 override；sharedDataModule 不再定义）。
+    // primary 必须按具体类型解析（get() 会按 DictionaryProvider 解析到本绑定自身 → 自引用 StackOverflow）
     single<DictionaryProvider> {
         FallbackDictionaryProvider(
-            primary = get(),
+            primary = get<SeedDictionaryProvider>(),
             fallback = BundledDictionaryProvider(androidContext()),
         )
     }
