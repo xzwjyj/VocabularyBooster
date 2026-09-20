@@ -28,5 +28,9 @@ SELECT COUNT(*) FROM Word;
 searchWords:
 SELECT * FROM Word WHERE normalizedText LIKE ? ORDER BY length(normalizedText) ASC, normalizedText ASC LIMIT ?;
 
+-- 增强回填（Phase 8.6）：补空缺美音音标；调用方守卫 ipaAm IS NULL 才调（绝不覆盖已有值）
+updateWordIpa:
+UPDATE Word SET ipaAm = ?, updatedAt = ? WHERE wordId = ?;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();

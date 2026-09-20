@@ -166,7 +166,9 @@
 
 **学习统计（FR-20，Phase 8.6 已登记）**：jvmTest `LearningStatsRepositoryTest`（真实 JDBC：首次掌握去重=学习 / 今日前已掌握再掌握=复习 / 会话时长按结束日归集 / endedAt NULL 不计 / 空库零值 / 跨午夜按本地时区注入）；androidTest `StatsCardUiSmokeTest`（学一词 → 统计卡今日学习 +1）。
 
-**全量词典（FR-18，Phase 8.6 已登记）**：jvmTest `WordRepositoryOnDemandImportTest`（Fake provider：DB miss → 导入 → 命中且幂等 / DB 已有不覆盖 / provider null → 未收录）；androidTest `BundledDictionarySmokeTest`（真实 asset：查种子外单词命中 + 未收录词 null）；`SeedDictionaryCoverageTest` 不变（例句契约仅精选种子——PROJECT_SPEC v1.14 FR-3 注记）。
+**全量词典（FR-18，Phase 8.6 已登记）**：jvmTest `WordRepositoryOnDemandImportTest`（Fake provider：DB miss → 导入 → 命中且幂等 / DB 已有不覆盖 / provider null → 未收录；词条例句与音标齐备时 DB 命中不打扰词典源——v2.17 口径：例句或音标缺失时回填咨询属预期行为，回填路径由下组覆盖）；androidTest `BundledDictionarySmokeTest`（真实 asset：查种子外单词命中 + 未收录词 null）；`SeedDictionaryCoverageTest` 不变（例句契约仅精选种子——PROJECT_SPEC v1.14 FR-3 注记）。
+
+**增强回填（FR-18 v1.15 例句/译文，v1.17 扩音标）**：jvmTest `SeedImporterTest` 回填组 7——`backfillEnhancements`（v1.17 自 `importExamplesOnly` 改名，例句/译文/音标三合一）零例句旧词补齐到首释义且幂等（二次调用零变更）/ Tatoeba 例句译文空 → 只补译文不重复建行 / 未导入词返回 0 绝不建词 / `lookup` 端到端：DB 旧词 + Fake 词典源 → 查看详情自动回填（含译文）重读返回 / 音标空 → 只补空缺（已有音标绝不覆盖，幂等零变更）/ 零释义 TXT 导入词（FR-14 形态）音标仍可回填 / `lookup` 端到端：例句完整但音标缺失 → 自动补音标。
 
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
@@ -270,3 +272,4 @@
 | 2.14 | 2026-09-18 | **Phase 8 设置页用例落地（方案 A：别名维持常量）**：§4.8 增设置页组——`SettingsViewModelTest`（app 单测 6：加载投影/合法即时持久化/非数字不落库/写失败提示+回滚显示/开关持久化/窗口与语速·音调持久化）+ `SettingsUiSmokeTest`（androidTest 1：开关变更 → KV JSON 即时落库）；写路径权威校验组记入 jvmTest `LearningSettingsRepositoryTest`（往返/越界拒绝原值不变/覆盖）；TC-LE-02 注记 = groupSize 仅新会话既有锁定。上游：PROJECT_SPEC v1.12（FR-15 验收行 + 别名再延后）、ROADMAP v1.9（Phase 8 收敛） |
 | 2.15 | 2026-09-19 | **Phase 8.5 词条选择编辑用例登记（FR-17）**：§4.8 增词条编辑组——jvmTest `WordBookRepositoryTest` 编辑组 4（替换往返/词条行不重建/校验拒绝事务回滚/掌握零接触）+ `WordSelectionEditorViewModelTest` + `WordSelectionEditorUiSmokeTest`；生效时点不设新用例（Q4/Q4b 既有事实，粒度同 TC-AE-19）。上游：PROJECT_SPEC v1.13（FR-17）、ROADMAP v1.10 |
 | 2.16 | 2026-09-19 | **Phase 8.6 打磨批用例登记（bug list 四项）**：§4.8 增三组——音色（FR-19：VM 单测 + 冒烟 + jvmTest 两键往返；失效回退注释锁定）/ 统计（FR-20：jvmTest 聚合 6 边界 + 统计卡冒烟）/ 词典（FR-18：jvmTest 按需导入 + 真实 asset 冒烟；例句契约分域注记 FR-3 v1.14）；图标 = 走查项无自动化；FR 矩阵 +FR-18/19/20 行。上游：PROJECT_SPEC v1.14、ROADMAP v1.11 |
+| 2.17 | 2026-09-19 | **例句回填用例登记（FR-18 v1.15 Tatoeba 例句增强）**：§4.8 词典组口径更新——完整词条（含例句）DB 命中不打扰词典源（例句缺失时回填咨询属预期）；+回填组 4（SeedImporterTest：补齐到首释义且幂等 / 译文空只补译文不重建行 / 未导入词零建词 / lookup 端到端自动回填）。上游：PROJECT_SPEC v1.15、`SPEC_CHANGE_REQUEST_TATOEBA.md` |

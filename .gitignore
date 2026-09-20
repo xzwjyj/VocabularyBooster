@@ -41,3 +41,6 @@ app/src/main/assets/dict/
 tools/dict/stardict.db
 tools/dict/*.zip
 tools/dict/__pycache__/
+
+# JVM crash dumps (machine-level fault window, regenerable)
+hs_err_pid*.log

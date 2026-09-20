@@ -121,7 +121,10 @@ private fun DefinitionBlock(definition: DefinitionWithExamples) {
         definition.examples.forEach { example ->
             Column(Modifier.padding(top = 6.dp, start = 12.dp)) {
                 Text(example.sentence, style = MaterialTheme.typography.bodyMedium)
-                Text(example.chineseTranslation, style = MaterialTheme.typography.bodySmall)
+                // Phase 8.6（Tatoeba 增强）：Tatoeba 例句无中文译文——空译文不渲染，避免空行
+                if (example.chineseTranslation.isNotBlank()) {
+                    Text(example.chineseTranslation, style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     "来源：${sourceTypeLabel(example.sourceType)}",
                     style = MaterialTheme.typography.labelSmall,
@@ -138,4 +141,5 @@ private fun sourceTypeLabel(type: ExampleSourceType): String = when (type) {
     ExampleSourceType.AUDIOBOOK -> "有声书"
     ExampleSourceType.LICENSED_OTHER -> "授权/公版"
     ExampleSourceType.TTS -> "TTS"
+    ExampleSourceType.TATOEBA -> "Tatoeba"
 }

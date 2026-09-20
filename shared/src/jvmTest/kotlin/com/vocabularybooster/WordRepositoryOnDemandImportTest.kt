@@ -3,6 +3,7 @@ package com.vocabularybooster
 import com.vocabularybooster.data.SqlDelightWordRepository
 import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.domain.dictionary.DictionaryDefinitionEntry
+import com.vocabularybooster.domain.dictionary.DictionaryExample
 import com.vocabularybooster.domain.dictionary.DictionaryProvider
 import com.vocabularybooster.domain.dictionary.DictionaryWord
 import kotlinx.coroutines.test.runTest
@@ -50,6 +51,14 @@ class WordRepositoryOnDemandImportTest {
                 definitionOrder = 0,
                 meaningEN = "good luck in making unexpected and fortunate discoveries",
                 meaningCN = "偶然发现珍宝的运气",
+                examples = listOf(
+                    // 完整词条（含例句）：lookup 不触发例句回填，DB 命中后不再打扰词典源
+                    DictionaryExample(
+                        sentence = "Finding this beach was pure serendipity.",
+                        chineseTranslation = "找到这片海滩纯属意外之喜。",
+                        sourceType = "TATOEBA",
+                    ),
+                ),
             ),
         ),
     )
@@ -96,6 +105,7 @@ class WordRepositoryOnDemandImportTest {
 
     @Test
     fun dbHitNeverConsultsProvider() = runTest {
+        // 完整词条（含例句）不触发回填；例句缺失时的回填咨询由 SeedImporterTest 覆盖
         importer.import(listOf(bundledWord))
         val repo = SqlDelightWordRepository(
             db.database,

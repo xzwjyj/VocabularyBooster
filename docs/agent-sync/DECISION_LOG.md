@@ -126,3 +126,19 @@
 **测试**：jvmTest +11（统计 7：首掌去重/晚日复习+同日不算/时长归结束日含跨午夜/ACTIVE 不计/空库零值+窗口填充/月年上卷/注入时区日界；词典 3：命中导入后 DB 供数/未收录 null 且库零增长/DB 命中不打扰源）+ 既有 3 文件位置参数改命名；app unit +3（StatsViewModel 投影/粒度切换/失败提示）；androidTest +3（统计卡冒烟 / 词典资产冒烟 / 词典 Koin 全链路）；FR-19 组随 c991efb。**最终门禁（2026-09-19 收尾，含三个修复 commit 后树态）**：connected 54 执行/49 过/5 skip/0 失败；jvmTest 28/29 类分批全绿（ImportPerfTest 被机器级原生故障阻塞——当日 0 时段门禁 290/0 含它通过、import 路径零改动，复核命令与取证见 PHASE_8_6_REPORT §4）；detekt×2 / checkPlatformBoundaries / testDebugUnitTest×2 绿；APK 实测 **130.3MB**（词典资产 85.8MB）。**收尾补修**：Koin 复合绑定自引用（`get()` 按接口类型解析回自身 → StackOverflow，改 `get<SeedDictionaryProvider>()`——真实图首启即崩、connected 首跑捕获）；统计冒烟 unmerged 树断言（clickable 卡 mergeDescendants 吞内层 tag）。
 
 **状态**：已实现并全量门禁收尾（`8d6c71f` 图标 + `c991efb` 音色 + `bd46150` 统计 + `dd17820` 词典 + 收尾修复三 commit）；ImportPerfTest 待重启机器后单跑复核；vivo 装机走查待用户执行（图标目视 / 音色切换 / 统计卡与图表 / 全量查词含短语）
+
+### ADR-008: FR-18 例句增强（Tatoeba 对齐 + 例句回填）
+
+**日期**：2026-09-19（用户批准 SPEC_CHANGE_REQUEST_TATOEBA 后执行）
+
+**决策**：
+- **数据管线**：Tatoeba 全量 `sentences.csv`（13.5M 行）+ `links.csv`（~20M 句对）；匹配 = 句子词 **n-gram（n=1..5，词/短语统一，含 `-`/`'` 变体）**，词边界粗口/成人内容屏蔽表过滤；候选超采（词 12 / 短语 6）→ 构建时 **zh 优先、次短句优先** 选 ≤4 条/词；译文经 links 配对 eng↔cmn。**实绩：836,398 行重建，107,094 词条（词+短语）带例句，30,516 例句带中文译文，资产 123MB（APK 143.9MB）**。`PRAGMA user_version` 版本化，设备旧缓存自动重拷。**装机验证教训（同日修正）：版本号 = 修订号而非纯格式号**——中间版资产（v2，含粗口漏网）与终版同为 user_version=2，`>=2` 过期检查放行了 11:08 拷入的旧缓存 → 资产重打 user_version=3、`DICT_ASSET_VERSION` 同步 3，此后**数据重建必须递增版本号**；已被旧资产回填进 app DB 的粗口例句需定向清理（回填只补不删）
+- **挂载粒度**：句子级数据无词性归属 → 挂**首释义**（provider 侧注入，经既有 `DictionaryDefinitionEntry.examples` 通道）；**不加** `DictionaryWord.examples` 字段——新导入对 SeedImporter/领域模型零改动（曾实现后回退）
+- **回填（增强前已导入词条）**：`SeedImporter.importExamplesOnly()` 单事务——同句去重（跨释义）、缺句补到首释义（order 续排）、译文空只 UPDATE 译文（.sq +1 query-only 查询，schema 恒 v2）；`WordRepository.lookup` DB 命中但零例句/Tatoeba 译文空时触发，补齐后重读。完整词条不打扰词典源（不变量保留，测试口径更新）
+- **运行时逃逸（机器故障应对，当日实锤三级）**：本机 CPython 在语料扫描上**确定性段错误**（同点 6/6，含"不可能"TypeError 与陌生路径 traceback）→ 子进程分片+重试仅部分缓解 → **改用 Node/V8 单进程跑扫描+links**（90 秒完成 Python 一小时未竟的全量扫描；V8 亦曾一次 fatal，重试即过）。同日 Gradle Test Executor JVM 连环原生崩溃（hs_err ×8）。结论：**机器级 RAM/硬件疑似故障**（三运行时同日中招），建议 memtest86+ 检查；工程上一切长任务必须有重试+断点
+
+**测试**：jvmTest SeedImporterTest +4（回填幂等/译文补齐不重建行/未导入词零建词/lookup 端到端）；WordRepositoryOnDemandImportTest 词条补例句维持"DB 命中不打扰源"口径
+
+**v4 全量例句翻译（2026-09-20 后续批）**：Tatoeba links 配对仅覆盖 3.05 万 / 29.9 万例句 → 用户要求自动补齐；**opus-mt-en-zh** 批量机器翻译全部空译文例句（人译优先、机译兜底），**覆盖率 299,558/299,576（100%）**；资产 `user_version=4`（数据重建递增铁律执行，装机旧缓存自动重拷实测）；管线重活延续 Node 化（`enrich_node.js`，本批 CPython/V8/翻译子进程多次段错误——分批 + 断点 + 勤落盘完成）；vivo 实测 karma/beautiful 例句中文正常显示
+
+**状态**：已实现并装机验证通过（2026-09-19 vivo：karma 回填 4 条干净例句幂等稳定；短语 take off 新导入 3 义项 + 首释义 4 例句含 3 条中文；user_version 2→3 后旧缓存 118MB→129,961,984 重拷实测；2026-09-20 v4 翻译装机验证通过）；commit 待用户确认

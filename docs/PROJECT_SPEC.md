@@ -96,11 +96,12 @@ adjective
 
 Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例句译文） + Audio（音频）`。
 
-- 来源类型 `sourceType` 必须如实标注：`REAL_MOVIE_TV`（影视）、`CELEBRITY_SPEECH`（名人演讲）、`TED`、`AUDIOBOOK`（有声书）、`LICENSED_OTHER`（其他合法授权来源）、`TTS`（合成内容）。
+- 来源类型 `sourceType` 必须如实标注：`REAL_MOVIE_TV`（影视）、`CELEBRITY_SPEECH`（名人演讲）、`TED`、`AUDIOBOOK`（有声书）、`LICENSED_OTHER`（其他合法授权来源）、`TTS`（合成内容）、`TATOEBA`（Tatoeba 语料库，CC-BY 2.0 FR，v1.15）。
 - 携带来源元数据：`sourceRef`（出处，如影视名 / 演讲标题）、`licenseNote`（授权说明）。
 - Audio：有授权音频文件时播放原声（`audioUri`）；无音频时用 TTS 朗读 `Sentence` 兜底。
 - **约束（Phase 0）**：不接入任何真实第三方音频；数据模型与字段先建好。
 - **注记（v1.14）**：「每条释义至少 1 例句」为**精选种子内容契约**（Phase 2 DoD）；全量词典词条（FR-18）例句可为空——无例句可勾选，释义照常保存/播放。
+- **注记（v1.15）**：全量词典词条的例句（如有）来自 Tatoeba 对齐（FR-18），挂首释义、中文译文可空（无译文时只显示英文原句）；例句仍为原子单元，勾选/播放语义与其它来源一致。
 - **验收**：例句单元整体保存/播放（Sentence 与 ChineseTranslation 不可分开选择）；无音频文件时 TTS 兜底不报错；来源类型显示给用户。
 
 ### FR-4 生词本管理
@@ -278,7 +279,9 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 查词收录范围扩至全部英语单词与短语（bug list 2026-09-19 第 1 项）：
 
 - 数据源：**ECDICT（skywind3000，MIT 许可）** full 版 ~77 万词条（含数据源收录的短语/多词条目），经离线工具转换为只读 SQLite 随 APK 打包（`assets/dict/`；词典产物 >100MB 可由工具再生成，不入 git）；
-- 转换映射（一次性离线完成）：中文译义按行拆词性前缀 → DefinitionEntry（vt./vi./aux.→verb、a.→adjective、ad.→adverb、无前缀行→`other`@90——DOMAIN_MODEL §3.1 逃逸口）；`meaningEN` 取数据源英义列、缺失存空串；**例句恒空**（FR-3 注记：每释义 ≥1 例句的契约仅约束精选种子）；音标取数据源 phonetic 列；
+- 转换映射（一次性离线完成）：中文译义按行拆词性前缀 → DefinitionEntry（vt./vi./aux.→verb、a.→adjective、ad.→adverb、无前缀行→`other`@90——DOMAIN_MODEL §3.1 逃逸口）；`meaningEN` 取数据源英义列、缺失存空串；音标取数据源 phonetic 列；
+- **例句增强（v1.15，Tatoeba 对齐）**：全量词典资产追加 `examples` 列（`[["英文原句","中文译文"],…]`，Tatoeba CC-BY 2.0 FR）；匹配 = 句子词 n-gram（n=1..5，词与短语统一覆盖，含 `-`/`'` 连接变体），**带中文译文的候选句优先、次短句优先**，≤4 条/词；译文经 Tatoeba links 句对配对，未配对句 v1.16 起 opus-mt-en-zh 机器翻译兜底（**例句译文覆盖率 100%**，人译优先机译兜底），schema 仍允许空串（无译文只显原句）；语料级**粗口/成人内容过滤**（词边界屏蔽表）；例句无词性归属 → 挂**首释义**（与精选种子的"逐释义例句"不同，属数据源粒度限制）；资产带 `PRAGMA user_version` 版本（含数据修订，数据重建必须递增），旧设备缓存据此自动重拷；
+- **例句回填（v1.15；v1.17 扩音标）**：例句增强前已导入的词条，`lookup` 命中本地库但零例句（或 Tatoeba 例句译文为空）时 → 从词典源补齐例句/译文（幂等、单事务，同句去重、只补不删）→ 重读返回；v1.17 同路径扩**音标回填**——本地音标缺失（ipaAm NULL）且词典源有值 → 只补空缺（绝不覆盖已有值，零释义 TXT 导入词同样适用）；
 - 查询路径：`WordRepository.lookup` 先查本地库（用户已存词条优先，FR-5 复用原则），未命中 → 复合 DictionaryProvider（精选种子优先 → 全量词典兜底）→ **命中即按需导入该词**（幂等，与种子同代码路径）→ 返回词条；两级均未命中 → "未收录"（FR-1 口径不变）；
 - 首启精选种子导入（50 词，含例句）维持不变；
 - 全量词典词条与种子词条同构入库，保存/编辑/学习/播放全链路零特殊分支（FR-17 编辑入口对其同样适用）；meaningEN 为空串的释义渲染时只显示中文（展示不变量 I-6"EN 恒在 CN 前"不受影响——EN 不存在时不渲染空行）；
@@ -384,3 +387,5 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.12 | 2026-09-18 | **Phase 8 范围裁决（用户）：「会了」命令别名可配置性再延后**（v1.4 延期至 Phase 8 的裁决点，本次裁决不实施——个人使用三别名 + 近音兜底已够用；避免编辑别名集意外丢失 vivo 实证调优的误听容错）。FR-15 第六行标注固定代码常量；`settings.masteredAliases` 键保持预登记未启用。同批裁决：i18n 校对 / TalkBack / NFR-2 逐项测量延后至 MVP 后打磨批（ROADMAP v1.9）。FR-15 增验收行（Phase 8 五项设置落地）。协议文档：docs/agent-sync/ `*_PHASE8.md` |
 | 1.13 | 2026-09-19 | **新增 FR-17 生词本词条选择编辑（用户 2026-09-19 vivo 走查后提出）**：已保存词在本详情「编辑」入口增删释义/例句选择，单事务整组替换、≥1 释义守卫、不重建词条行（entryOrder/addedAt/pendingTranslation 原样）、掌握零接触、生效时点 = 该词下一次播放（粒度同 FR-10 开关）、导入词空态提示。FR-5 注记重存替换语义与正规编辑入口。零迁移（Q7 query-only）。裁决：查词保存流不预填。协议文档：docs/agent-sync/ `*_PHASE8_5.md` |
 | 1.14 | 2026-09-19 | **新增 FR-18 全量离线词典与按需导入 / FR-19 TTS 音色选择 / FR-20 学习统计 + 应用图标打磨**（bug list 四项，用户裁决：词典全量 77 万词、TTS 本地音色枚举）：ECDICT（MIT）只读 SQLite 随包 + DB 未命中按需导入（幂等复用种子代码路径）；SpeechSynthesizer 端口 +availableVoices 与设置两键持久化、失效回退 setLanguage；勋章页统计卡 + 日/月/年图表（SessionWord/LearningSession 聚合，query-only 零迁移）；自适应矢量图标。FR-3 注记例句契约分域（仅精选种子）；FR-16 注记 v1.1 复合实现。协议文档：docs/agent-sync/ `*_BUGLIST.md` |
+| 1.15 | 2026-09-19 | **FR-18 例句增强 + 例句回填（用户批准 SPEC_CHANGE_REQUEST_TATOEBA）**：全量词典资产经 Tatoeba（CC-BY 2.0 FR）离线对齐追加例句列 `[["英文原句","中文译文"],…]`（≤4 条/词，译文经 links 句对配对可空，挂首释义——数据源无词性归属）；资产 `PRAGMA user_version` 版本化，旧设备缓存自动重拷；增强前已导入词条 lookup 时幂等回填例句/译文（单事务，同句去重只补不删）。FR-3 来源类型 +`TATOEBA`；FR-3 注记 v1.15 全量词典例句译文可空。协议文档：docs/agent-sync/ `SPEC_CHANGE_REQUEST_TATOEBA.md` |
+| 1.16 | 2026-09-20 | **FR-18 例句译文全量覆盖（v4 资产）**：Tatoeba links 配对仅覆盖 3.05 万/29.9 万例句 → opus-mt-en-zh 批量机器翻译补齐全部空译文（人译优先、机译兜底），覆盖率 299,558/299,576（100%）；资产 `user_version=4`（数据重建递增铁律），设备旧缓存自动重拷；再生管线见 tools/dict/README（重活 Node 化）。vivo 装机实测例句中文正常显示。决策记录：ADR-008 v4 后续批 |

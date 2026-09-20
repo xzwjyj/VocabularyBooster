@@ -4,7 +4,7 @@ CREATE TABLE Example (
   definitionEntryId  INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId) ON DELETE CASCADE,
   sentence           TEXT NOT NULL,
   chineseTranslation TEXT NOT NULL,
-  sourceType         TEXT NOT NULL,      -- REAL_MOVIE_TV|CELEBRITY_SPEECH|TED|AUDIOBOOK|LICENSED_OTHER|TTS
+  sourceType         TEXT NOT NULL,      -- REAL_MOVIE_TV|CELEBRITY_SPEECH|TED|AUDIOBOOK|LICENSED_OTHER|TTS|TATOEBA
   sourceRef          TEXT,
   licenseNote        TEXT,                -- 合规留存（NFR-5）
   audioUri           TEXT,                -- 原声；空则 TTS 朗读 sentence
@@ -19,3 +19,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectExamplesForEntry:
 SELECT * FROM Example WHERE definitionEntryId = ? ORDER BY exampleOrder ASC;
+
+-- 例句回填（Phase 8.6 Tatoeba 译文补齐）：只补译文，不动其它列
+updateExampleTranslation:
+UPDATE Example SET chineseTranslation = ? WHERE exampleId = ?;

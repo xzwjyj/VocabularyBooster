@@ -34,6 +34,8 @@ public enum class ExampleSourceType {
     AUDIOBOOK,
     LICENSED_OTHER,
     TTS,
+    /** Tatoeba 语料库例句（CC-BY 2.0 FR，Phase 8.6 全量词典例句增强）。 */
+    TATOEBA,
 }
 
 /** 例句原子单元：句 + 译文 + 音频元数据 + 来源合规信息（FR-3）。 */
