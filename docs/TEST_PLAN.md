@@ -170,6 +170,8 @@
 
 **增强回填（FR-18 v1.15 例句/译文，v1.17 扩音标）**：jvmTest `SeedImporterTest` 回填组 7——`backfillEnhancements`（v1.17 自 `importExamplesOnly` 改名，例句/译文/音标三合一）零例句旧词补齐到首释义且幂等（二次调用零变更）/ Tatoeba 例句译文空 → 只补译文不重复建行 / 未导入词返回 0 绝不建词 / `lookup` 端到端：DB 旧词 + Fake 词典源 → 查看详情自动回填（含译文）重读返回 / 音标空 → 只补空缺（已有音标绝不覆盖，幂等零变更）/ 零释义 TXT 导入词（FR-14 形态）音标仍可回填 / `lookup` 端到端：例句完整但音标缺失 → 自动补音标。
 
+**学习会话词内容面板（FR-21，v1.17 已登记）**：UI 纯渲染投影（PlaybackState 段信息 + 编排器 `getCurrentContent()` 读模型），无引擎行为变更不设引擎用例；装机走查 2026-09-20 vivo 实测通过（高亮随段切换释义卡/例句卡/词头、Paused 冻结段高亮保持、换词异步重载、音标回填后面板显示、卡片列表滚动）。
+
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
@@ -194,6 +196,7 @@
 | FR-18 | TC-UI 词典组（jvmTest 按需导入 + androidTest 真实 asset 冒烟） |
 | FR-19 | TC-UI 音色组（VM 单测 + 冒烟 + jvmTest 设置键往返） |
 | FR-20 | TC-UI 统计组（jvmTest 聚合 + 统计卡冒烟） |
+| FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
 
 ## 6. 覆盖率门槛（Kover，Phase 质量门）
 
@@ -273,3 +276,4 @@
 | 2.15 | 2026-09-19 | **Phase 8.5 词条选择编辑用例登记（FR-17）**：§4.8 增词条编辑组——jvmTest `WordBookRepositoryTest` 编辑组 4（替换往返/词条行不重建/校验拒绝事务回滚/掌握零接触）+ `WordSelectionEditorViewModelTest` + `WordSelectionEditorUiSmokeTest`；生效时点不设新用例（Q4/Q4b 既有事实，粒度同 TC-AE-19）。上游：PROJECT_SPEC v1.13（FR-17）、ROADMAP v1.10 |
 | 2.16 | 2026-09-19 | **Phase 8.6 打磨批用例登记（bug list 四项）**：§4.8 增三组——音色（FR-19：VM 单测 + 冒烟 + jvmTest 两键往返；失效回退注释锁定）/ 统计（FR-20：jvmTest 聚合 6 边界 + 统计卡冒烟）/ 词典（FR-18：jvmTest 按需导入 + 真实 asset 冒烟；例句契约分域注记 FR-3 v1.14）；图标 = 走查项无自动化；FR 矩阵 +FR-18/19/20 行。上游：PROJECT_SPEC v1.14、ROADMAP v1.11 |
 | 2.17 | 2026-09-19 | **例句回填用例登记（FR-18 v1.15 Tatoeba 例句增强）**：§4.8 词典组口径更新——完整词条（含例句）DB 命中不打扰词典源（例句缺失时回填咨询属预期）；+回填组 4（SeedImporterTest：补齐到首释义且幂等 / 译文空只补译文不重建行 / 未导入词零建词 / lookup 端到端自动回填）。上游：PROJECT_SPEC v1.15、`SPEC_CHANGE_REQUEST_TATOEBA.md` |
+| 2.18 | 2026-09-20 | **增强回填扩音标 + FR-21 面板登记**：§4.8 回填组 4→7（`importExamplesOnly` 改名 `backfillEnhancements`——音标只补空缺不覆盖 / 零释义 TXT 词可补 / lookup 端到端例句完整但音标缺失自动补；词典组口径"例句或音标缺失时回填咨询属预期"）；+FR-21 学习会话词内容面板组（纯渲染投影不设引擎用例，2026-09-20 vivo 走查通过）；FR 矩阵 +FR-21 行。上游：PROJECT_SPEC v1.17 |

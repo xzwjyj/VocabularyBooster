@@ -2,6 +2,7 @@ package com.vocabularybooster.playback
 
 import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.event.DomainEventBus
+import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.model.SessionSnapshot
 import com.vocabularybooster.domain.model.SessionWord
 import com.vocabularybooster.domain.model.SessionWordStatus
@@ -437,6 +438,11 @@ public class PlaybackOrchestrator(
      * 只读定位信息（Phase 6）：完成仪式页按书查 BOOK_COMPLETED 勋章用，不参与播放裁决。
      */
     public fun activeWordBookId(): Long? = sessionId?.let { sessionWordBookId }
+
+    /** 当前播放内容（Word + 释义 + 例句），供 UI 展示用；无内容时返回 null。 */
+    public suspend fun getCurrentContent(): PlaybackContent? = wordRef?.let { ref ->
+        contentRepository.getPlaybackContent(sessionWordBookId, ref.wordId)
+    }
 
     private fun adoptSession(snapshot: SessionSnapshot) {
         sessionId = snapshot.session.sessionId

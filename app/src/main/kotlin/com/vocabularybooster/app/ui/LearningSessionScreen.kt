@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions") // 每个私有 composable = 一个渲染单元（状态分支 + 词卡面板），无逻辑可合并
+
 package com.vocabularybooster.app.ui
 
 import android.Manifest
@@ -6,18 +8,23 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,10 +35,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.vocabularybooster.playback.Segment
+import com.vocabularybooster.playback.SegmentOwner
+import com.vocabularybooster.playback.SegmentType
 import org.koin.androidx.compose.koinViewModel
 
 /**
@@ -85,9 +97,12 @@ fun LearningSessionScreen(
         Text("学习会话", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.padding(top = 24.dp))
 
-        SessionContent(state = ui, onExit = onExit, onMasterWord = viewModel::masterCurrentWord)
-
-        Spacer(Modifier.weight(1f))
+        SessionContent(
+            state = ui,
+            detail = viewModel.wordDetail,
+            onExit = onExit,
+            onMasterWord = viewModel::masterCurrentWord,
+        )
 
         // 麦克风权限：非阻断提示条（仅会话中显示；点击才发起系统授权，无自动请求）
         if (sessionActive && !micGranted) {
@@ -188,14 +203,29 @@ fun LearningSessionScreen(
     }
 }
 
-/** 会话主体内容区：ui 状态 → 纯渲染分支（状态机权威在编排器，本函数零逻辑）。 */
+/**
+ * 会话主体内容区：ui 状态 → 纯渲染分支（状态机权威在编排器，本函数零逻辑）。
+ * ColumnScope：滚动卡片面板（Playing/Paused/Error）用 weight 占据剩余空间，控制条恒在底部。
+ */
 @Composable
-private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterWord: () -> Unit) {
+private fun ColumnScope.SessionContent(
+    state: LearningUiState,
+    detail: LearningWordDetail?,
+    onExit: () -> Unit,
+    onMasterWord: () -> Unit,
+) {
     when (state) {
-        is LearningUiState.Loading -> Text("正在准备学习…", modifier = Modifier.testTag("learning_state"))
+        is LearningUiState.Loading -> {
+            Text("正在准备学习…", modifier = Modifier.testTag("learning_state"))
+            Spacer(Modifier.weight(1f))
+        }
 
         is LearningUiState.Playing -> {
-            WordHeader(state.wordText, state.groupIndex)
+            WordHeader(
+                wordText = state.wordText,
+                groupIndex = state.groupIndex,
+                wordPlaying = state.currentSegment?.owner == SegmentOwner.Word,
+            )
             Text(
                 "正在播放 · ${state.segmentLabel}（第 ${state.segmentIndex} 段）",
                 style = MaterialTheme.typography.bodyLarge,
@@ -213,6 +243,13 @@ private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterW
                         .testTag("learning_degraded"),
                 )
             }
+            WordDetailPanel(
+                detail = detail,
+                currentSegment = state.currentSegment,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 8.dp),
+            )
         }
 
         is LearningUiState.Paused -> {
@@ -223,6 +260,13 @@ private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterW
                 modifier = Modifier
                     .padding(top = 12.dp)
                     .testTag("learning_state"),
+            )
+            WordDetailPanel(
+                detail = detail,
+                currentSegment = state.currentSegment,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 8.dp),
             )
         }
 
@@ -269,6 +313,13 @@ private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterW
                     .padding(top = 16.dp)
                     .testTag("btn_mastered"),
             ) { Text("会了") }
+            WordDetailPanel(
+                detail = detail,
+                currentSegment = null, // 窗口期无播放内容——卡片平铺不高亮
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 8.dp),
+            )
         }
 
         is LearningUiState.Error -> {
@@ -280,6 +331,13 @@ private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterW
                 modifier = Modifier
                     .padding(top = 12.dp)
                     .testTag("learning_state"),
+            )
+            WordDetailPanel(
+                detail = detail,
+                currentSegment = state.currentSegment,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 8.dp),
             )
         }
 
@@ -327,17 +385,23 @@ private fun SessionContent(state: LearningUiState, onExit: () -> Unit, onMasterW
                     .padding(top = 32.dp)
                     .testTag("btn_back_to_books"),
             ) { Text("返回生词本") }
+            Spacer(Modifier.weight(1f))
         }
 
-        is LearningUiState.Stopped -> Text("已退出学习", modifier = Modifier.testTag("learning_state"))
+        is LearningUiState.Stopped -> {
+            Text("已退出学习", modifier = Modifier.testTag("learning_state"))
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 
 @Composable
-private fun WordHeader(wordText: String, groupIndex: Int) {
+private fun WordHeader(wordText: String, groupIndex: Int, wordPlaying: Boolean = false) {
     Text(
         wordText,
         style = MaterialTheme.typography.displaySmall,
+        // 发音/拼写段归属词本身——播放中主词高亮（SegmentOwner.Word）
+        color = if (wordPlaying) MaterialTheme.colorScheme.primary else Color.Unspecified,
         modifier = Modifier.testTag("learning_word"),
     )
     Text(
@@ -346,6 +410,145 @@ private fun WordHeader(wordText: String, groupIndex: Int) {
         color = MaterialTheme.colorScheme.secondary,
         modifier = Modifier.testTag("learning_group"),
     )
+}
+
+/**
+ * 词内容卡片面板（bug list「学习会话显示完整词信息」）：音标 + 释义卡 + 例句卡滚动列表。
+ * 高亮 = 当前段 owner 命中的卡片（primaryContainer 底 + primary 边框），段内 EN/CN 行加粗。
+ * detail 为 null（换词加载间隙）时收起，不渲染旧词内容。
+ */
+@Composable
+private fun WordDetailPanel(
+    detail: LearningWordDetail?,
+    currentSegment: Segment?,
+    modifier: Modifier = Modifier,
+) {
+    if (detail == null) return
+    Column(
+        modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .testTag("learning_word_detail"),
+    ) {
+        detail.ipaAm?.takeIf { it.isNotBlank() }?.let { ipa ->
+            Text(
+                "/$ipa/",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+        detail.definitions.forEach { definition ->
+            DefinitionCard(
+                definition = definition,
+                highlighted = (currentSegment?.owner as? SegmentOwner.Definition)
+                    ?.definitionEntryId == definition.definitionEntryId,
+                activeType = currentSegment?.type,
+            )
+            definition.examples.forEach { example ->
+                ExampleCard(
+                    example = example,
+                    highlighted = (currentSegment?.owner as? SegmentOwner.Example)
+                        ?.exampleId == example.exampleId,
+                    activeType = currentSegment?.type,
+                )
+            }
+        }
+    }
+}
+
+/** 释义卡：词性 + EN 释义 + CN 释义（不可拆分，FR-2）；播放命中的行加粗。 */
+@Composable
+private fun DefinitionCard(
+    definition: LearningDefinitionCard,
+    highlighted: Boolean,
+    activeType: SegmentType?,
+) {
+    HighlightCard(
+        highlighted = highlighted,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .testTag("learning_def_${definition.definitionEntryId}"),
+    ) {
+        Text(
+            definition.partOfSpeech.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        if (definition.meaningEN.isNotBlank()) {
+            Text(
+                definition.meaningEN,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (highlighted && activeType == SegmentType.MEANING_EN) {
+                    FontWeight.Bold
+                } else {
+                    null
+                },
+            )
+        }
+        if (definition.meaningCN.isNotBlank()) {
+            Text(
+                definition.meaningCN,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (highlighted && activeType == SegmentType.MEANING_CN) {
+                    FontWeight.Bold
+                } else {
+                    null
+                },
+            )
+        }
+    }
+}
+
+/** 例句卡：句 + 译文（原子单元，FR-3），缩进挂属释义下方；播放命中的行加粗。 */
+@Composable
+private fun ExampleCard(
+    example: LearningExampleCard,
+    highlighted: Boolean,
+    activeType: SegmentType?,
+) {
+    HighlightCard(
+        highlighted = highlighted,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 6.dp)
+            .testTag("learning_example_${example.exampleId}"),
+    ) {
+        Text(example.sentence, style = MaterialTheme.typography.bodyMedium)
+        if (example.chineseTranslation.isNotBlank()) {
+            Text(
+                example.chineseTranslation,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (highlighted && activeType == SegmentType.EXAMPLE_CN) {
+                    FontWeight.Bold
+                } else {
+                    null
+                },
+            )
+        }
+    }
+}
+
+/** 高亮容器：命中段 = primaryContainer 底 + primary 边框；常态 = surfaceVariant 弱底。 */
+@Composable
+private fun HighlightCard(
+    highlighted: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = if (highlighted) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = modifier,
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { content() }
+    }
 }
 
 /** 播放控制条（FR-11）：全部转发 ViewModel 命令（→ PlaybackOrchestrator）。 */

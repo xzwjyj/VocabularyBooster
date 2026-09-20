@@ -7,12 +7,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.event.DomainEventBus
+import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.learning.ExitResult
 import com.vocabularybooster.learning.ResumeResult
 import com.vocabularybooster.learning.StartResult
 import com.vocabularybooster.playback.PlaybackOrchestrator
 import com.vocabularybooster.playback.PlaybackState
+import com.vocabularybooster.playback.Segment
 import com.vocabularybooster.playback.SegmentType
 import kotlinx.coroutines.launch
 
@@ -36,6 +38,13 @@ class LearningSessionViewModel(
 
     /** 学习屏 UI 状态（PlaybackState 的 app 层 immutable 投影）。 */
     var ui by mutableStateOf<LearningUiState>(LearningUiState.Loading)
+        private set
+
+    /**
+     * 当前词展示详情（音标 + 释义/例句卡片数据，bug list「学习会话显示完整词信息」）：
+     * 换词时异步重载（编排器 getCurrentContent），加载间隙为 null——面板收起，不闪旧词。
+     */
+    var wordDetail by mutableStateOf<LearningWordDetail?>(null)
         private set
 
     /** ACTIVE_SESSION_EXISTS 冲突（LE spec §3）：引导「恢复」或「放弃旧的」。 */
@@ -64,6 +73,15 @@ class LearningSessionViewModel(
     /** 展示连续性：最近一次携带词文本的状态（Playing/Paused/Error）；CommandWindow 映射消费。 */
     private var wordTextCache: String? = null
 
+    /**
+     * 展示连续性：最近一次 Playing 携带的段。Paused 不携带段（PlaybackState 契约）——
+     * 暂停冻结的就是该段，恢复也重读它（ADR-09），用缓存补齐 UI 高亮。
+     */
+    private var lastSegment: Segment? = null
+
+    /** wordDetail 归属词（wordId 去重：段推进不重载，仅换词重载）。 */
+    private var detailWordId: Long? = null
+
     /** 完成仪式（Phase 6）：已请求过勋章快照的书（StateFlow 重复发射去重）。 */
     private var ceremonyBookId: Long? = null
 
@@ -74,6 +92,7 @@ class LearningSessionViewModel(
                 if (!suppressingUiUpdates && sessionOwned) {
                     ui = mapToUiState(state)
                     if (state is PlaybackState.Completed) ensureCeremonyMedal()
+                    refreshWordDetail(state)
                 }
             }
         }
@@ -220,7 +239,10 @@ class LearningSessionViewModel(
         exitResult = null
         pendingBookId = null
         wordTextCache = null
+        lastSegment = null
         ceremonyBookId = null
+        detailWordId = null
+        wordDetail = null
     }
 
     // —— 完成仪式（Phase 6，ACHIEVEMENT_SPEC §3）：Completed 态按会话所属书解析勋章快照 ——
@@ -253,14 +275,44 @@ class LearningSessionViewModel(
         }
     }
 
-    /** PlaybackState → UI 投影（词文本缓存随携带态刷新，供 CommandWindow 显示延续）。 */
+    /** PlaybackState → UI 投影（词文本/段缓存随携带态刷新，供 Paused/CommandWindow 显示延续）。 */
     private fun mapToUiState(state: PlaybackState): LearningUiState {
         when (state) {
-            is PlaybackState.Playing -> wordTextCache = state.wordText
+            is PlaybackState.Playing -> {
+                wordTextCache = state.wordText
+                lastSegment = state.segment
+            }
             is PlaybackState.Paused -> wordTextCache = state.wordText
             else -> Unit
         }
-        return state.toUiState(wordTextCache)
+        return state.toUiState(wordTextCache, lastSegment)
+    }
+
+    /**
+     * 词内容卡片装载（纯展示，不参与播放裁决）：wordId 变化才重载；
+     * 加载期间又换词 → 结果按 wordId 守卫丢弃，不回写旧词内容。
+     */
+    private fun refreshWordDetail(state: PlaybackState) {
+        val wordId = when (state) {
+            is PlaybackState.Playing -> state.wordRef.wordId
+            is PlaybackState.Paused -> state.wordRef.wordId
+            is PlaybackState.CommandWindow -> state.wordRef.wordId
+            else -> null
+        }
+        if (wordId == null) {
+            detailWordId = null
+            wordDetail = null
+            return
+        }
+        if (detailWordId == wordId) return
+        detailWordId = wordId
+        wordDetail = null // 换词先清旧卡（加载间隙面板收起，不闪旧词内容）
+        viewModelScope.launch {
+            val content = runCatching { orchestrator.getCurrentContent() }.getOrNull()
+            if (detailWordId == wordId) {
+                wordDetail = content?.toLearningWordDetail()
+            }
+        }
     }
 
     /** startSession 被拒（LE spec §3 拒绝）：冲突进对话框，其余经 [notice] 引导后返回。 */
@@ -319,12 +371,16 @@ sealed interface LearningUiState {
         val segmentIndex: Int,
         val offsetMs: Long,
         val degraded: Boolean,
+        /** 当前段（含 owner 归属 + type 类型，UI 卡片高亮联动）；末段后 300ms 间隙内保持该段。 */
+        val currentSegment: Segment?,
     ) : LearningUiState
 
     data class Paused(
         val wordText: String,
         val groupIndex: Int,
         val segmentIndex: Int,
+        /** 冻结段的最近 Playing 快照（Paused 状态不携带段；暂停位 = 该段，ADR-09）。 */
+        val currentSegment: Segment?,
     ) : LearningUiState
 
     data class CommandWindow(
@@ -342,40 +398,52 @@ sealed interface LearningUiState {
     data object Stopped : LearningUiState
 
     /** TTS 失败进入的错误暂停（AUDIO §9 P4 可表达子集：重试 = resume，退出 = exit）。 */
-    data class Error(val wordText: String, val groupIndex: Int, val segmentIndex: Int) : LearningUiState
+    data class Error(
+        val wordText: String,
+        val groupIndex: Int,
+        val segmentIndex: Int,
+        val currentSegment: Segment?,
+    ) : LearningUiState
 }
 
 private fun PlaybackState.isTransportActive(): Boolean =
     this is PlaybackState.Playing || this is PlaybackState.Paused || this is PlaybackState.CommandWindow
 
-private fun PlaybackState.toUiState(cachedWordText: String?): LearningUiState = when (this) {
-    PlaybackState.Idle -> LearningUiState.Loading
-    is PlaybackState.Playing -> LearningUiState.Playing(
-        wordText = wordText,
-        groupIndex = wordRef.groupIndex + 1, // 用户可见组号 1 起（LE spec §4）
-        segmentLabel = segment?.type?.label() ?: "",
-        segmentIndex = segmentIndex + 1,
-        offsetMs = offsetMs,
-        degraded = degraded,
-    )
-    is PlaybackState.Paused ->
-        if (error != null) {
-            LearningUiState.Error(wordText, wordRef.groupIndex + 1, segmentIndex + 1)
-        } else {
-            LearningUiState.Paused(wordText, wordRef.groupIndex + 1, segmentIndex + 1)
-        }
-    is PlaybackState.CommandWindow -> LearningUiState.CommandWindow(
-        // CommandWindow 态不携带词文本（PlaybackState 契约）——由调用方传入展示缓存保持 UI 连续性，
-        // 非第二播放状态源；窗口归属词恒等于此前 Playing 的词（advance 发生在窗口结束后）。
-        wordText = cachedWordText?.takeIf { it.isNotEmpty() } ?: "…",
-        groupIndex = wordRef.groupIndex + 1,
-        remainingMs = remainingMs,
-        totalMs = totalMs,
-        listening = listening, // Phase 5 Step 1：监听/降级形态透传（编排器为唯一事实源）
-    )
-    PlaybackState.Completed -> LearningUiState.Completed(medal = null) // 勋章快照经 ensureCeremonyMedal 异步补填
-    PlaybackState.Stopped -> LearningUiState.Stopped
-}
+private fun PlaybackState.toUiState(cachedWordText: String?, cachedSegment: Segment?): LearningUiState =
+    when (this) {
+        PlaybackState.Idle -> LearningUiState.Loading
+        is PlaybackState.Playing -> LearningUiState.Playing(
+            wordText = wordText,
+            groupIndex = wordRef.groupIndex + 1, // 用户可见组号 1 起（LE spec §4）
+            segmentLabel = segment?.type?.label() ?: "",
+            segmentIndex = segmentIndex + 1,
+            offsetMs = offsetMs,
+            degraded = degraded,
+            currentSegment = segment,
+        )
+        is PlaybackState.Paused ->
+            if (error != null) {
+                LearningUiState.Error(
+                    wordText,
+                    wordRef.groupIndex + 1,
+                    segmentIndex + 1,
+                    cachedSegment,
+                )
+            } else {
+                LearningUiState.Paused(wordText, wordRef.groupIndex + 1, segmentIndex + 1, cachedSegment)
+            }
+        is PlaybackState.CommandWindow -> LearningUiState.CommandWindow(
+            // CommandWindow 态不携带词文本（PlaybackState 契约）——由调用方传入展示缓存保持 UI 连续性，
+            // 非第二播放状态源；窗口归属词恒等于此前 Playing 的词（advance 发生在窗口结束后）。
+            wordText = cachedWordText?.takeIf { it.isNotEmpty() } ?: "…",
+            groupIndex = wordRef.groupIndex + 1,
+            remainingMs = remainingMs,
+            totalMs = totalMs,
+            listening = listening, // Phase 5 Step 1：监听/降级形态透传（编排器为唯一事实源）
+        )
+        PlaybackState.Completed -> LearningUiState.Completed(medal = null) // 勋章快照经 ensureCeremonyMedal 异步补填
+        PlaybackState.Stopped -> LearningUiState.Stopped
+    }
 
 /** 段类型 → 用户可见文案（app 层展示映射，shared 不携带 UI 文案）。 */
 internal fun SegmentType.label(): String = when (this) {
@@ -386,3 +454,49 @@ internal fun SegmentType.label(): String = when (this) {
     SegmentType.EXAMPLE_AUDIO -> "例句"
     SegmentType.EXAMPLE_CN -> "例句译文"
 }
+
+// —— 学习屏词内容卡片（展示投影，纯渲染数据；播放语义全在编排器/Segment）——
+
+/** 音标 + 释义卡列表（bug list：学习会话显示当前词完整信息）。 */
+data class LearningWordDetail(
+    val ipaAm: String?,
+    val definitions: List<LearningDefinitionCard>,
+)
+
+/** 一张释义卡：MeaningEN/MeaningCN 同卡（FR-2 不可拆分），挂本释义选中的例句。 */
+data class LearningDefinitionCard(
+    val definitionEntryId: Long,
+    val partOfSpeech: String,
+    val meaningEN: String,
+    val meaningCN: String,
+    val examples: List<LearningExampleCard>,
+)
+
+/** 一条例句卡：句 + 译文（原子单元，FR-3）。 */
+data class LearningExampleCard(
+    val exampleId: Long,
+    val sentence: String,
+    val chineseTranslation: String,
+)
+
+/** PlaybackContent（选中项读模型）→ 卡片投影：只留渲染字段，例句防御性按 exampleOrder 排。 */
+private fun PlaybackContent.toLearningWordDetail(): LearningWordDetail = LearningWordDetail(
+    ipaAm = word.ipaAm,
+    definitions = selectedDefinitions.map { definition ->
+        LearningDefinitionCard(
+            definitionEntryId = definition.definitionEntryId,
+            partOfSpeech = definition.partOfSpeech,
+            meaningEN = definition.meaningEN,
+            meaningCN = definition.meaningCN,
+            examples = examplesByDefinitionEntryId[definition.definitionEntryId].orEmpty()
+                .sortedBy { it.exampleOrder }
+                .map { example ->
+                    LearningExampleCard(
+                        exampleId = example.exampleId,
+                        sentence = example.sentence,
+                        chineseTranslation = example.chineseTranslation,
+                    )
+                },
+        )
+    },
+)

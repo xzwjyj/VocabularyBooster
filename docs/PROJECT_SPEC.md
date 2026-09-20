@@ -306,6 +306,16 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - 实现口径：统计聚合基于 SessionWord 掌握事件 + LearningSession 时长（**query-only，零迁移**）；日界按设备本地时区（分桶在共享层完成，注入 TimeZone 可测）；
 - **验收**（Phase 8.6）：学新词后今日学习 +1、重复学习已掌握词记复习不记学习；时长随会话累计；日/月/年聚合与明细一致；空库显示零值不崩溃。
 
+### FR-21 学习会话词内容展示与播放高亮（v1.17，bug list 2026-09-20 第 5 项）
+
+学习会话界面显示当前词完整信息，播放内容实时高亮：
+
+- 词头（词文本 + 组号）下方展示**音标**（ipaAm，缺失不渲染空行）与滚动卡片列表：**释义卡**（词性 + MeaningEN + MeaningCN 同卡不可拆分，FR-2）+ **例句卡**（句 + 中文译文原子单元，FR-3，缩进挂属释义下方，空译文不渲染）；卡片数据 = 该词本次会话播放内容（PlaybackContent 选中项——与 FR-10「只播被选中的」同源，面板与播放所见即所听）；
+- **高亮联动**：当前播放段（Segment.owner）命中的卡片高亮（主题容器色 + 边框），段内正在朗读的行（英文释义/中文释义/例句/例句译文，按段类型）加粗；发音/拼写段（owner=Word）高亮词头；命令窗口期无高亮（卡片平铺）；
+- 暂停态保持冻结段高亮（Paused 携带最近 Playing 段快照——暂停位 = 该段，ADR-09 同口径）；换词异步重载卡片（按 wordId 去重，加载间隙收起不闪旧词）；
+- 展示纯只读：不引入第二播放状态源（编排器 PlaybackState 唯一事实），卡片数据不参与任何播放/掌握裁决；
+- **验收**（2026-09-20 vivo 实测）：播放推进时高亮卡片随段实时切换（释义段→释义卡、例句段→例句卡、词头段→词头变色）；暂停高亮保持；换词卡片重载；音标回填（FR-18）后面板显示音标；卡片列表可滚动、控制条恒在底部。
+
 ### 应用图标（v1.14，Phase 8.6；bug list 第 4 项，打磨项）
 
 自定义自适应应用图标（矢量前景/背景 + Android 13+ 单色主题图标），替换系统默认图标；无行为需求，交付记录见 ROADMAP Phase 8.6 与 ADR-007。
@@ -389,3 +399,4 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.14 | 2026-09-19 | **新增 FR-18 全量离线词典与按需导入 / FR-19 TTS 音色选择 / FR-20 学习统计 + 应用图标打磨**（bug list 四项，用户裁决：词典全量 77 万词、TTS 本地音色枚举）：ECDICT（MIT）只读 SQLite 随包 + DB 未命中按需导入（幂等复用种子代码路径）；SpeechSynthesizer 端口 +availableVoices 与设置两键持久化、失效回退 setLanguage；勋章页统计卡 + 日/月/年图表（SessionWord/LearningSession 聚合，query-only 零迁移）；自适应矢量图标。FR-3 注记例句契约分域（仅精选种子）；FR-16 注记 v1.1 复合实现。协议文档：docs/agent-sync/ `*_BUGLIST.md` |
 | 1.15 | 2026-09-19 | **FR-18 例句增强 + 例句回填（用户批准 SPEC_CHANGE_REQUEST_TATOEBA）**：全量词典资产经 Tatoeba（CC-BY 2.0 FR）离线对齐追加例句列 `[["英文原句","中文译文"],…]`（≤4 条/词，译文经 links 句对配对可空，挂首释义——数据源无词性归属）；资产 `PRAGMA user_version` 版本化，旧设备缓存自动重拷；增强前已导入词条 lookup 时幂等回填例句/译文（单事务，同句去重只补不删）。FR-3 来源类型 +`TATOEBA`；FR-3 注记 v1.15 全量词典例句译文可空。协议文档：docs/agent-sync/ `SPEC_CHANGE_REQUEST_TATOEBA.md` |
 | 1.16 | 2026-09-20 | **FR-18 例句译文全量覆盖（v4 资产）**：Tatoeba links 配对仅覆盖 3.05 万/29.9 万例句 → opus-mt-en-zh 批量机器翻译补齐全部空译文（人译优先、机译兜底），覆盖率 299,558/299,576（100%）；资产 `user_version=4`（数据重建递增铁律），设备旧缓存自动重拷；再生管线见 tools/dict/README（重活 Node 化）。vivo 装机实测例句中文正常显示。决策记录：ADR-008 v4 后续批 |
+| 1.17 | 2026-09-20 | **新增 FR-21 学习会话词内容展示与播放高亮 + FR-18 音标回填**（bug list 第 5 项）：学习屏滚动卡片面板（音标 + 释义卡 + 例句卡，数据同源 PlaybackContent 选中项）+ 当前段 owner 卡片高亮/行加粗/词头变色；Paused 冻结段高亮（最近 Playing 段快照）；换词异步重载（wordId 去重）。FR-18 回填路径扩音标（`importExamplesOnly` 改名 `backfillEnhancements`，只补空缺绝不覆盖，零释义 TXT 词适用）。2026-09-20 vivo 装机实测全通过。下游同步：TEST_PLAN v2.18；决策记录：ADR-009 |

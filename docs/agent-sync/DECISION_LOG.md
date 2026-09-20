@@ -142,3 +142,15 @@
 **v4 全量例句翻译（2026-09-20 后续批）**：Tatoeba links 配对仅覆盖 3.05 万 / 29.9 万例句 → 用户要求自动补齐；**opus-mt-en-zh** 批量机器翻译全部空译文例句（人译优先、机译兜底），**覆盖率 299,558/299,576（100%）**；资产 `user_version=4`（数据重建递增铁律执行，装机旧缓存自动重拷实测）；管线重活延续 Node 化（`enrich_node.js`，本批 CPython/V8/翻译子进程多次段错误——分批 + 断点 + 勤落盘完成）；vivo 实测 karma/beautiful 例句中文正常显示
 
 **状态**：已实现并装机验证通过（2026-09-19 vivo：karma 回填 4 条干净例句幂等稳定；短语 take off 新导入 3 义项 + 首释义 4 例句含 3 条中文；user_version 2→3 后旧缓存 118MB→129,961,984 重拷实测；2026-09-20 v4 翻译装机验证通过）；commit 待用户确认
+
+### ADR-009: FR-21 学习会话词内容面板 + FR-18 音标回填
+
+**日期**：2026-09-20（bug list 第 5 项，用户选择"滚动卡片列表"布局）
+
+**决策**：
+- **数据通路（零引擎改动）**：编排器新增只读公开挂起 `getCurrentContent()`（当前词 PlaybackContent 复用既有 `PlaybackContentRepository` 读路径）；ViewModel 按 wordId 去重异步装载 app 层展示投影 `LearningWordDetail`（音标 + 释义卡 + 例句卡），加载间隙收起（不闪旧词），结果按 wordId 守卫丢弃过期加载。**不引入第二播放状态源**——卡片数据不参与任何播放/掌握裁决
+- **高亮联动**：`LearningUiState.Playing/Paused/Error` 增 `currentSegment: Segment?`（owner + type）；Playing 直取状态段；**Paused 不携带段（PlaybackState 契约不动）→ ViewModel 缓存最近 Playing 段补齐**（暂停位 = 该段，ADR-09 同口径）；CommandWindow 不高亮（窗口期无播放内容）。卡片命中 owner → 主题容器色 + 边框；段内行（EN 释义/CN 释义/例句/例句译文，按 SegmentType）加粗；词头段（owner=Word）词文本变色
+- **音标回填（FR-18 扩展）**：装机发现增强前导入词条 ipaAm=NULL——`import()` 复用不回填，且例句回填闸门（例句齐备）不再触发，音标永远缺席。修复：`importExamplesOnly` 改名 **`backfillEnhancements`**（例句/译文/音标三合一，同事务）；音标**只补空缺**（ipaAm NULL 且词典有值才写，绝不覆盖已有值）；零释义 TXT 导入词（FR-14 形态）同样适用（音标块前置于释义早退）；闸门 `needsEnhancementBackfill` = 音标缺失 ∨ 零例句 ∨ Tatoeba 译文空。`.sq` +1 query-only 查询（`updateWordIpa`），schema 零迁移
+- **测试**：SeedImporterTest 回填组 4→7（+音标补空缺不覆盖幂等 / 零释义词可补 / lookup 端到端例句完整但音标缺失自动补）；jvmTest + detekt + app 编译全绿（jvmTest 首跑 0xC0000374 = 机器级故障窗口，重试即过）
+
+**状态**：已实现并装机验证通过（2026-09-20 vivo：释义段→释义卡高亮行加粗 / 例句段→例句卡高亮译文加粗 / 词头段变色 / 暂停保持 / 换词重载 / 滚动正常 / beautiful 查词后音标回填详情页与 take off 面板均显示）；commit 待用户确认
