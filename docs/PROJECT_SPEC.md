@@ -327,6 +327,18 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - 种子词库 59 词补全英音音标（ipaBr 全带，类 DJ 记法与既有美音同风格）；
 - **验收**：常见单词双音标同显；无英音词只显美音不渲染空行；切换英音后英文段朗读口音变化（装机实测）；无英音语音设备回退美音且会话不中断；口音设置重启保持；资产 v5 设备旧缓存自动重拷。
 
+### FR-23 英文段端内实时神经 TTS（v1.19，用户 2026-09-20 提出，批准 SPEC_CHANGE_REQUEST_PIPER_TTS v2）
+
+- **动机**：系统 TTS 朗读英文段机械感明显，且部分设备（vivo）无 en-GB 厂商语音包——FR-22 口音设置只能回退美音。端内实时神经合成一并解决自然度与英音可用性（v1 预录方案装机实证无差异后撤销：词表命中与实际播放内容覆盖错位，且预录天然无法覆盖长尾词——实时合成对任意文本生效）；
+- **架构**：`LangRoutedSpeechSynthesizer`（commonMain 组合实现）按段语言路由——**EN_US / EN_GB → 神经引擎**（Android actual `SherpaOnnxSpeechSynthesizer`：sherpa-onnx v1.13.8 + Piper VITS medium 模型 en_US lessac / en_GB alan 各 ~63MB，随包 assets——模型 / tokens 单文件直读，espeak-ng-data 目录树一次性解包至 filesDir（native 只认真实路径））；**ZH_CN → 系统 TTS 原路径零变化**；
+- **口音 = 模型**：FR-22 消费时映射不变（段 lang=EN_GB → 英音模型）——设备无厂商英音语音包也生效（根诉求解决）；同时最多驻留一个英文模型（RAM 约束），换口音 = 先载新成功后释放旧，生效粒度仍为下一英文 Segment；
+- **合成与播放**：整段一次合成后分块直写 AudioTrack（STREAM、阻塞写即背压、阻塞写在 IO 线程；轨道缓冲 16KB + 不足一缓冲的微型段补静音至超缓冲——部分 OEM mixer 对未填满缓冲的轨道不启动消费，vivo 装机实证）；段文本短 + WAV 磁盘缓存弥补首播延迟；流式回调方案因 JNI 精确签名在本工具链不可达而弃用（native 按精确 `invoke([F)Ljava/lang/Integer;` 查回调，Kotlin lambda 经 D8 脱糖只剩擦除签名 → NoSuchMethodError 全进程崩，该桥只能以 Java 源声明而 KMP androidMain 不支持 Kotlin→Java 同模块解析）；rate → 语速 clamp 0.5–2.0；**pitch 不生效**（VITS 无基频参数，平台限制——设置无 pitch 暴露，无用户可感知面）；暂停/恢复沿用 ADR-09 段语义（stop 立停、在途段 completed=false、恢复重读整段；stop 期在途合成后台自然完成仅浪费少量 CPU）；
+- **磁盘缓存**：合成结果按（lang | speed | text）SHA-256 落 `filesDir/tts-cache/*.wav`（16-bit PCM），命中免合成直接直播；LRU（mtime）上限 100MB（构造时与写后清理）；
+- **降级**：神经引擎非 READY（模型缺席 / 加载失败 / 预热超时）或 speak 抛非取消异常 → **EN 段当场回退系统 TTS** 同段播完并进程内粘滞（会话不中断，行为回到 FR-19/FR-22 系统路径）；`CancellationException` 照常重抛绝不降级（暂停/退出是调用方生命周期非引擎故障——Vosk 取消被吞回归先例）；readiness 对 UI 投影系统引擎（既有界面零变化，INITIALIZING 期间 EN 段先走系统、预热完成自动切换）；
+- **资产与体积**：模型、native 库（arm64-v8a）与 vendored Kotlin API 经 `tools/tts-neural/fetch_deps.py` 可再生产出（espeak-ng-data 双模型逐字节相同共享一份）；APK 196MB → ~324MB（用户已批准）；
+- **许可**：sherpa-onnx Apache-2.0；Piper 模型 MIT；均随包分发合规；
+- **验收**：任意单词（不限词表，如长尾词）发音 / 拼写 / 英文释义 / 例句原文全部为神经自然语音；切换英音后下一英文段为英音；中文段（中文释义 / 例句译文）仍系统 TTS 零变化；同段第二次播放命中缓存（段间隙可感缩短）；杀进程重进预热正常；神经不可用时英文段自动回系统 TTS 不中断；既有门禁全绿（jvmTest / testDebugUnitTest / detekt / checkPlatformBoundaries / assembleDebug）。
+
 ### 应用图标（v1.14，Phase 8.6；bug list 第 4 项，打磨项）
 
 自定义自适应应用图标（矢量前景/背景 + Android 13+ 单色主题图标），替换系统默认图标；无行为需求，交付记录见 ROADMAP Phase 8.6 与 ADR-007。
@@ -412,3 +424,4 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.16 | 2026-09-20 | **FR-18 例句译文全量覆盖（v4 资产）**：Tatoeba links 配对仅覆盖 3.05 万/29.9 万例句 → opus-mt-en-zh 批量机器翻译补齐全部空译文（人译优先、机译兜底），覆盖率 299,558/299,576（100%）；资产 `user_version=4`（数据重建递增铁律），设备旧缓存自动重拷；再生管线见 tools/dict/README（重活 Node 化）。vivo 装机实测例句中文正常显示。决策记录：ADR-008 v4 后续批 |
 | 1.17 | 2026-09-20 | **新增 FR-21 学习会话词内容展示与播放高亮 + FR-18 音标回填**（bug list 第 5 项）：学习屏滚动卡片面板（音标 + 释义卡 + 例句卡，数据同源 PlaybackContent 选中项）+ 当前段 owner 卡片高亮/行加粗/词头变色；Paused 冻结段高亮（最近 Playing 段快照）；换词异步重载（wordId 去重）。FR-18 回填路径扩音标（`importExamplesOnly` 改名 `backfillEnhancements`，只补空缺绝不覆盖，零释义 TXT 词适用）。2026-09-20 vivo 装机实测全通过。下游同步：TEST_PLAN v2.18；决策记录：ADR-009 |
 | 1.18 | 2026-09-20 | **新增 FR-22 双音标显示与发音口音设置 + FR-18 音标增强（ipa-dict）**（用户 2026-09-20 提出，批准 SPEC_CHANGE_REQUEST_DUAL_IPA）：词典资产并入 ipa-dict（MIT）——en_UK → `ipaBr` 列、en_US 补 `ipa` 空缺，`user_version=5`；FR-18 回填闸门扩英音（ipaBr NULL 只补空缺）；FR-15 设置表 +发音口音行（`settings.ttsAccent` 缺省美音）；en-GB 缺失回退 en-US 不中断（zh-CN 仍硬失败）；FR-19 音色与口音正交；FR-21 面板音标行改双显；种子 59 词补全 ipaBr。零 schema 迁移。下游同步：TEST_PLAN v2.19；决策记录：ADR-010 |
+| 1.19 | 2026-09-20 | **新增 FR-23 英文段端内实时神经 TTS**（用户批准 SPEC_CHANGE_REQUEST_PIPER_TTS v2 + IMPLEMENTATION_PLAN_PIPER_RT_TTS；同日 v1 预录方案装机实证「无差异」证伪撤销——词表命中与实际播放内容覆盖错位且预录无法覆盖长尾，未提交全量回退）：`LangRoutedSpeechSynthesizer` 按段语言路由（EN_* → SherpaOnnx 神经引擎（sherpa-onnx v1.13.8 + Piper VITS medium en_US lessac / en_GB alan，模型单文件 assets 直读 + espeak-ng-data 解包至 filesDir；整段合成分块直写 AudioTrack，16KB 缓冲 + 补静音对冲 OEM 不消费短轨道）；ZH_CN → 系统零变化）；口音 = 模型（FR-22 消费时映射不变，无厂商英音包设备也生效）；单英文模型驻留换载；WAV 磁盘缓存 100MB LRU；非 READY / speak 非取消异常 → EN 段当场回退系统 TTS 进程内粘滞，取消重抛不降级；rate clamp 0.5–2.0、pitch 不生效（VITS 限制）；APK 196MB → ~324MB。零 schema 变更。下游同步：AUDIO_ENGINE_SPEC v2.4 / ARCHITECTURE §5 / TEST_PLAN v2.20；决策记录：ADR-011 |

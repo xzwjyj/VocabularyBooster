@@ -25,9 +25,11 @@ import com.vocabularybooster.platform.DatabaseDriverFactoryProvider
 import com.vocabularybooster.platform.LogSink
 import com.vocabularybooster.platform.AndroidSpeechCommandRecognizer
 import com.vocabularybooster.platform.Media3AudioPlayer
+import com.vocabularybooster.platform.SherpaOnnxSpeechSynthesizer
 import com.vocabularybooster.platform.TtsSpeechSynthesizer
 import com.vocabularybooster.platform.VoskSpeechCommandRecognizer
 import com.vocabularybooster.speech.CommandParser
+import com.vocabularybooster.speech.LangRoutedSpeechSynthesizer
 import com.vocabularybooster.speech.SpeechCommandRecognizer
 import com.vocabularybooster.speech.SpeechSynthesizer
 import com.vocabularybooster.data.SqlDelightWordRepository
@@ -61,7 +63,19 @@ val appModule = module {
     single<LogSink> { AndroidLogSink() }
     single<DatabaseDriverFactoryProvider> { AndroidDatabaseDriverFactoryProvider(androidContext()) }
     single<AudioPlayer> { Media3AudioPlayer(androidContext()) }
-    single<SpeechSynthesizer> { TtsSpeechSynthesizer(androidContext(), get()) } // Phase 8.6：+设置仓储（FR-19 段前音色应用）
+    // FR-23 v2（2026-09-20）：TTS 路由装配——EN_* → SherpaOnnx 神经引擎（口音=模型，vivo 无厂商
+    // 英音包也生效）；ZH_CN → 系统引擎；神经非 READY/speak 异常 → EN 段回退系统（进程内粘滞）。
+    single { TtsSpeechSynthesizer(androidContext(), get()) } // 系统引擎：ZH 主路 + EN 降级兜底（FR-19 音色应用仅系统路）
+    single { SherpaOnnxSpeechSynthesizer(androidContext()) } // 神经引擎：assets 直读 Piper 模型，构造即预热
+    single<SpeechSynthesizer> {
+        // 复合绑定防自引用：裸 get() 按参数类型 SpeechSynthesizer 解析回本绑定自身 →
+        // StackOverflowError（Koin 4 陷阱，同 FallbackDictionaryProvider 先例）——必须按具体类型解析
+        LangRoutedSpeechSynthesizer(
+            neural = get<SherpaOnnxSpeechSynthesizer>(),
+            system = get<TtsSpeechSynthesizer>(),
+            log = get<LogSink>(),
+        )
+    }
     single<SpeechCommandRecognizer> {
         val ctx = androidContext()
         val systemAvailable = SpeechRecognizer.isRecognitionAvailable(ctx)

@@ -42,5 +42,13 @@ tools/dict/stardict.db
 tools/dict/*.zip
 tools/dict/__pycache__/
 
+# ===== 神经 TTS 依赖（tools/tts-neural/fetch_deps.py 再生；均不入 git）=====
+shared/src/androidMain/jniLibs/
+app/src/main/assets/tts/
+tools/tts-neural/cache/
+tools/tts-neural/__pycache__/
+tools/tts/cache/
+tools/tts/__pycache__/
+
 # JVM crash dumps (machine-level fault window, regenerable)
 hs_err_pid*.log

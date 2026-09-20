@@ -112,6 +112,7 @@
 | TC-AE-27 | **内置离线引擎（Vosk）actual 契约 + 引擎选择（裁决 E1/E2，Phase 5 收尾范围修订，2026-09-14；app 单测·JVM 选择逻辑 + androidTest·模拟器 actual 契约）**：选择逻辑——探测为真 → 系统 actual、为假 → Vosk actual（纯函数化探测注入，Fake 探测两分支单测）；Vosk actual 契约——模型自 assets 解包加载成功；静默窗口 → Timeout（deadline 预算，零命令语义）；listenOnce 取消 → 录音/识别器全释放后再受理（无泄漏）**且取消不拉低 isAvailable（2026-09-17 vivo 回归锁定：取消曾被吞成 Unavailable+拉低 → E3 代理粘滞降级坏服务引擎 → 后续窗口全废）**；并发第二调用者 → Unavailable；RECORD_AUDIO 未授予 → Unavailable 且拉低 isAvailable；**任何错误不产生命令语义**（D5 红线同系统 actual）；**自管录音管线（轻声/气音支持，2026-09-18 用户裁决）**：MIC 源 `AudioRecord` + RMS 自适应预增益 + `EndpointerMode.SHORT` + 能量后 500ms 尾静默强制冲刷——既有四用例（静默/取消/并发/可用性）即新管线生命周期回归，静默 Timeout 语义不变（能量门限按原始值、误冲刷零命令语义）；**冲刷双触发**：能量持续判据（连续 ≥3 块越过门限才武装——单块环境噪声尖峰不武装/不重置尾静默，2026-09-18 插桩静默窗实证底噪尖峰 150–204 越过固定门限）+ **假设稳定冲刷**（非空 partial 700ms 无改进即冲刷，不依赖声学门限——诊断文件实证环境底噪 117–142 持续贴门限、能量尾静默永不积累；partial 仅作裁决信号，命令语义仍只认 final 文本）；**窗口事件诊断文件** `vosk_diag.log`（vivo logd 间歇整进程吞应用日志的取证对冲，同日实证）。真实人声命中（含轻声实测）与国行真机覆盖 = M1/M2 手动矩阵（vivo V2436A = 无系统服务代表机型） |
 | TC-AE-28 | **引擎回退代理（裁决 E3，2026-09-14，app 单测·JVM，手写 Fake 双引擎）**：主引擎可用性级硬失败（返回 `Unavailable` 且拉低自身 `isAvailable`）→ **同窗内**改用备引擎、以剩余预算调用（窗口总时长不变）、返回备引擎结果；降级进程内粘滞——后续窗口主引擎**零调用**、直连备引擎；主引擎正常（Hit/Timeout）→ 备引擎零调用（GMS 机零变化）；并发守卫触发的 `Unavailable`（不拉低 `isAvailable`）→ 不回退、如实透传；剩余预算 ≤ 0 → `Timeout`（不调备引擎、零命令语义）；双引擎皆硬失败 → `Unavailable` 且代理 `isAvailable=false`（§9 双引擎皆不可用行）；`isAvailable` 投影——降级前随主引擎、降级后随备引擎；任何路径不产生命令语义（D5 红线）。真实坏服务机型（vivo V2436A 蓝心 Copilot = 注册 `RecognitionService` 但绑定即硬失败）= M1/M2 手动矩阵 |
 | TC-AE-29 | **系统引擎响应看门狗（裁决 E4，2026-09-14；androidTest·模拟器 + vivo M1 手动）**：健康服务安静窗口**零误触**——静默 listenOnce → Timeout 且 `isAvailable` 保持 true（回调持续到达，看门狗不判死；既有静默用例扩展断言）；僵尸服务路径（零回调 → 1500ms 判死 → HardFailure → 拉低 `isAvailable` → E3 同窗回退 Vosk）无法自动化伪造死服务 = vivo V2436A M1 手动矩阵实证（日志链：watchdog 判死 → VB-Vosk onResult text=…）；判死不产生命令语义（D5 红线）。两 actual 全链路识别日志（onResults/onError/看门狗/onResult 文本）为诊断辅助，非断言对象 |
+| TC-AE-30 | **TTS 语言路由与降级（FR-23 v2，2026-09-20；jvmTest·commonTest `LangRoutedSpeechSynthesizerTest`）**：路由表 EN_US/EN_GB → 神经引擎、ZH_CN → 系统；神经 INITIALIZING / UNAVAILABLE → EN 段走系统（预热完成自动切换语义）；神经 READY 时英文零系统调用；神经 `speak` 非取消异常 → **同段回退系统播完** + 进程内粘滞（后续 EN 段零神经调用）；`CancellationException` 重抛不降级（恢复后下一 EN 段回神经——取消红线）；`stop()` 双转发；`availableVoices` 随路由与降级联动（EN 神经承接取神经、降级取系统、ZH 恒系统）；readiness 投影系统引擎（UI 零变化）。神经 actual（native 合成 / AudioTrack 排空 / WAV 缓存 / 焦点）为平台管线不设模拟器自动化 = vivo 装机走查（任意词自然语音 / 英音切换 / 缓存命中段间隙 / 降级不中断） |
 
 > **TC-AE 编号裁决（L5，2026-09-05）**：沿用 TEST_PLAN/ROADMAP 既有 `TC-<模块>-<序号>` 体系，新增自 TC-AE-13 顺序递增（后续新增从 TC-AE-20 起）；**不设 Phase 专属第二编号体系**。
 
@@ -174,6 +175,8 @@
 
 **双音标与发音口音（FR-22，v1.18 已登记）**：jvmTest `SegmentBuilderTest` 口音映射组 2（`withEnglishAccent`：EN_GB 只重写英文段语言、其余字段零改动；缺省 EN_US 与防御 ZH_CN 原样）+ `PlaybackOrchestratorStateTest` 口音组 1（开局英音 → 六段 speak 语言 = 英文四段 EN_GB/中文两段 ZH_CN；窗口中切回美音 → 下一词首段即 EN_US——下一 Segment 生效对齐 TC-AE-19）+ `LearningSettingsRepositoryTest` 口音键组（缺省美音 / 往返与 upsert 覆盖 / ZH_CN 拒写原值不变 / JSON 非法与非口音枚举损坏抛 / 重启持久化）；app 单测 `TtsLocalesTest` EN_GB → Locale.UK + `SettingsViewModelTest` 口音组 2（缺省美音切换即时持久化 / 英音缺失提示随口音与设备音色联动）；androidTest `SettingsUiSmokeTest` 口音冒烟（切英音 → `settings.ttsAccent` KV 含 EN_GB）。en-GB 语音缺失回退 en-US 在 TtsSpeechSynthesizer 逻辑注释锁定（同 FR-19 失效回退口径，引擎差异不设真机自动化）；双音标渲染（formatIpaLine 有则双显无则单显）随 FR-21 装机走查覆盖。
 
+**端内实时神经 TTS（FR-23，v1.19 已登记，TC-AE-30）**：jvmTest `LangRoutedSpeechSynthesizerTest` 路由组 9（路由表 EN_*→神经 / ZH→系统 / 神经 INITIALIZING 与 UNAVAILABLE → EN 走系统 / READY 英文零系统调用 / speak 非取消异常同段回退 + 进程内粘滞 / 取消重抛不降级（恢复回神经）/ stop 双转发 / availableVoices 路由与降级联动（ZH 恒系统）/ readiness 投影系统引擎）。既有 FR-22 口音组零改动即回归（口音 = 模型，消费时映射不变）；神经 actual（native 合成、AudioTrack 排空、WAV 磁盘缓存、音频焦点）为平台管线不设引擎用例——vivo 装机走查：任意词（含长尾）发音 / 拼写 / 英文释义 / 例句神经自然语音、切英音下一英文段英音、中文段零变化、同段二次播放命中缓存段间隙缩短、杀进程重进预热正常。
+
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
@@ -200,6 +203,7 @@
 | FR-20 | TC-UI 统计组（jvmTest 聚合 + 统计卡冒烟） |
 | FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
 | FR-22 | TC-UI 口音组（jvmTest SegmentBuilder 映射 + 编排器口音段 + 设置键往返 + 回填组英音 / app 单测 VM 口音 + TtsLocales EN_GB / androidTest 设置冒烟；装机走查双显与口音朗读） |
+| FR-23 | TC-AE-30 路由组（jvmTest LangRoutedSpeechSynthesizerTest 9：路由 / 非 READY 走系统 / 异常同段回退粘滞 / 取消红线 / stop 双转发 / 音色联动 / readiness 投影）；神经 actual 装机走查（自然度 / 英音 / 缓存命中 / 降级不中断） |
 
 ## 6. 覆盖率门槛（Kover，Phase 质量门）
 
@@ -281,3 +285,4 @@
 | 2.17 | 2026-09-19 | **例句回填用例登记（FR-18 v1.15 Tatoeba 例句增强）**：§4.8 词典组口径更新——完整词条（含例句）DB 命中不打扰词典源（例句缺失时回填咨询属预期）；+回填组 4（SeedImporterTest：补齐到首释义且幂等 / 译文空只补译文不重建行 / 未导入词零建词 / lookup 端到端自动回填）。上游：PROJECT_SPEC v1.15、`SPEC_CHANGE_REQUEST_TATOEBA.md` |
 | 2.18 | 2026-09-20 | **增强回填扩音标 + FR-21 面板登记**：§4.8 回填组 4→7（`importExamplesOnly` 改名 `backfillEnhancements`——音标只补空缺不覆盖 / 零释义 TXT 词可补 / lookup 端到端例句完整但音标缺失自动补；词典组口径"例句或音标缺失时回填咨询属预期"）；+FR-21 学习会话词内容面板组（纯渲染投影不设引擎用例，2026-09-20 vivo 走查通过）；FR 矩阵 +FR-21 行。上游：PROJECT_SPEC v1.17 |
 | 2.19 | 2026-09-20 | **双音标与发音口音用例登记（FR-22 v1.18）**：§4.8 回填组 7→9（英音只补空缺不覆盖 / lookup 端到端英音缺失自动补；种子端到端断言 59 词 ipaBr 全带）+ 新口音组（SegmentBuilder `withEnglishAccent` 映射 2 / 编排器口音段 1：英文段 EN_GB、切换下一 Segment 生效 / 设置键往返 + 损坏抛 + ZH_CN 拒写 / TtsLocales EN_GB / VM 口音与英音缺失提示 2 / 设置冒烟 KV 落库）；en-GB→en-US 回退注释锁定（同 FR-19 口径）；FR 矩阵 +FR-22 行。上游：PROJECT_SPEC v1.18、`SPEC_CHANGE_REQUEST_DUAL_IPA.md` |
+| 2.20 | 2026-09-20 | **端内实时神经 TTS 用例登记（FR-23 v1.19）**：新增 **TC-AE-30**（jvmTest `LangRoutedSpeechSynthesizerTest` 路由组 9：路由表 / 非 READY 与 UNAVAILABLE 走系统 / READY 英文零系统调用 / speak 异常同段回退 + 进程内粘滞 / 取消重抛不降级 / stop 双转发 / availableVoices 联动 / readiness 投影系统）；+FR-23 测试组段（既有 FR-22 口音组零改动即回归——口音=模型消费时映射不变；神经 actual 平台管线不设引擎用例 = vivo 装机走查：自然度 / 英音切换 / 中文段零变化 / 缓存命中段间隙 / 杀进程预热 / 降级不中断）；FR 矩阵 +FR-23 行。上游：PROJECT_SPEC v1.19、`SPEC_CHANGE_REQUEST_PIPER_TTS.md`、AUDIO_ENGINE_SPEC v2.4 |

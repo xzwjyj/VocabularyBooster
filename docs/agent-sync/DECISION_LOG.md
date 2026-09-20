@@ -171,3 +171,21 @@
 **测试**：jvmTest +7（SeedImporterTest 回填组 7→9：英音只补空缺不覆盖幂等 / lookup 端到端英音缺失自动补 + 种子 59 词 ipaBr 全带契约断言；SegmentBuilderTest +2 `withEnglishAccent` 映射（EN_GB 只改英文段语言、缺省与 ZH_CN 原样）；PlaybackOrchestratorStateTest +1 开局英音六段语言逐段断言 + 窗口中切回美音下一英文段生效；LearningSettingsRepositoryTest +2 往返拒写/损坏抛，缺省与重启往返两既有用例扩断言）+ app 单测 +3（TtsLocales EN_GB→UK / VM 口音缺省切换即时持久化 / 英音缺失提示随口音与设备音色联动）+ androidTest 设置口音冒烟（切英音 → KV 含 EN_GB）。**全门禁绿**：jvmTest / testDebugUnitTest×2 / detekt×2 / checkPlatformBoundaries / assembleDebug×2；en-GB→en-US 回退在 TtsSpeechSynthesizer 逻辑注释锁定（同 FR-19 失效回退口径，引擎差异不设真机自动化）
 
 **状态**：已实现全门禁绿；commit 待用户确认；vivo 装机验证待执行（双音标显示 / 口音切换朗读与生效粒度 / 资产 v5 旧缓存重拷 / 回填幂等 / 无英音语音设备回退美音不中断）
+
+### ADR-011: FR-23 英文段端内实时神经 TTS（取代 v1 预录方案）
+
+**日期**：2026-09-20（用户批准 SPEC_CHANGE_REQUEST_PIPER_TTS v2 + IMPLEMENTATION_PLAN_PIPER_RT_TTS 后执行；同日 v1 预录方案装机实证「与之前完全没有区别」证伪撤销）
+
+**决策**：
+- **v1 预录证伪与根因**：预录 4999 高频词资产装机后用户听感零变化——预录管线与实际播放内容的**覆盖错位**（命不中即静默回退系统 TTS），且预录天然无法覆盖长尾词与英文释义 / 例句任意文本。教训：**TTS 覆盖面必须与播放内容全集对齐，任意文本只有实时合成能做到**。v1 全部代码与资产未提交，全量回退（git checkout + 删除资产，零残留）
+- **v2 实时合成选型**：sherpa-onnx v1.13.8（Apache-2.0，官方无 Maven Central 工件 → **vendored Kotlin API 源码 + jniLibs .so 从官方 release tarball 入库**，`tools/tts-neural/fetch_deps.py` 可再生产出）+ Piper VITS medium 模型 en_US lessac / en_GB alan 各 ~63MB（MIT）**打包 app assets——模型 / tokens 单文件直读；espeak-ng-data 目录树一次性解包至 filesDir**（装机实证修正：native piper-phonemize 只认真实文件系统路径，传 assets 路径 → phonemize 失败 → native `exit(-1)` 拖崩全进程；SCR 的「assets 直读免解包」仅对单文件成立）；espeak-ng-data 两模型逐字节相同（sha256 实证）→ 共享一份；APK 196MB → ~324MB（用户批准）。备选 fp16 模型（体积减半、音质损）留作未来选项
+- **路由架构**：`LangRoutedSpeechSynthesizer`（commonMain 组合实现，app 装配 `SpeechSynthesizer` 唯一绑定）——EN_US / EN_GB → `SherpaOnnxSpeechSynthesizer` 神经 actual；ZH_CN → `TtsSpeechSynthesizer` 系统 actual 零变化。**SpeechSynthesizer 端口契约零改动**（编排器 / 会话零感知）
+- **口音 = 模型**：FR-22 消费时映射不变（段 lang=EN_GB → 英音模型）——**无厂商英音包设备（vivo）也生效**，用户根诉求解决；同时最多驻留一个英文模型（双模型 RAM 峰值不可接受），换口音 = 先载新成功后 release 旧；生效粒度仍为下一英文 Segment
+- **合成管线**（装机实证两处修正）：整段 `generate` 一次产出 PCM 分块直写 AudioTrack（STREAM、阻塞写即背压、**阻塞写在 IO 线程**——编排器经 Main 调 speak；**轨道缓冲 16KB + 不足一缓冲的微型段补静音至超缓冲**——vivo mixer 对未填满缓冲 / 无阻塞写的轨道不启动消费，<缓冲段（如单词拼读 0.6s）全静音、audio_flinger `Flushed=全部帧` 实证）；流式回调方案弃用：native `CallCallback` 按精确签名 `invoke([F)Ljava/lang/Integer;` 查回调，Kotlin lambda 经 kotlinc invokedynamic + D8 脱糖只剩擦除签名 → `NoSuchMethodError` 全进程崩；该桥只能以 Java 源声明而 KMP androidMain 不支持 Kotlin→Java 同模块联合编译（kotlinc 先于 javac，无前向解析）——vivo 装机实证；stop 期在途合成后台自然完成仅浪费少量 CPU；float → 16-bit LE 单声道统一播放与缓存管线；完成判定 = 播放头追平已写样本；暂停 / 恢复 ADR-09 段语义（stop 立停、completed=false、恢复重读整段）；rate → speed clamp 0.5–2.0，**pitch 不生效（VITS 无基频参数，平台限制——无 UI 暴露面）**
+- **磁盘缓存**：`filesDir/tts-cache/{sha256(lang|speed@2位|text)}.wav`（自写 44 字节头，只读写自家缓存），命中免合成整段直播；LRU（mtime）上限 100MB（构造时 + 写后清理）；缓存是优化非正确性，写失败仅记忽略
+- **降级语义**：神经非 READY（INITIALIZING / UNAVAILABLE 粘滞）或 speak 非取消异常 → **EN 段当场回退系统 TTS 同段播完** + 进程内粘滞（模型缺席下行为 = 全系统 TTS，会话不中断）；**取消红线**：`CancellationException` 照常重抛绝不降级（Vosk 取消被吞成降级的 vivo 回归先例）；readiness 对 UI 投影系统引擎（既有界面零变化）
+- **线程模型**：native 合成与模型换载串行于专用单线程 dispatcher（OfflineTts 单实例非并发安全）+ speak 互斥；AudioTrack / 焦点每段自建自毁，无跨段状态
+
+**测试**：jvmTest `LangRoutedSpeechSynthesizerTest` 路由组 9（TC-AE-30：路由表 / 非 READY 走系统 / READY 英文零系统调用 / 异常同段回退 + 粘滞 / 取消重抛不降级 / stop 双转发 / 音色联动 / readiness 投影）。**全门禁绿**：jvmTest / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug（APK 324MB，内容验证含双模型 + 355 espeak 文件 + 4 个 .so）。神经 actual 平台管线不设模拟器自动化 = vivo 装机走查
+
+**状态**：已实现全门禁绿；vivo 装机验证待执行（任意词神经自然语音 / 英音切换下一英文段 / 中文段零变化 / 缓存命中段间隙缩短 / 杀进程预热 / 降级回退不中断）
