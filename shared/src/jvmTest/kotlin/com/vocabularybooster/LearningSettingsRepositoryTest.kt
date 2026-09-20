@@ -1,6 +1,7 @@
 package com.vocabularybooster
 
 import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.RepositoryValidationException
@@ -28,6 +29,30 @@ class LearningSettingsRepositoryTest {
         assertEquals(4_000L, repo.getCommandWindowMs())
         assertEquals(1.0f, repo.getTtsRate())
         assertEquals(1.0f, repo.getTtsPitch())
+        assertEquals(Lang.EN_US, repo.getTtsAccent()) // FR-22：缺省美音
+    }
+
+    // —— FR-22 发音口音：缺省美音、往返、ZH_CN 拒写、损坏值与既有键同语义失败 ——
+
+    @Test
+    fun ttsAccentRoundTripAndRejectsNonAccentValue() = runTest {
+        val repo = newRepo(TestDb.inMemory())
+        repo.setTtsAccent(Lang.EN_GB)
+        assertEquals(Lang.EN_GB, repo.getTtsAccent())
+        repo.setTtsAccent(Lang.EN_US) // upsert 覆盖
+        assertEquals(Lang.EN_US, repo.getTtsAccent())
+        // ZH_CN 非口音选项 → 拒绝且原值不变
+        assertFailsWith<RepositoryValidationException> { repo.setTtsAccent(Lang.ZH_CN) }
+        assertEquals(Lang.EN_US, repo.getTtsAccent())
+    }
+
+    @Test
+    fun corruptTtsAccentFailsLikeExistingSettingsSemantics() = runTest {
+        val db = TestDb.inMemory()
+        db.database.appSettingQueries.upsertSetting("settings.ttsAccent", "not-json")
+        assertFailsWith<RepositoryValidationException> { newRepo(db).getTtsAccent() }
+        db.database.appSettingQueries.upsertSetting("settings.ttsAccent", "\"EN_AU\"") // JSON 合法但非口音枚举
+        assertFailsWith<RepositoryValidationException> { newRepo(db).getTtsAccent() }
     }
 
     // —— Phase 8.6（FR-19）：音色两键——写/读/清除（null）/损坏防御性降级（与其他键语义不同：热路径不抛） ——
@@ -131,6 +156,7 @@ class LearningSettingsRepositoryTest {
         repo.setCommandWindowMs(6_000L)
         repo.setTtsRate(1.25f)
         repo.setTtsPitch(0.9f)
+        repo.setTtsAccent(Lang.EN_GB)
         repo.setPlaybackToggles(PlaybackToggles(pronunciation = false, exampleCn = false))
         db.close()
 
@@ -140,6 +166,7 @@ class LearningSettingsRepositoryTest {
         assertEquals(6_000L, reread.getCommandWindowMs())
         assertEquals(1.25f, reread.getTtsRate())
         assertEquals(0.9f, reread.getTtsPitch())
+        assertEquals(Lang.EN_GB, reread.getTtsAccent())
         assertEquals(PlaybackToggles(pronunciation = false, exampleCn = false), reread.getPlaybackToggles())
         reopened.close()
     }

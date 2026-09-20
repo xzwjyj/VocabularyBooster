@@ -286,9 +286,10 @@ public class PlaybackOrchestrator(
         return null
     }
 
-    /** 起播一段：写位置（NFR-3）→ 置 Playing → 执行（§9 降级即时广播）→ 完成推进游标；false = 失败已入 Paused(error)。 */
+    /** 起播一段：写位置（NFR-3）→ 置 Playing → 执行（§9 降级即时广播）→ 完成推进游标；false = 失败已入 Paused(error)。
+     *  FR-22：口音每段懒读并映射英文段语言（规格存中性 EN_US 基语言）——生效粒度 = 下一 Segment，对齐 L4 开关。 */
     private suspend fun playSegmentAt(specIndex: Int): Boolean {
-        val spec = specs[specIndex]
+        val spec = specs[specIndex].withEnglishAccent(settingsRepository.getTtsAccent())
         val offset = if (spec.isFileSegment()) resumeOffsetMs else 0L
         resumeOffsetMs = 0L
         currentSpec = spec

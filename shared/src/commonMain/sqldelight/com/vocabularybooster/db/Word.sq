@@ -32,5 +32,9 @@ SELECT * FROM Word WHERE normalizedText LIKE ? ORDER BY length(normalizedText) A
 updateWordIpa:
 UPDATE Word SET ipaAm = ?, updatedAt = ? WHERE wordId = ?;
 
+-- 增强回填（FR-22）：补空缺英音音标；调用方守卫 ipaBr IS NULL 才调（绝不覆盖已有值）
+updateWordIpaBr:
+UPDATE Word SET ipaBr = ?, updatedAt = ? WHERE wordId = ?;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();

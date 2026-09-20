@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,16 +33,18 @@ class SettingsViewModelTest {
     private val voiceEn = TtsVoice(id = "en-voice-1", displayName = "English A", qualityLabel = "高")
     private val voiceZh = TtsVoice(id = "zh-voice-1", displayName = "中文 A", qualityLabel = "标准")
 
-    /** 音色枚举用最小 Fake（speak/stop 不可达——设置页不播段）。 */
+    /** 音色枚举用最小 Fake（speak/stop 不可达——设置页不播段）；[enGb] 默认空 = 设备无英音。 */
     private class FakeVoiceSynthesizer(
         val en: List<TtsVoice>,
         val zh: List<TtsVoice>,
+        val enGb: List<TtsVoice> = emptyList(),
     ) : SpeechSynthesizer {
         override val readiness = MutableStateFlow(Readiness.READY)
         override suspend fun speak(request: SpeakRequest): SegmentResult = error("not used")
         override fun stop() = Unit
         override fun availableVoices(lang: Lang): List<TtsVoice> = when (lang) {
             Lang.EN_US -> en
+            Lang.EN_GB -> enGb
             Lang.ZH_CN -> zh
         }
     }
@@ -55,6 +58,8 @@ class SettingsViewModelTest {
     )
 
     private fun newSynth() = FakeVoiceSynthesizer(en = listOf(voiceEn), zh = listOf(voiceZh))
+
+    private val voiceGb = TtsVoice(id = "en-gb-1", displayName = "English UK", qualityLabel = "高")
 
     @Test
     fun loadProjectsPersistedValues() = runTest {
@@ -212,6 +217,55 @@ class SettingsViewModelTest {
             assertNull(fake.ttsVoiceZh) // 未写入
             assertNull(vm.voiceZhId) // 显示不前滚
             assertEquals("保存失败：测试注入的写入失败", vm.message)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // —— FR-22 发音口音：缺省美音、切换即时持久化、英音缺失提示 ——
+
+    @Test
+    fun accentDefaultsToEnUsAndSwitchPersistsImmediately() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fake = newFake()
+            val vm = SettingsViewModel(fake, newSynth())
+            advanceUntilIdle()
+            assertEquals(Lang.EN_US, vm.ttsAccent) // 缺省美音
+            vm.onAccentChange(Lang.EN_GB)
+            advanceUntilIdle()
+            assertEquals(Lang.EN_GB, fake.ttsAccent)
+            assertEquals(Lang.EN_GB, vm.ttsAccent)
+            assertNull(vm.message)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun enGbMissingHintFollowsAccentAndDeviceVoices() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            // 设备无英音音色（典型国产 ROM 形态）
+            val vm = SettingsViewModel(newFake(), newSynth())
+            advanceUntilIdle()
+            assertFalse(vm.enGbMissingHint) // 美音选中 → 不提示
+            vm.onAccentChange(Lang.EN_GB)
+            advanceUntilIdle()
+            assertTrue(vm.enGbMissingHint) // 英音选中且设备无英音 → 提示回退美音
+            vm.onAccentChange(Lang.EN_US)
+            advanceUntilIdle()
+            assertFalse(vm.enGbMissingHint) // 切回美音 → 提示消失
+
+            // 设备有英音音色 → 英音选中也不提示
+            val withGb = SettingsViewModel(
+                newFake(),
+                FakeVoiceSynthesizer(en = listOf(voiceEn), zh = listOf(voiceZh), enGb = listOf(voiceGb)),
+            )
+            advanceUntilIdle()
+            withGb.onAccentChange(Lang.EN_GB)
+            advanceUntilIdle()
+            assertFalse(withGb.enGbMissingHint)
         } finally {
             Dispatchers.resetMain()
         }

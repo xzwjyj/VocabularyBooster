@@ -19,11 +19,12 @@
 CREATE TABLE DictEntry(
   normalized   TEXT PRIMARY KEY,  -- = word.strip().lower()，与 shared toNormalizedWordText() 一致
   text         TEXT NOT NULL,     -- 原始大小写
-  ipa          TEXT NOT NULL,     -- ECDICT phonetic（可空串）
+  ipa          TEXT NOT NULL,     -- ECDICT phonetic（可空串；ipa-dict en_US 补过空缺，见 merge_ipa.py）
   definitions  TEXT NOT NULL,     -- 紧凑 JSON [["partOfSpeech","meaningEN","meaningCN"],…] 已按词性序排
-  examples     TEXT NOT NULL      -- 紧凑 JSON [["英文原句","中文译文"],…]（Tatoeba，译文可空串）
+  examples     TEXT NOT NULL,     -- 紧凑 JSON [["英文原句","中文译文"],…]（Tatoeba，译文可空串）
+  ipaBr        TEXT               -- 英音音标（ipa-dict en_UK；可空——短语/长尾无英音属预期）
 ) WITHOUT ROWID;
--- PRAGMA user_version = 4：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译）。
+-- PRAGMA user_version = 5：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 / v5 ipa-dict 英音+美音补缺）。
 -- 版本 = 修订号：数据重建也必须递增，否则设备端同 user_version 的旧缓存不会重拷（BundledDictionaryProvider）
 ```
 
@@ -51,6 +52,12 @@ node enrich_node.js scan     # 全量扫描 → %TEMP%/enrich_work/entries.json 
 node enrich_node.js cmn      # 合并 cmn 分片 → cmn.json
 node enrich_node.js links    # links join → id_to_zh.json
 PYTHONIOENCODING=utf-8 python enrich_with_examples.py build   # 重建 sqlite（含 user_version=3）
+# 5. ipa-dict 音标增强（FR-22）：英音 + 美音补缺 → user_version=5
+#    下载 open-dict-data/ipa-dict（MIT）data/en_UK.txt + data/en_US.txt 到 %TEMP%
+#    （https://github.com/open-dict-data/ipa-dict）
+#    en_UK → ipaBr（取首个候选、剥斜杠）；en_US 只补 ipa 空缺（绝不覆盖）
+#    实绩（2026-09-20）：ipaBr 64,307 / 美音 217,591→250,616 / 双音标同显 59,387 / 资产 159MB
+PYTHONIOENCODING=utf-8 python merge_ipa.py
 ```
 
 运行时分工注记：本机 CPython 在语料扫描上确定性段错误（机器级故障）——

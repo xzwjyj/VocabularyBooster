@@ -154,3 +154,20 @@
 - **测试**：SeedImporterTest 回填组 4→7（+音标补空缺不覆盖幂等 / 零释义词可补 / lookup 端到端例句完整但音标缺失自动补）；jvmTest + detekt + app 编译全绿（jvmTest 首跑 0xC0000374 = 机器级故障窗口，重试即过）
 
 **状态**：已实现并装机验证通过（2026-09-20 vivo：释义段→释义卡高亮行加粗 / 例句段→例句卡高亮译文加粗 / 词头段变色 / 暂停保持 / 换词重载 / 滚动正常 / beautiful 查词后音标回填详情页与 take off 面板均显示）；commit 待用户确认
+
+### ADR-010: FR-22 双音标显示与发音口音设置 + FR-18 音标增强（ipa-dict）
+
+**日期**：2026-09-20（用户批准 SPEC_CHANGE_REQUEST_DUAL_IPA 后执行；音标数据源经选项裁决 = ipa-dict）
+
+**决策**：
+- **数据源与实绩**：ipa-dict（open-dict-data，MIT）——en_UK 64,307 条 → 词典资产新增 `ipaBr` 列（真 IPA 记法，ɹ 等）；en_US 12.6 万条**只补 `ipa` 空缺绝不覆盖**（含音标词条 217,591 → 250,616）；双音标齐备 59,387 条。`PRAGMA user_version=5`（数据重建递增铁律，设备旧缓存自动重拷）。ipa-dict 只收单词 → **短语恒无英音属预期**，UI 有则双显无则单显全缺不渲染（斜杠兼容库内带/不带两种存法）
+- **记法取舍**：ipaAm（ECDICT phonetic，类 DJ）与 ipaBr（ipa-dict，真 IPA）**两类记法同屏并存不归一化**——无权威映射表且归一化破坏原数据保真；ECDICT 既有 phonetic 口音归属含糊（未标注美/英）→ **维持现状存 ipaAm 不重标注**
+- **口音生效粒度（对齐 L4 下一 Segment）**：SegmentSpec 构建保持中性 EN_US（specs 每词在 loadWord 预建一次，构建期注参只能下一词生效）→ 改**消费时映射**：`playSegmentAt` 每段经纯函数 `withEnglishAccent(accent)` 懒读 `settings.ttsAccent` 重写英文段语言（中文段不动），天然达成下一 Segment 生效；currentSpec/state/speakRequest 全走映射后 spec（单一映射点）。`Lang.EN_GB` 仅为口音映射目标（TtsLocales → Locale.UK），段规格与持久化不落 EN_GB
+- **设置键**：`settings.ttsAccent` L6 加法扩展——缺键默认 EN_US、损坏抛 RepositoryValidationException、ZH_CN 非口音选项拒写
+- **en-GB 语音缺失回退**：口音是用户偏好而非双语硬要求——setLanguage(UK) LANG_MISSING_DATA/NOT_SUPPORTED → **回退 setLanguage(US) 继续播，不进 Paused(error)**；回退也缺失才硬失败。zh-CN 缺失仍硬失败（TC-AE-21 语义不变）
+- **音色口音正交（FR-19 交互）**：已选音色仅在 `voice.locale == 段语言 locale` 时应用（setVoice），不一致走 setLanguage（失效回退语义自然覆盖）；availableVoices(EN_GB) **精确国家过滤**（country=="GB"——FR-19 语言级过滤测不出英音缺席）→ 空列表 = 设备无真英音 → 设置页「设备未安装英音语音，将回退美音」提示（枚举完成前置位避免闪现）
+- **种子**：59 词 ipaBr 全带（类 DJ BrE 风格与既有美音一致；手工归一 ipa-dict——其 ɐ 记法与重读标注差异不照搬，5 词 ipa-dict 未收录者手工转写）；subject 顺带补漏存的 ipaAm
+
+**测试**：jvmTest +7（SeedImporterTest 回填组 7→9：英音只补空缺不覆盖幂等 / lookup 端到端英音缺失自动补 + 种子 59 词 ipaBr 全带契约断言；SegmentBuilderTest +2 `withEnglishAccent` 映射（EN_GB 只改英文段语言、缺省与 ZH_CN 原样）；PlaybackOrchestratorStateTest +1 开局英音六段语言逐段断言 + 窗口中切回美音下一英文段生效；LearningSettingsRepositoryTest +2 往返拒写/损坏抛，缺省与重启往返两既有用例扩断言）+ app 单测 +3（TtsLocales EN_GB→UK / VM 口音缺省切换即时持久化 / 英音缺失提示随口音与设备音色联动）+ androidTest 设置口音冒烟（切英音 → KV 含 EN_GB）。**全门禁绿**：jvmTest / testDebugUnitTest×2 / detekt×2 / checkPlatformBoundaries / assembleDebug×2；en-GB→en-US 回退在 TtsSpeechSynthesizer 逻辑注释锁定（同 FR-19 失效回退口径，引擎差异不设真机自动化）
+
+**状态**：已实现全门禁绿；commit 待用户确认；vivo 装机验证待执行（双音标显示 / 口音切换朗读与生效粒度 / 资产 v5 旧缓存重拷 / 回填幂等 / 无英音语音设备回退美音不中断）

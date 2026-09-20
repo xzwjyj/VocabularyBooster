@@ -190,6 +190,7 @@ class FakeLearningSettingsRepository(
     var ttsPitch: Float = 1.0f,
     var ttsVoiceEn: String? = null,
     var ttsVoiceZh: String? = null,
+    var ttsAccent: Lang = LearningSettingsRepository.DEFAULT_TTS_ACCENT,
     var failWrites: Boolean = false,
 ) : LearningSettingsRepository {
     override suspend fun getGroupSize(): Int = groupSize
@@ -199,6 +200,7 @@ class FakeLearningSettingsRepository(
     override suspend fun getTtsPitch(): Float = ttsPitch
     override suspend fun getTtsVoiceEn(): String? = ttsVoiceEn
     override suspend fun getTtsVoiceZh(): String? = ttsVoiceZh
+    override suspend fun getTtsAccent(): Lang = ttsAccent
 
     override suspend fun setGroupSize(value: Int) {
         failIfRequested()
@@ -233,6 +235,11 @@ class FakeLearningSettingsRepository(
     override suspend fun setTtsVoiceZh(value: String?) {
         failIfRequested()
         ttsVoiceZh = value
+    }
+
+    override suspend fun setTtsAccent(value: Lang) {
+        failIfRequested()
+        ttsAccent = value
     }
 
     private fun failIfRequested() {

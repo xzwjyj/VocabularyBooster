@@ -1,6 +1,7 @@
 package com.vocabularybooster.learning
 
 import com.vocabularybooster.domain.model.DefinitionSelection
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.LearningSession
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SaveWordRequest
@@ -260,6 +261,11 @@ internal class FakeLearningSettingsRepository(
     override suspend fun setTtsVoiceEn(value: String?) = Unit
 
     override suspend fun setTtsVoiceZh(value: String?) = Unit
+
+    // FR-22 口音键良性桩（引擎测试不涉口音）
+    override suspend fun getTtsAccent(): Lang = LearningSettingsRepository.DEFAULT_TTS_ACCENT
+
+    override suspend fun setTtsAccent(value: Lang) = Unit
 }
 
 /**

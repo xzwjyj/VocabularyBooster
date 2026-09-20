@@ -27,8 +27,9 @@ import java.util.Locale
  *
  * - **初始化**：异步——`readiness` 经 OnInitListener 暴露 INITIALIZING → READY / UNAVAILABLE；
  *   `speak()` 绝不假定已初始化完成（等待 ready，失败/超时抛异常，不静默降级）。
- * - **语言**：逐段 `setLanguage(en-US / zh-CN)`（双语段切换是硬性要求）；
- *   locale 不可用（LANG_MISSING_DATA / LANG_NOT_SUPPORTED）→ 抛异常，**不静默改播另一语言**。
+ * - **语言**：逐段 `setLanguage(en-US / en-GB / zh-CN)`（双语段切换是硬性要求）；
+ *   locale 不可用（LANG_MISSING_DATA / LANG_NOT_SUPPORTED）→ 抛异常，**不静默改播另一语言**
+ *   （唯一例外 FR-22：en-GB 缺失回退 en-US 继续播——口音是偏好非双语硬要求）。
  * - **rate / pitch**：`request.rate` 已由编排器组装为 `ttsRate × segment.rateScale`——
  *   本实现直接使用，**不重复乘算**。
  * - **完成**：UtteranceProgressListener 回调驱动 CompletableDeferred（不依赖固定 sleep）；
@@ -141,6 +142,8 @@ public class TtsSpeechSynthesizer(
      * FR-19（Phase 8.6）：当前引擎音色枚举（en-US / zh-CN 各自列出，未就绪 → 空）。
      * 主线程限定；排除需联网的特征（`features` 含 network 前缀键）。
      * 排序：精确 locale（en_US / zh_CN）优先 → 品质高优先 → 名称稳定序。
+     * FR-22：EN_GB 只列真英音音色（country=GB）——空列表 = 设备无英音（设置页提示回退美音）；
+     * EN_US/ZH_CN 维持 FR-19 语言级过滤不变。
      */
     override fun availableVoices(lang: Lang): List<TtsVoice> {
         ensureOnMainThread()
@@ -149,6 +152,7 @@ public class TtsSpeechSynthesizer(
         return tts.voices.orEmpty()
             .asSequence()
             .filter { it.locale.language == target.language }
+            .filter { lang != Lang.EN_GB || it.locale.country == target.country }
             .filterNot { voice -> voice.features.any { it.startsWith("network") } }
             .sortedWith(
                 compareByDescending<Voice> { it.locale == target }
@@ -166,23 +170,38 @@ public class TtsSpeechSynthesizer(
     }
 
     /**
-     * 段前音色应用（FR-19）：已选音色且当前引擎仍可用 → `setVoice`（音色隐含 locale）；
-     * 未选 / 已失效 / 应用失败 → 既有 `setLanguage` 兜底（行为零回归）。
+     * 段前音色应用（FR-19）：已选音色、当前引擎仍可用且**音色 locale 与段语言一致**（FR-22 口音正交）
+     * → `setVoice`（音色隐含 locale）；未选 / 已失效 / locale 不一致 / 应用失败 → `setLanguage` 兜底。
      * 音色应用先行——部分引擎切换音色会重置语速/音调，随后统一重设（调用方顺序已定）。
+     * EN_GB 语言缺失 → **回退 en-US 继续播**（FR-22 裁决：口音是偏好非双语硬要求，不进 Paused(error)）；
+     * zh-CN 缺失仍硬失败（既有语义，TC-AE-21）。
      */
     private suspend fun applyVoiceOrLanguage(lang: Lang) {
         val selectedId = runCatching {
             when (lang) {
-                Lang.EN_US -> settings.getTtsVoiceEn()
+                Lang.EN_US, Lang.EN_GB -> settings.getTtsVoiceEn()
                 Lang.ZH_CN -> settings.getTtsVoiceZh()
             }
         }.getOrNull()
         if (selectedId != null) {
             val voice = tts.voices.orEmpty().firstOrNull { it.name == selectedId }
-            if (voice != null && tts.setVoice(voice) != TextToSpeech.ERROR) return
+            if (voice != null && voice.locale == TtsLocales.localeFor(lang) &&
+                tts.setVoice(voice) != TextToSpeech.ERROR
+            ) {
+                return
+            }
         }
         val available = tts.setLanguage(TtsLocales.localeFor(lang))
         if (available == TextToSpeech.LANG_MISSING_DATA || available == TextToSpeech.LANG_NOT_SUPPORTED) {
+            if (lang == Lang.EN_GB) {
+                // FR-22：en-GB 语音缺失 → 回退 en-US（回退也缺失才硬失败）
+                val fallback = tts.setLanguage(TtsLocales.localeFor(Lang.EN_US))
+                if (fallback != TextToSpeech.LANG_MISSING_DATA &&
+                    fallback != TextToSpeech.LANG_NOT_SUPPORTED
+                ) {
+                    return
+                }
+            }
             throw IllegalStateException(
                 "TTS 语言不可用（${lang.tag}，setLanguage=$available）——不静默改播其他语言"
             )
@@ -250,9 +269,10 @@ public class TtsSpeechSynthesizer(
 /** Lang → Android Locale 映射（§8 双语段切换；纯函数，app 层 JVM 单测覆盖）。 */
 public object TtsLocales {
 
-    /** 未映射语言 → IllegalStateException（防御：端口层只有两值，未来扩展须显式登记）。 */
+    /** 未映射语言 → IllegalStateException（防御：未来扩展须显式登记）。 */
     public fun localeFor(lang: Lang): Locale = when (lang) {
         Lang.EN_US -> Locale.US
+        Lang.EN_GB -> Locale.UK
         Lang.ZH_CN -> Locale.SIMPLIFIED_CHINESE
     }
 }

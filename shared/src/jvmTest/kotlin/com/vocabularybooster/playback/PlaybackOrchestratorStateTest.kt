@@ -10,6 +10,7 @@ import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.model.DefinitionEntry
 import com.vocabularybooster.domain.model.Example
 import com.vocabularybooster.domain.model.ExampleSourceType
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SessionStatus
@@ -836,5 +837,34 @@ class PlaybackOrchestratorStateTest {
         assertIs<PlaybackState.Idle>(h.orchestrator.state.value)
         assertTrue(h.tts.requests.isEmpty())
         assertNull(h.sessionRepo.getActiveSession())
+    }
+
+    // —— FR-22 发音口音：英文段按设置映射 en-GB；切换下一 Segment 生效（对齐 L4 TC-AE-19）——
+
+    @Test
+    fun englishSegmentsSpeakConfiguredAccentAndSwitchAppliesNextSegment() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        h.settings.ttsAccent = Lang.EN_GB // 开局英音
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+
+        // 词 1 全六段：英文四段 EN_GB、中文两段 ZH_CN 不受影响
+        advanceTimeBy(600)
+        runCurrent()
+        assertEquals(
+            listOf(Lang.EN_GB, Lang.EN_GB, Lang.EN_GB, Lang.ZH_CN, Lang.EN_GB, Lang.ZH_CN),
+            h.tts.requests.map { it.lang },
+        )
+
+        // 窗口中切回美音 → 下一词首段（下一 Segment）即美音，无需重建会话
+        h.settings.ttsAccent = Lang.EN_US
+        advanceTimeBy(300 + 4_000) // guard + 窗口耗尽 → advance → 词 2 seg0 起播
+        runCurrent()
+        assertEquals(7, h.tts.requests.size)
+        assertEquals(Lang.EN_US, h.tts.requests[6].lang)
+        h.orchestrator.dispose()
     }
 }

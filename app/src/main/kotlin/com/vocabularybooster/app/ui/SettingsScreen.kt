@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.speech.TtsVoice
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.round
@@ -151,6 +152,37 @@ fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) {
             onValueChange = { viewModel.onPitchChange(snapToRateStep(it)) },
             tag = "settings_pitch_slider",
         )
+        Text(
+            "发音口音（英文段朗读）",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        AccentRow(
+            label = "美音",
+            selected = viewModel.ttsAccent == Lang.EN_US,
+            tag = "settings_accent_us",
+        ) { viewModel.onAccentChange(Lang.EN_US) }
+        AccentRow(
+            label = "英音",
+            selected = viewModel.ttsAccent == Lang.EN_GB,
+            tag = "settings_accent_gb",
+        ) { viewModel.onAccentChange(Lang.EN_GB) }
+        Text(
+            "变更在下一个英文段落生效，中文释义不受影响",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (viewModel.enGbMissingHint) {
+            Text(
+                "设备未安装英音语音，将回退美音朗读（可在系统语音设置下载）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .testTag("settings_accent_gb_fallback_hint"),
+            )
+        }
 
         SectionHeader("语音音色")
         Text(
@@ -254,6 +286,22 @@ private fun VoiceOptionRow(label: String, selected: Boolean, tag: String, onClic
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp)
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label)
+    }
+}
+
+/** 发音口音二选一行（FR-22；与音色选项同 RadioButton 形态）。 */
+@Composable
+private fun AccentRow(label: String, selected: Boolean, tag: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp)
             .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {

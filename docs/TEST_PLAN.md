@@ -168,9 +168,11 @@
 
 **全量词典（FR-18，Phase 8.6 已登记）**：jvmTest `WordRepositoryOnDemandImportTest`（Fake provider：DB miss → 导入 → 命中且幂等 / DB 已有不覆盖 / provider null → 未收录；词条例句与音标齐备时 DB 命中不打扰词典源——v2.17 口径：例句或音标缺失时回填咨询属预期行为，回填路径由下组覆盖）；androidTest `BundledDictionarySmokeTest`（真实 asset：查种子外单词命中 + 未收录词 null）；`SeedDictionaryCoverageTest` 不变（例句契约仅精选种子——PROJECT_SPEC v1.14 FR-3 注记）。
 
-**增强回填（FR-18 v1.15 例句/译文，v1.17 扩音标）**：jvmTest `SeedImporterTest` 回填组 7——`backfillEnhancements`（v1.17 自 `importExamplesOnly` 改名，例句/译文/音标三合一）零例句旧词补齐到首释义且幂等（二次调用零变更）/ Tatoeba 例句译文空 → 只补译文不重复建行 / 未导入词返回 0 绝不建词 / `lookup` 端到端：DB 旧词 + Fake 词典源 → 查看详情自动回填（含译文）重读返回 / 音标空 → 只补空缺（已有音标绝不覆盖，幂等零变更）/ 零释义 TXT 导入词（FR-14 形态）音标仍可回填 / `lookup` 端到端：例句完整但音标缺失 → 自动补音标。
+**增强回填（FR-18 v1.15 例句/译文，v1.17 扩音标，v1.18 扩英音）**：jvmTest `SeedImporterTest` 回填组 9——`backfillEnhancements`（v1.17 自 `importExamplesOnly` 改名，例句/译文/音标四合一）零例句旧词补齐到首释义且幂等（二次调用零变更）/ Tatoeba 例句译文空 → 只补译文不重复建行 / 未导入词返回 0 绝不建词 / `lookup` 端到端：DB 旧词 + Fake 词典源 → 查看详情自动回填（含译文）重读返回 / 音标空 → 只补空缺（已有音标绝不覆盖，幂等零变更）/ 零释义 TXT 导入词（FR-14 形态）音标仍可回填 / `lookup` 端到端：例句完整但音标缺失 → 自动补音标 / **英音空 → 只补 ipaBr 不覆盖（已有英音优先，幂等，v1.18）** / **lookup 端到端：例句/美音完整但英音缺失 → 自动补英音（FR-22 闸门，v1.18）**；种子导入端到端断言 59 词 ipaBr 全带（v1.18 种子契约）。
 
 **学习会话词内容面板（FR-21，v1.17 已登记）**：UI 纯渲染投影（PlaybackState 段信息 + 编排器 `getCurrentContent()` 读模型），无引擎行为变更不设引擎用例；装机走查 2026-09-20 vivo 实测通过（高亮随段切换释义卡/例句卡/词头、Paused 冻结段高亮保持、换词异步重载、音标回填后面板显示、卡片列表滚动）。
+
+**双音标与发音口音（FR-22，v1.18 已登记）**：jvmTest `SegmentBuilderTest` 口音映射组 2（`withEnglishAccent`：EN_GB 只重写英文段语言、其余字段零改动；缺省 EN_US 与防御 ZH_CN 原样）+ `PlaybackOrchestratorStateTest` 口音组 1（开局英音 → 六段 speak 语言 = 英文四段 EN_GB/中文两段 ZH_CN；窗口中切回美音 → 下一词首段即 EN_US——下一 Segment 生效对齐 TC-AE-19）+ `LearningSettingsRepositoryTest` 口音键组（缺省美音 / 往返与 upsert 覆盖 / ZH_CN 拒写原值不变 / JSON 非法与非口音枚举损坏抛 / 重启持久化）；app 单测 `TtsLocalesTest` EN_GB → Locale.UK + `SettingsViewModelTest` 口音组 2（缺省美音切换即时持久化 / 英音缺失提示随口音与设备音色联动）；androidTest `SettingsUiSmokeTest` 口音冒烟（切英音 → `settings.ttsAccent` KV 含 EN_GB）。en-GB 语音缺失回退 en-US 在 TtsSpeechSynthesizer 逻辑注释锁定（同 FR-19 失效回退口径，引擎差异不设真机自动化）；双音标渲染（formatIpaLine 有则双显无则单显）随 FR-21 装机走查覆盖。
 
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
@@ -197,6 +199,7 @@
 | FR-19 | TC-UI 音色组（VM 单测 + 冒烟 + jvmTest 设置键往返） |
 | FR-20 | TC-UI 统计组（jvmTest 聚合 + 统计卡冒烟） |
 | FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
+| FR-22 | TC-UI 口音组（jvmTest SegmentBuilder 映射 + 编排器口音段 + 设置键往返 + 回填组英音 / app 单测 VM 口音 + TtsLocales EN_GB / androidTest 设置冒烟；装机走查双显与口音朗读） |
 
 ## 6. 覆盖率门槛（Kover，Phase 质量门）
 
@@ -277,3 +280,4 @@
 | 2.16 | 2026-09-19 | **Phase 8.6 打磨批用例登记（bug list 四项）**：§4.8 增三组——音色（FR-19：VM 单测 + 冒烟 + jvmTest 两键往返；失效回退注释锁定）/ 统计（FR-20：jvmTest 聚合 6 边界 + 统计卡冒烟）/ 词典（FR-18：jvmTest 按需导入 + 真实 asset 冒烟；例句契约分域注记 FR-3 v1.14）；图标 = 走查项无自动化；FR 矩阵 +FR-18/19/20 行。上游：PROJECT_SPEC v1.14、ROADMAP v1.11 |
 | 2.17 | 2026-09-19 | **例句回填用例登记（FR-18 v1.15 Tatoeba 例句增强）**：§4.8 词典组口径更新——完整词条（含例句）DB 命中不打扰词典源（例句缺失时回填咨询属预期）；+回填组 4（SeedImporterTest：补齐到首释义且幂等 / 译文空只补译文不重建行 / 未导入词零建词 / lookup 端到端自动回填）。上游：PROJECT_SPEC v1.15、`SPEC_CHANGE_REQUEST_TATOEBA.md` |
 | 2.18 | 2026-09-20 | **增强回填扩音标 + FR-21 面板登记**：§4.8 回填组 4→7（`importExamplesOnly` 改名 `backfillEnhancements`——音标只补空缺不覆盖 / 零释义 TXT 词可补 / lookup 端到端例句完整但音标缺失自动补；词典组口径"例句或音标缺失时回填咨询属预期"）；+FR-21 学习会话词内容面板组（纯渲染投影不设引擎用例，2026-09-20 vivo 走查通过）；FR 矩阵 +FR-21 行。上游：PROJECT_SPEC v1.17 |
+| 2.19 | 2026-09-20 | **双音标与发音口音用例登记（FR-22 v1.18）**：§4.8 回填组 7→9（英音只补空缺不覆盖 / lookup 端到端英音缺失自动补；种子端到端断言 59 词 ipaBr 全带）+ 新口音组（SegmentBuilder `withEnglishAccent` 映射 2 / 编排器口音段 1：英文段 EN_GB、切换下一 Segment 生效 / 设置键往返 + 损坏抛 + ZH_CN 拒写 / TtsLocales EN_GB / VM 口音与英音缺失提示 2 / 设置冒烟 KV 落库）；en-GB→en-US 回退注释锁定（同 FR-19 口径）；FR 矩阵 +FR-22 行。上游：PROJECT_SPEC v1.18、`SPEC_CHANGE_REQUEST_DUAL_IPA.md` |

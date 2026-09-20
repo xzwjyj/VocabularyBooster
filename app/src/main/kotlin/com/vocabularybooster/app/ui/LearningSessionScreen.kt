@@ -430,12 +430,14 @@ private fun WordDetailPanel(
             .verticalScroll(rememberScrollState())
             .testTag("learning_word_detail"),
     ) {
-        detail.ipaAm?.takeIf { it.isNotBlank() }?.let { ipa ->
+        formatIpaLine(detail.ipaAm, detail.ipaBr)?.let { ipa ->
             Text(
-                "/$ipa/",
+                ipa,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.padding(bottom = 4.dp),
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .testTag("learning_word_ipa"),
             )
         }
         detail.definitions.forEach { definition ->

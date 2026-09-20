@@ -50,13 +50,13 @@ public class BundledDictionaryProvider(
         }
         val normalized = text.toNormalizedWordText()
         val row = db.rawQuery(
-            "SELECT text, ipa, definitions, examples FROM DictEntry WHERE normalized = ? LIMIT 1",
+            "SELECT text, ipa, definitions, examples, ipaBr FROM DictEntry WHERE normalized = ? LIMIT 1",
             arrayOf(normalized),
         ).use { cursor ->
             if (!cursor.moveToFirst()) {
                 null
             } else {
-                RowData(cursor.getString(0), cursor.getString(1), cursor.getString(2), cursor.getString(3))
+                RowData(cursor.getString(0), cursor.getString(1), cursor.getString(2), cursor.getString(3), cursor.getString(4))
             }
         } ?: return@withContext null
         val senses = runCatching { json.decodeFromString<List<List<String>>>(row.definitions) }
@@ -78,6 +78,7 @@ public class BundledDictionaryProvider(
         DictionaryWord(
             text = row.text,
             ipaAm = row.ipa.ifBlank { null },
+            ipaBr = row.ipaBr?.takeIf { it.isNotBlank() },
             definitions = senses.mapIndexed { senseIndex, sense ->
                 sense.toDefinitionEntry(
                     orderCounter = orderCounter,
@@ -92,6 +93,7 @@ public class BundledDictionaryProvider(
         val ipa: String,
         val definitions: String,
         val examples: String,
+        val ipaBr: String?,
     )
 
     /** definitionOrder = 同词性组内顺序（每词局部计数，senses 已按词性序预排）。 */
@@ -149,8 +151,8 @@ public class BundledDictionaryProvider(
         const val DICT_DIR = "dict"
         const val DICT_FILE = "ecdict.sqlite"
 
-        /** 词典资产版本（tools/dict/enrich_with_examples.py 写入 user_version）：v2 = 例句对格式，v3 = 例句数据修订（粗口过滤 + zh 优先重选），v4 = 全部例句中文翻译（opus-mt-en-zh 批量翻译）。数据重建也必须递增本号。 */
-        const val DICT_ASSET_VERSION = 4
+        /** 词典资产版本（tools/dict 管线写入 user_version）：v2 = 例句对格式，v3 = 例句数据修订（粗口过滤 + zh 优先重选），v4 = 全部例句中文翻译（opus-mt-en-zh），v5 = ipa-dict 英音音标 + 美音补缺。数据重建也必须递增本号。 */
+        const val DICT_ASSET_VERSION = 5
 
         /** DOMAIN_MODEL §3.1 规范序镜像（provider 分配职责归本类）。 */
         val POS_ORDER = mapOf(

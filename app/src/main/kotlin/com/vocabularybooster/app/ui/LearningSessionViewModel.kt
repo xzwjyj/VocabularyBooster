@@ -457,9 +457,10 @@ internal fun SegmentType.label(): String = when (this) {
 
 // —— 学习屏词内容卡片（展示投影，纯渲染数据；播放语义全在编排器/Segment）——
 
-/** 音标 + 释义卡列表（bug list：学习会话显示当前词完整信息）。 */
+/** 音标（美/英，FR-22 有则双显）+ 释义卡列表（bug list：学习会话显示当前词完整信息）。 */
 data class LearningWordDetail(
     val ipaAm: String?,
+    val ipaBr: String?,
     val definitions: List<LearningDefinitionCard>,
 )
 
@@ -482,6 +483,7 @@ data class LearningExampleCard(
 /** PlaybackContent（选中项读模型）→ 卡片投影：只留渲染字段，例句防御性按 exampleOrder 排。 */
 private fun PlaybackContent.toLearningWordDetail(): LearningWordDetail = LearningWordDetail(
     ipaAm = word.ipaAm,
+    ipaBr = word.ipaBr,
     definitions = selectedDefinitions.map { definition ->
         LearningDefinitionCard(
             definitionEntryId = definition.definitionEntryId,

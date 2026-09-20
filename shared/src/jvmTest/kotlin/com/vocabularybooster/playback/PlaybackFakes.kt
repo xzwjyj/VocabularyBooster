@@ -170,6 +170,15 @@ internal class FakeLearningSettingsRepository(
     override suspend fun setTtsVoiceEn(value: String?) = Unit
 
     override suspend fun setTtsVoiceZh(value: String?) = Unit
+
+    // FR-22 口音键：字段可变（口音段语言测试直接改）
+    var ttsAccent: Lang = LearningSettingsRepository.DEFAULT_TTS_ACCENT
+
+    override suspend fun getTtsAccent(): Lang = ttsAccent
+
+    override suspend fun setTtsAccent(value: Lang) {
+        ttsAccent = value
+    }
 }
 
 /**

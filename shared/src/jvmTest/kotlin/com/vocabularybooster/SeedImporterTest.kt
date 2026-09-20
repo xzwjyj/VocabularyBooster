@@ -59,6 +59,12 @@ class SeedImporterTest {
 
         // 前缀搜索覆盖多个种子词
         assertTrue(repo.search("ab").map { it.text }.containsAll(listOf("abandon", "absorb")))
+        // FR-22 种子契约：59 词全带英音音标（boost 原缺，v1.18 起补齐）
+        assertTrue(
+            provider.loadAll().all { !it.ipaBr.isNullOrBlank() },
+            "种子词必须全部携带 ipaBr",
+        )
+        assertEquals("/buːst/", detail.word.ipaBr)
     }
 
     @Test
@@ -347,5 +353,107 @@ class SeedImporterTest {
             dispatcher = DispatchersForTest,
         )
         assertEquals("/ˈkɑːmə/", repo.lookup("karma")!!.word.ipaAm)
+    }
+
+    // ---- 英音回填（FR-22，同「只补空缺」口径）----
+
+    /** 英音缺失 → 补 ipaBr；已有英音不覆盖；幂等（与美音组同语义）。 */
+    @Test
+    fun backfillEnhancementsBackfillsMissingIpaBrWithoutOverwriting() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                // 旧导入形态：只有美音
+                DictionaryWord(
+                    text = "karma",
+                    ipaAm = "/ˈkɑːrmə/",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "fate", "因果"),
+                    ),
+                ),
+                // 已有英音：不得被覆盖
+                DictionaryWord(
+                    text = "old",
+                    ipaAm = "/oʊld/",
+                    ipaBr = "/əʊld/",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("adjective", 2, 0, "not new", "旧的"),
+                    ),
+                ),
+            ),
+        )
+
+        val dictKarma = DictionaryWord(
+            text = "karma",
+            ipaAm = "/ˈkɑːrmə/",
+            ipaBr = "/ˈkɑːmə/",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "fate", "因果"),
+            ),
+        )
+        val dictOld = DictionaryWord(
+            text = "old",
+            ipaAm = "/oʊld/",
+            ipaBr = "/ɒld/", // 词典同词不同记法——已有值优先
+            definitions = listOf(
+                DictionaryDefinitionEntry("adjective", 2, 0, "not new", "旧的"),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dictKarma)) // 只补英音（美音已在）
+        assertEquals(0, importer.backfillEnhancements(dictOld)) // 已有英音 → 不覆盖
+
+        val repo = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest)
+        assertEquals("/ˈkɑːmə/", repo.lookup("karma")!!.word.ipaBr)
+        assertEquals("/əʊld/", repo.lookup("old")!!.word.ipaBr)
+
+        // 幂等：英音已补 → 0 变更
+        assertEquals(0, importer.backfillEnhancements(dictKarma))
+    }
+
+    /** lookup 钩子（端到端，FR-22 闸门）：例句/美音完整但英音缺失 → 查看详情时自动补英音。 */
+    @Test
+    fun lookupBackfillsMissingIpaBrFromDictionaryProvider() = runTest {
+        val db = TestDb.inMemory()
+        // 旧导入形态：例句 + 美音完整（既有闸门不触发）、英音空
+        newImporter(db).import(
+            listOf(
+                DictionaryWord(
+                    text = "karma",
+                    ipaAm = "/ˈkɑːrmə/",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "fate", "因果",
+                            examples = listOf(
+                                DictionaryExample("She believes in karma.", "她相信因果。", sourceType = "TATOEBA"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val dictProvider = object : DictionaryProvider {
+            override suspend fun lookup(text: String): DictionaryWord? =
+                DictionaryWord(
+                    text = "karma",
+                    ipaAm = "/ˈkɑːrmə/",
+                    ipaBr = "/ˈkɑːmə/",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "fate", "因果",
+                            examples = listOf(
+                                DictionaryExample("She believes in karma.", "她相信因果。", sourceType = "TATOEBA"),
+                            ),
+                        ),
+                    ),
+                )
+        }
+        val repo = SqlDelightWordRepository(
+            database = db.database,
+            dictionaryProvider = dictProvider,
+            seedImporter = newImporter(db),
+            dispatcher = DispatchersForTest,
+        )
+        assertEquals("/ˈkɑːmə/", repo.lookup("karma")!!.word.ipaBr)
     }
 }

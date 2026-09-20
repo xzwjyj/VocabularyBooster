@@ -8,7 +8,8 @@ import java.util.Locale
 
 /**
  * TtsLocales 纯映射 JVM 单测（Phase 4 Step 3）：
- * AUDIO_ENGINE_SPEC §8 双语段切换——EN → en-US、CN → zh-CN 的 Locale 映射。
+ * AUDIO_ENGINE_SPEC §8 双语段切换——EN → en-US、CN → zh-CN 的 Locale 映射；
+ * FR-22 英音口音 → en-GB（Locale.UK）。
  * TTS 引擎行为（init/完成/stop）无法在 JVM 稳定验证 → instrumented 测试覆盖。
  */
 class TtsLocalesTest {
@@ -17,5 +18,10 @@ class TtsLocalesTest {
     fun mapsBothLanguages() {
         assertEquals(Locale.US, TtsLocales.localeFor(Lang.EN_US))
         assertEquals(Locale.SIMPLIFIED_CHINESE, TtsLocales.localeFor(Lang.ZH_CN))
+    }
+
+    @Test
+    fun mapsBritishAccent() {
+        assertEquals(Locale.UK, TtsLocales.localeFor(Lang.EN_GB))
     }
 }

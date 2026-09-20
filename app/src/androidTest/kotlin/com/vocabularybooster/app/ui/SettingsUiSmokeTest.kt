@@ -32,6 +32,7 @@ class SettingsUiSmokeTest {
         runBlocking {
             koin.get<VocabularyDatabase>().appSettingQueries.deleteSetting("settings.playbackToggles")
             koin.get<VocabularyDatabase>().appSettingQueries.deleteSetting("settings.ttsVoiceEn")
+            koin.get<VocabularyDatabase>().appSettingQueries.deleteSetting("settings.ttsAccent")
         }
     }
 
@@ -46,6 +47,21 @@ class SettingsUiSmokeTest {
         rule.waitUntil(10_000) {
             db.appSettingQueries.selectSetting("settings.playbackToggles").executeAsOneOrNull()
                 ?.contains("\"spelling\":false") == true
+        }
+    }
+
+    /** FR-22 发音口音冒烟：切英音 → settings.ttsAccent 落库 "EN_GB"。 */
+    @Test
+    fun accentSwitchPersistsImmediately() {
+        rule.onNodeWithText("设置").performClick()
+        rule.onNode(hasTestTag("settings_screen")).assertIsDisplayed()
+
+        rule.onNode(hasTestTag("settings_accent_gb")).performClick()
+
+        val db = koin.get<VocabularyDatabase>()
+        rule.waitUntil(10_000) {
+            db.appSettingQueries.selectSetting("settings.ttsAccent").executeAsOneOrNull()
+                ?.contains("EN_GB") == true
         }
     }
 

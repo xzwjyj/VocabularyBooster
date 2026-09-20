@@ -50,7 +50,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "accompany", "ipaAm": "/əˈkʌmpəni/",
+      "text": "accompany", "ipaAm": "/əˈkʌmpəni/", "ipaBr": "/əˈkʌmpəni/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to go somewhere with somebody, especially to look after them",
@@ -79,7 +79,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "ambitious", "ipaAm": "/æmˈbɪʃəs/",
+      "text": "ambitious", "ipaAm": "/æmˈbɪʃəs/", "ipaBr": "/æmˈbɪʃəs/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "having a strong desire to succeed or achieve great things",
@@ -99,7 +99,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "apply", "ipaAm": "/əˈplaɪ/",
+      "text": "apply", "ipaAm": "/əˈplaɪ/", "ipaBr": "/əˈplaɪ/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to make a formal request for a job, position, or admission",
@@ -122,7 +122,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "assess", "ipaAm": "/əˈses/",
+      "text": "assess", "ipaAm": "/əˈses/", "ipaBr": "/əˈses/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to judge the quality, amount, or value of something after careful consideration",
@@ -132,7 +132,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "boost", "ipaAm": "/buːst/",
+      "text": "boost", "ipaAm": "/buːst/", "ipaBr": "/buːst/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to increase or improve something",
@@ -158,7 +158,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "boundary", "ipaAm": "/ˈbaʊndri/",
+      "text": "boundary", "ipaAm": "/ˈbaʊndri/", "ipaBr": "/ˈbaʊndri/",
       "definitions": [
         { "partOfSpeech": "noun", "partOfSpeechOrder": 1, "definitionOrder": 1,
           "meaningEN": "a real or imagined line that marks the edge or limit of something",
@@ -168,7 +168,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "brief", "ipaAm": "/briːf/",
+      "text": "brief", "ipaAm": "/briːf/", "ipaBr": "/briːf/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "lasting or taking only a short time",
@@ -191,7 +191,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "capture", "ipaAm": "/ˈkæptʃər/",
+      "text": "capture", "ipaAm": "/ˈkæptʃər/", "ipaBr": "/ˈkæptʃə/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to catch a person or animal and keep them as a prisoner",
@@ -214,7 +214,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "cease", "ipaAm": "/siːs/",
+      "text": "cease", "ipaAm": "/siːs/", "ipaBr": "/siːs/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to stop happening or to stop doing something",
@@ -227,7 +227,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "compel", "ipaAm": "/kəmˈpel/",
+      "text": "compel", "ipaAm": "/kəmˈpel/", "ipaBr": "/kəmˈpel/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to force somebody to do something",
@@ -237,7 +237,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "compile", "ipaAm": "/kəmˈpaɪl/",
+      "text": "compile", "ipaAm": "/kəmˈpaɪl/", "ipaBr": "/kəmˈpaɪl/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to collect information from different places and arrange it in a book, report, or list",
@@ -257,7 +257,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "constrain", "ipaAm": "/kənˈstreɪn/",
+      "text": "constrain", "ipaAm": "/kənˈstreɪn/", "ipaBr": "/kənˈstreɪn/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to limit or restrict somebody or something",
@@ -267,7 +267,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "convey", "ipaAm": "/kənˈveɪ/",
+      "text": "convey", "ipaAm": "/kənˈveɪ/", "ipaBr": "/kənˈveɪ/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to transport or carry something from one place to another",
@@ -284,7 +284,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "crucial", "ipaAm": "/ˈkruːʃl/",
+      "text": "crucial", "ipaAm": "/ˈkruːʃl/", "ipaBr": "/ˈkruːʃl/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "extremely important because it affects the outcome of something",
@@ -294,7 +294,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "deliberate", "ipaAm": "/dɪˈlɪbərət/",
+      "text": "deliberate", "ipaAm": "/dɪˈlɪbərət/", "ipaBr": "/dɪˈlɪbərət/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "done on purpose rather than by accident",
@@ -310,7 +310,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "demonstrate", "ipaAm": "/ˈdemənstreɪt/",
+      "text": "demonstrate", "ipaAm": "/ˈdemənstreɪt/", "ipaBr": "/ˈdemənstreɪt/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to show something clearly by giving evidence or proof",
@@ -347,7 +347,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "enhance", "ipaAm": "/ɪnˈhæns/",
+      "text": "enhance", "ipaAm": "/ɪnˈhæns/", "ipaBr": "/ɪnˈhɑːns/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to increase the quality, value, or beauty of something",
@@ -358,7 +358,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "establish", "ipaAm": "/ɪˈstæblɪʃ/",
+      "text": "establish", "ipaAm": "/ɪˈstæblɪʃ/", "ipaBr": "/ɪˈstæblɪʃ/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to start or create an organization, system, or relationship that is meant to last",
@@ -375,7 +375,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "evaluate", "ipaAm": "/ɪˈvæljueɪt/",
+      "text": "evaluate", "ipaAm": "/ɪˈvæljueɪt/", "ipaBr": "/ɪˈvæljueɪt/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to judge how good, useful, or successful something is",
@@ -385,7 +385,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "evident", "ipaAm": "/ˈevɪdənt/",
+      "text": "evident", "ipaAm": "/ˈevɪdənt/", "ipaBr": "/ˈevɪdənt/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "clear and easy to see or understand",
@@ -395,7 +395,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "expand", "ipaAm": "/ɪkˈspænd/",
+      "text": "expand", "ipaAm": "/ɪkˈspænd/", "ipaBr": "/ɪkˈspænd/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to become or make something larger in size, number, or importance",
@@ -405,7 +405,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "facilitate", "ipaAm": "/fəˈsɪlɪteɪt/",
+      "text": "facilitate", "ipaAm": "/fəˈsɪlɪteɪt/", "ipaBr": "/fəˈsɪlɪteɪt/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to make an action or process easier",
@@ -415,7 +415,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "feasible", "ipaAm": "/ˈfiːzəbl/",
+      "text": "feasible", "ipaAm": "/ˈfiːzəbl/", "ipaBr": "/ˈfiːzəbl/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "possible and practical to do easily or conveniently",
@@ -442,7 +442,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "generate", "ipaAm": "/ˈdʒenəreɪt/",
+      "text": "generate", "ipaAm": "/ˈdʒenəreɪt/", "ipaBr": "/ˈdʒenəreɪt/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to produce or create something, especially power, interest, or income",
@@ -452,7 +452,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "genuine", "ipaAm": "/ˈdʒenjuɪn/",
+      "text": "genuine", "ipaAm": "/ˈdʒenjuɪn/", "ipaBr": "/ˈdʒenjuɪn/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "real and exactly what it appears to be; sincere",
@@ -463,7 +463,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "implement", "ipaAm": "/ˈɪmplɪment/",
+      "text": "implement", "ipaAm": "/ˈɪmplɪment/", "ipaBr": "/ˈɪmplɪment/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to put a plan, decision, or system into effect",
@@ -474,7 +474,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "imply", "ipaAm": "/ɪmˈplaɪ/",
+      "text": "imply", "ipaAm": "/ɪmˈplaɪ/", "ipaBr": "/ɪmˈplaɪ/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to suggest something indirectly rather than state it explicitly",
@@ -484,7 +484,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "inevitable", "ipaAm": "/ɪnˈevɪtəbl/",
+      "text": "inevitable", "ipaAm": "/ɪnˈevɪtəbl/", "ipaBr": "/ɪnˈevɪtəbl/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "certain to happen and impossible to avoid",
@@ -494,7 +494,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "inclined", "ipaAm": "/ɪnˈklaɪnd/",
+      "text": "inclined", "ipaAm": "/ɪnˈklaɪnd/", "ipaBr": "/ɪnˈklaɪnd/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "tending to do something or likely to feel a particular way",
@@ -504,7 +504,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "insight", "ipaAm": "/ˈɪnsaɪt/",
+      "text": "insight", "ipaAm": "/ˈɪnsaɪt/", "ipaBr": "/ˈɪnsaɪt/",
       "definitions": [
         { "partOfSpeech": "noun", "partOfSpeechOrder": 1, "definitionOrder": 1,
           "meaningEN": "a deep and clear understanding of something complicated",
@@ -540,7 +540,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "meticulous", "ipaAm": "/məˈtɪkjələs/",
+      "text": "meticulous", "ipaAm": "/məˈtɪkjələs/", "ipaBr": "/məˈtɪkjələs/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "showing great attention to detail; very careful and precise",
@@ -550,7 +550,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "obtain", "ipaAm": "/əbˈteɪn/",
+      "text": "obtain", "ipaAm": "/əbˈteɪn/", "ipaBr": "/əbˈteɪn/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to get something, especially by making an effort",
@@ -597,7 +597,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "refine", "ipaAm": "/rɪˈfaɪn/",
+      "text": "refine", "ipaAm": "/rɪˈfaɪn/", "ipaBr": "/rɪˈfaɪn/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to improve something by making small changes over time",
@@ -607,7 +607,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "relevant", "ipaAm": "/ˈreləvənt/",
+      "text": "relevant", "ipaAm": "/ˈreləvənt/", "ipaBr": "/ˈreləvənt/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "closely connected to what is being discussed or considered",
@@ -617,7 +617,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "reluctant", "ipaAm": "/rɪˈlʌktənt/",
+      "text": "reluctant", "ipaAm": "/rɪˈlʌktənt/", "ipaBr": "/rɪˈlʌktənt/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "hesitant and unwilling to do something",
@@ -659,7 +659,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "retain", "ipaAm": "/rɪˈteɪn/",
+      "text": "retain", "ipaAm": "/rɪˈteɪn/", "ipaBr": "/rɪˈteɪn/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to keep something or continue to have something",
@@ -669,7 +669,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "significant", "ipaAm": "/sɪɡˈnɪfɪkənt/",
+      "text": "significant", "ipaAm": "/sɪɡˈnɪfɪkənt/", "ipaBr": "/sɪɡˈnɪfɪkənt/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "large or important enough to have an effect or be noticed",
@@ -685,7 +685,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "subject",
+      "text": "subject", "ipaAm": "/ˈsʌbdʒɪkt/", "ipaBr": "/ˈsʌbdʒɪkt/",
       "definitions": [
         { "partOfSpeech": "noun", "partOfSpeechOrder": 1, "definitionOrder": 1,
           "meaningEN": "a thing or person that is being discussed or dealt with",
@@ -707,7 +707,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "subtle", "ipaAm": "/ˈsʌtl/",
+      "text": "subtle", "ipaAm": "/ˈsʌtl/", "ipaBr": "/ˈsʌtl/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "not obvious or easy to notice; delicate and clever",
@@ -717,7 +717,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "sufficient", "ipaAm": "/səˈfɪʃnt/",
+      "text": "sufficient", "ipaAm": "/səˈfɪʃnt/", "ipaBr": "/səˈfɪʃnt/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "enough for a particular purpose; as much as is needed",
@@ -730,7 +730,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "sustain", "ipaAm": "/səˈsteɪn/",
+      "text": "sustain", "ipaAm": "/səˈsteɪn/", "ipaBr": "/səˈsteɪn/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to make something continue for a period of time without breaking",
@@ -740,7 +740,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "transform", "ipaAm": "/trænsˈfɔːrm/",
+      "text": "transform", "ipaAm": "/trænsˈfɔːrm/", "ipaBr": "/trænsˈfɔːm/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to change something completely in form, character, or appearance",
@@ -750,7 +750,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "verify", "ipaAm": "/ˈverɪfaɪ/",
+      "text": "verify", "ipaAm": "/ˈverɪfaɪ/", "ipaBr": "/ˈverɪfaɪ/",
       "definitions": [
         { "partOfSpeech": "verb", "partOfSpeechOrder": 0, "definitionOrder": 1,
           "meaningEN": "to check that something is true or accurate",
@@ -760,7 +760,7 @@ public const val SEED_DICTIONARY_JSON: String = """
           ] }
       ] },
     {
-      "text": "vital", "ipaAm": "/ˈvaɪtl/",
+      "text": "vital", "ipaAm": "/ˈvaɪtl/", "ipaBr": "/ˈvaɪtl/",
       "definitions": [
         { "partOfSpeech": "adjective", "partOfSpeechOrder": 2, "definitionOrder": 1,
           "meaningEN": "absolutely necessary; essential for life or success",

@@ -61,7 +61,7 @@ private fun WordResultRow(word: Word, onClick: () -> Unit) {
             .padding(vertical = 12.dp),
     ) {
         Text(word.text, style = MaterialTheme.typography.titleMedium)
-        word.ipaAm?.let {
+        formatIpaLine(word.ipaAm, word.ipaBr)?.let {
             Text(
                 it,
                 style = MaterialTheme.typography.bodySmall,

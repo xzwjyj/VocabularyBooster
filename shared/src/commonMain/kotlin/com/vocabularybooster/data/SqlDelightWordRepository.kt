@@ -50,21 +50,25 @@ public class SqlDelightWordRepository(
         val dictWord = if (provider != null && importer != null) provider.lookup(text) else null
         val changed = dictWord
             ?.takeIf { word ->
-                word.definitions.sumOf { it.examples.size } > 0 || !word.ipaAm.isNullOrBlank()
+                word.definitions.sumOf { it.examples.size } > 0 ||
+                    !word.ipaAm.isNullOrBlank() ||
+                    !word.ipaBr.isNullOrBlank()
             }
             ?.let { word -> importer?.backfillEnhancements(word) ?: 0 }
             ?: 0
         return if (changed > 0) readFromDb(text) ?: current else current
     }
 
-    /** 音标缺失、零例句，或 Tatoeba 例句存在但译文为空（旧单串格式资产导入）。 */
+    /** 美音/英音音标缺失、零例句，或 Tatoeba 例句存在但译文为空（旧单串格式资产导入）。 */
     private fun needsEnhancementBackfill(detail: WordDetail): Boolean {
         val examples = detail.examplesByEntryId.values.flatten()
         val examplesIncomplete = examples.isEmpty() ||
             examples.any {
                 it.sourceType == ExampleSourceType.TATOEBA && it.chineseTranslation.isBlank()
             }
-        return detail.word.ipaAm.isNullOrBlank() || examplesIncomplete
+        return detail.word.ipaAm.isNullOrBlank() ||
+            detail.word.ipaBr.isNullOrBlank() ||
+            examplesIncomplete
     }
 
     /** FR-18：miss → 源命中 → 导入 → true；未装配词典或源未收录返回 false。 */

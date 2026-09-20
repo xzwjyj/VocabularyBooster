@@ -211,7 +211,11 @@ def pick_final(candidates, id_to_zh):
 
 
 def child_build():
-    """Rebuild ecdict.sqlite with examples=[["en","zh"],...]; atomic replace on success."""
+    """Rebuild ecdict.sqlite with examples=[["en","zh"],...]; atomic replace on success.
+
+    ipaBr column (merge_ipa.py v5+) is carried through when present, so re-running
+    the example pipeline never silently drops British IPA.
+    """
     entries = load_json(WORK / "entries.json")
     id_to_zh = load_json(WORK / "id_to_zh.json")
     if OUT_TMP.exists():
@@ -224,15 +228,18 @@ def child_build():
             text TEXT NOT NULL,
             ipa TEXT,
             definitions TEXT NOT NULL,
-            examples TEXT NOT NULL
+            examples TEXT NOT NULL,
+            ipaBr TEXT
         ) WITHOUT ROWID
     """)
     src = sqlite3.connect(str(DICT_PATH))
     src.row_factory = sqlite3.Row
+    src_cols = {r[1] for r in src.execute("PRAGMA table_info(DictEntry)")}
+    src_select = "normalized, text, ipa, definitions" + (", ipaBr" if "ipaBr" in src_cols else ", NULL")
     src_count = src.execute("SELECT COUNT(*) FROM DictEntry").fetchone()[0]
     batch = []
     enriched = translated = written = 0
-    for row in src.execute("SELECT normalized, text, ipa, definitions FROM DictEntry"):
+    for row in src.execute(f"SELECT {src_select} FROM DictEntry"):
         normalized = row["normalized"]
         candidates = entries.get(normalized)
         examples_json = "[]"
@@ -241,15 +248,15 @@ def child_build():
             examples_json = json.dumps(final, ensure_ascii=False)
             enriched += 1
             translated += sum(1 for _, zh in final if zh)
-        batch.append((normalized, row["text"], row["ipa"], row["definitions"], examples_json))
+        batch.append((normalized, row["text"], row["ipa"], row["definitions"], examples_json, row["ipaBr"]))
         if len(batch) >= 5000:
-            oc.executemany("INSERT INTO DictEntry VALUES (?,?,?,?,?)", batch)
+            oc.executemany("INSERT INTO DictEntry VALUES (?,?,?,?,?,?)", batch)
             out.commit()
             written += len(batch)
             batch = []
             print(f"ROW {written}")
     if batch:
-        oc.executemany("INSERT INTO DictEntry VALUES (?,?,?,?,?)", batch)
+        oc.executemany("INSERT INTO DictEntry VALUES (?,?,?,?,?,?)", batch)
         out.commit()
         written += len(batch)
     oc.execute("PRAGMA user_version = 3")

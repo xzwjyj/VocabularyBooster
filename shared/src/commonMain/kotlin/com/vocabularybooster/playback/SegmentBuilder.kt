@@ -98,6 +98,14 @@ internal fun PlaybackToggles.enables(type: SegmentType): Boolean = when (type) {
     SegmentType.EXAMPLE_CN -> exampleCn
 }
 
+/**
+ * FR-22 口音映射：英文段基语言（EN_US）按口音设置重写为 EN_US/EN_GB；中文段原样。
+ * 规格恒存中性基语言，编排器游标逐段应用——口音生效粒度 = 下一 Segment（对齐 L4 开关懒读）。
+ * [accent] 只接受英语变体（ZH_CN 非口音选项，防御性原样返回）。
+ */
+internal fun SegmentSpec.withEnglishAccent(accent: Lang): SegmentSpec =
+    if (lang == Lang.EN_US && accent != Lang.ZH_CN) copy(lang = accent) else this
+
 /** 分段规格：应用开关与编号前的原材料（[SegmentBuilder.buildSpecs] 输出）。 */
 internal data class SegmentSpec(
     val type: SegmentType,

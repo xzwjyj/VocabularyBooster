@@ -1,5 +1,6 @@
 package com.vocabularybooster.domain.repository
 
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackToggles
 
 /**
@@ -66,6 +67,15 @@ public interface LearningSettingsRepository {
     /** 写中文音色 id；null = 清除；语义同 [setTtsVoiceEn]。 */
     public suspend fun setTtsVoiceZh(value: String?)
 
+    /**
+     * `settings.ttsAccent`：英文段朗读口音（FR-22）——EN_US（美音，缺省）/ EN_GB（英音）。
+     * 只影响英文段；中文段不受影响。生效粒度 = 下一 Segment（编排器游标懒读，对齐 L4）。
+     */
+    public suspend fun getTtsAccent(): Lang
+
+    /** 写口音；值只能是 [Lang.EN_US]/[Lang.EN_GB]（ZH_CN 非口音选项），否则 [RepositoryValidationException]。 */
+    public suspend fun setTtsAccent(value: Lang)
+
     public companion object {
         /** 内置默认值（DATABASE_SCHEMA §2.11）；不进入 GroupSplitter——纯函数保持由调用方传入。 */
         public const val DEFAULT_GROUP_SIZE: Int = 10
@@ -77,5 +87,8 @@ public interface LearningSettingsRepository {
         public const val DEFAULT_TTS_RATE: Float = 1.0f
 
         public const val DEFAULT_TTS_PITCH: Float = 1.0f
+
+        /** 发音口音默认美音（FR-22）。 */
+        public val DEFAULT_TTS_ACCENT: Lang = Lang.EN_US
     }
 }

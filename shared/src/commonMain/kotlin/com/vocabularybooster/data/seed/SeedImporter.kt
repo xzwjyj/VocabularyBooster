@@ -92,7 +92,7 @@ public class SeedImporter(
     /**
      * 增强回填（Phase 8.6 Tatoeba/音标）：为增强前已导入的词条补齐例句/译文/音标。
      * 幂等、全量单事务；词不存在 → 0（绝不建词/建空行，[import] 才负责建词）。
-     * 规则：音标只补空缺（ipaAm 为 null 且词典有值才写，绝不覆盖已有值）；
+     * 规则：音标只补空缺（ipaAm/ipaBr 为 null 且词典有值才写，绝不覆盖已有值）；
      * 同句已存在（跨释义按句子去重）→ 跳过；存在但译文空且词典有译文 → 只更新译文
      * （[Example.sq] updateExampleTranslation）；缺句 → 挂到首释义（与词典例句挂载约定一致）。
      *
@@ -111,6 +111,15 @@ public class SeedImporter(
             if (existingWord.ipaAm == null && !word.ipaAm.isNullOrBlank()) {
                 database.wordQueries.updateWordIpa(
                     ipaAm = word.ipaAm,
+                    updatedAt = clock.now().toEpochMilliseconds(),
+                    wordId = existingWord.wordId,
+                )
+                changed++
+            }
+            // 英音回填（FR-22，同「只补空缺」口径——ipaBr 为 null 且词典有值才写）
+            if (existingWord.ipaBr == null && !word.ipaBr.isNullOrBlank()) {
+                database.wordQueries.updateWordIpaBr(
+                    ipaBr = word.ipaBr,
                     updatedAt = clock.now().toEpochMilliseconds(),
                     wordId = existingWord.wordId,
                 )

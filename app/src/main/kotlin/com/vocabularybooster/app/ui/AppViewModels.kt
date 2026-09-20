@@ -455,6 +455,10 @@ class SettingsViewModel(
         private set
     var ttsPitch by mutableStateOf(LearningSettingsRepository.DEFAULT_TTS_PITCH)
         private set
+
+    /** 发音口音（FR-22）：美音（缺省）/ 英音；只影响英文段，下一 Segment 生效。 */
+    var ttsAccent by mutableStateOf(LearningSettingsRepository.DEFAULT_TTS_ACCENT)
+        private set
     var message by mutableStateOf<String?>(null)
         private set
 
@@ -470,6 +474,18 @@ class SettingsViewModel(
     var voiceZhId by mutableStateOf<String?>(null)
         private set
 
+    /** 设备真英音音色（FR-22）：空 = 无英音，选英音时提示将回退美音。 */
+    var voicesEnGb by mutableStateOf<List<TtsVoice>>(emptyList())
+        private set
+
+    /** 音色枚举完成（含引擎就绪等待）——英音缺失提示等枚举定论，避免先闪后隐。 */
+    var voicesEnumerated by mutableStateOf(false)
+        private set
+
+    /** 英音缺失提示可见性：已选英音、枚举已完成且设备无英音音色（朗读将回退美音，不中断）。 */
+    val enGbMissingHint: Boolean
+        get() = ttsAccent == Lang.EN_GB && voicesEnumerated && voicesEnGb.isEmpty()
+
     init {
         viewModelScope.launch {
             runCatching {
@@ -479,6 +495,7 @@ class SettingsViewModel(
                 toggles = settingsRepository.getPlaybackToggles()
                 ttsRate = settingsRepository.getTtsRate()
                 ttsPitch = settingsRepository.getTtsPitch()
+                ttsAccent = settingsRepository.getTtsAccent()
                 voiceEnId = settingsRepository.getTtsVoiceEn()
                 voiceZhId = settingsRepository.getTtsVoiceZh()
             }.onFailure { message = "设置加载失败：${it.message}" }
@@ -491,6 +508,8 @@ class SettingsViewModel(
             }
             voicesEn = synthesizer.availableVoices(Lang.EN_US)
             voicesZh = synthesizer.availableVoices(Lang.ZH_CN)
+            voicesEnGb = synthesizer.availableVoices(Lang.EN_GB)
+            voicesEnumerated = true
         }
     }
 
@@ -577,6 +596,18 @@ class SettingsViewModel(
             runCatching { settingsRepository.setTtsVoiceZh(id) }
                 .onSuccess {
                     voiceZhId = id
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    /** 切发音口音（FR-22，美音/英音二选一）；下一英文段生效，中文段不受影响。 */
+    fun onAccentChange(value: Lang) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setTtsAccent(value) }
+                .onSuccess {
+                    ttsAccent = value
                     message = null
                 }
                 .onFailure { e -> message = "保存失败：${e.message}" }

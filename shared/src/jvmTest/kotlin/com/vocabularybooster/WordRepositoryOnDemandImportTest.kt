@@ -44,6 +44,7 @@ class WordRepositoryOnDemandImportTest {
     private val bundledWord = DictionaryWord(
         text = "Serendipity",
         ipaAm = "ˌserənˈdipəti",
+        ipaBr = "ˌserənˈdɪpəti", // FR-22：完整词条含英音——不触发增强回填，DB 命中后不再打扰词典源
         definitions = listOf(
             DictionaryDefinitionEntry(
                 partOfSpeech = "noun",

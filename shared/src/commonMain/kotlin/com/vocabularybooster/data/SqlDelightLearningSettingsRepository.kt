@@ -1,6 +1,7 @@
 package com.vocabularybooster.data
 
 import com.vocabularybooster.db.VocabularyDatabase
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.repository.LearningSettingsRepository
 import com.vocabularybooster.domain.repository.RepositoryValidationException
@@ -126,6 +127,26 @@ public class SqlDelightLearningSettingsRepository(
 
     override suspend fun setTtsVoiceZh(value: String?): Unit = setVoiceId(TTS_VOICE_ZH_KEY, value)
 
+    // —— FR-22 发音口音：值 = Lang 名（JSON 字符串 "EN_US"/"EN_GB"）；缺键默认美音 ——
+
+    override suspend fun getTtsAccent(): Lang = withContext(dispatcher) {
+        val raw = database.appSettingQueries.selectSetting(TTS_ACCENT_KEY).executeAsOneOrNull()
+            ?: return@withContext LearningSettingsRepository.DEFAULT_TTS_ACCENT
+        val value = runCatching { json.decodeFromString<String>(raw) }.getOrElse {
+            throw RepositoryValidationException("设置值损坏（key=$TTS_ACCENT_KEY）：无法解析为发音口音")
+        }
+        runCatching { Lang.valueOf(value) }.getOrElse {
+            throw RepositoryValidationException("设置值损坏（key=$TTS_ACCENT_KEY）：未知口音 $value")
+        }
+    }
+
+    override suspend fun setTtsAccent(value: Lang): Unit = withContext(dispatcher) {
+        if (value == Lang.ZH_CN) {
+            throw RepositoryValidationException("发音口音只能是 EN_US/EN_GB：$value（key=$TTS_ACCENT_KEY）")
+        }
+        database.appSettingQueries.upsertSetting(TTS_ACCENT_KEY, json.encodeToString(value.name))
+    }
+
     private suspend fun getVoiceId(key: String): String? = withContext(dispatcher) {
         val raw = database.appSettingQueries.selectSetting(key).executeAsOneOrNull() ?: return@withContext null
         runCatching { json.decodeFromString<String>(raw) }.getOrNull() // 损坏 → null（音色失效同级降级）
@@ -150,6 +171,7 @@ public class SqlDelightLearningSettingsRepository(
         const val TTS_PITCH_KEY = "settings.ttsPitch"
         const val TTS_VOICE_EN_KEY = "settings.ttsVoiceEn"
         const val TTS_VOICE_ZH_KEY = "settings.ttsVoiceZh"
+        const val TTS_ACCENT_KEY = "settings.ttsAccent"
 
         // 前向兼容：未来新增开关键不破坏旧值读取（未知键忽略，缺省字段取默认）
         val json = Json { ignoreUnknownKeys = true }

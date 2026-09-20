@@ -67,7 +67,13 @@ fun WordDetailScreen(
             item(key = "word-${detail.word.wordId}") {
                 Column(Modifier.padding(bottom = 8.dp)) {
                     Text(detail.word.text, style = MaterialTheme.typography.headlineMedium)
-                    detail.word.ipaAm?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    formatIpaLine(detail.word.ipaAm, detail.word.ipaBr)?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.testTag("word_detail_ipa"),
+                        )
+                    }
                 }
             }
             detail.groupedByPartOfSpeech().forEach { group ->

@@ -114,4 +114,33 @@ class SegmentBuilderTest {
         )
         assertTrue(SegmentBuilder.buildSegments(content(listOf(nounDef), emptyMap()), allOff).isEmpty())
     }
+
+    // ---- 口音映射（FR-22：规格存中性 EN_US，段消费时按口音重写）----
+
+    @Test
+    fun withEnglishAccentRewritesEnglishSegmentsOnly() {
+        val specs = SegmentBuilder.buildSpecs(
+            content(listOf(nounDef), mapOf(12L to listOf(exampleB))),
+        )
+        val mapped = specs.map { it.withEnglishAccent(Lang.EN_GB) }
+
+        // 英文段（PRON/SPELL/MEANING_EN/EXAMPLE_AUDIO）→ EN_GB；中文段原样
+        assertEquals(
+            listOf(Lang.EN_GB, Lang.EN_GB, Lang.EN_GB, Lang.ZH_CN, Lang.EN_GB, Lang.ZH_CN),
+            mapped.map { it.lang },
+        )
+        // 除 lang 外字段（type/text/track/rateScale/owner）零改动
+        specs.zip(mapped).forEach { (base, accented) ->
+            assertEquals(base.copy(lang = accented.lang), accented)
+        }
+    }
+
+    @Test
+    fun withEnglishAccentDefaultsToEnUsAndLeavesChineseUntouched() {
+        val specs = SegmentBuilder.buildSpecs(content(listOf(nounDef), mapOf(12L to listOf(exampleB))))
+        // 缺省美音：原样（copy 语义也全等）
+        assertEquals(specs, specs.map { it.withEnglishAccent(Lang.EN_US) })
+        // 防御：ZH_CN 非口音选项 → 英文段原样（不产生中文朗读英文段）
+        assertEquals(specs, specs.map { it.withEnglishAccent(Lang.ZH_CN) })
+    }
 }
