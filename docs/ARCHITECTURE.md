@@ -12,8 +12,8 @@
 │  Jetpack Compose UI  ▲StateFlow   ViewModel(AndroidX) ──┐                 │
 │                      │                                    │ 委托            │
 │  platform actuals ───┼────────────────────────────────────┘                │
-│   • TtsSpeechSynthesizer（android.speech.tts；ZH 主路 / EN 降级）         │
-│   • SherpaOnnxSpeechSynthesizer（sherpa-onnx 神经 TTS，EN 主路）          │
+│   • TtsSpeechSynthesizer（android.speech.tts；双语降级兜底）              │
+│   • SherpaOnnxSpeechSynthesizer（sherpa-onnx 神经 TTS，EN+ZH 主路）      │
 │   • AndroidSpeechCommandRecognizer（SpeechRecognizer）                    │
 │   • Media3AudioPlayer（Media3 ExoPlayer）                                 │
 │   • AndroidDatabaseDriverFactory（SQLDelight）                            │
@@ -124,7 +124,7 @@ interface TextLineSource { fun lines(encoding: DetectedEncoding): Flow<String> }
 
 | 端口 | Android actual | iOS actual |
 |---|---|---|
-| `SpeechSynthesizer` | `LangRoutedSpeechSynthesizer`（commonMain 组合实现，app 装配唯一绑定；**FR-23，2026-09-20**）：EN_US/EN_GB → `SherpaOnnxSpeechSynthesizer` 神经引擎（sherpa-onnx v1.13.8 + Piper VITS medium 双口音模型 APK assets——模型单文件直读、espeak-ng-data 解包至 filesDir，`tools/tts-neural/fetch_deps.py` 产出入库）；ZH_CN → `TtsSpeechSynthesizer`（`TextToSpeech` + `UtteranceProgressListener`）；神经非 READY / speak 非取消异常 → EN 段当场回退系统 + 进程内粘滞，取消重抛不降级 | `AVSpeechSynthesizer` |
+| `SpeechSynthesizer` | `LangRoutedSpeechSynthesizer`（commonMain 组合实现，app 装配唯一绑定；**FR-23 + FR-24，2026-09-20**）：全部语言 → `SherpaOnnxSpeechSynthesizer` 神经引擎（sherpa-onnx v1.13.8 **双模型驻留**——EN 族 = Piper VITS medium 双口音（模型单文件直读、espeak-ng-data 解包至 filesDir）；ZH_CN = vits-melo-tts-zh_en（fp32 170.4MB 单说话人女声 44.1kHz；model / lexicon / tokens / jieba dict / rule fst 整槽解包 filesDir `tts/melo-data/` + newFromFile，单音色）；`tools/tts-neural/fetch_deps.py` 产出入库）；神经非 READY / speak 非取消异常 → 对应语言族段当场回退系统 + 进程内粘滞（每族独立互不牵连），取消重抛不降级 | `AVSpeechSynthesizer` |
 | `AudioPlayer` | Media3 `ExoPlayer` | `AVPlayer` |
 | `SpeechCommandRecognizer` | 系统 `SpeechRecognizer`（`EXTRA_PREFER_OFFLINE`，NFR-4）+ 响应看门狗（E4：1500ms 零回调判死）；**缺席时内置 Vosk 离线引擎兜底；在场但运行时可用性级失败（显式错误或看门狗判死）时窗口内回退 + 进程内降级**（E1/E2/E3/E4，2026-09-14，中文小模型打包 APK，DI 启动探测 + app 层回退代理，端口契约不变） | `SFSpeechRecognizer` |
 | `DatabaseDriverFactoryProvider` | `AndroidSqliteDriver` | `NSqliteDriver` |
@@ -137,7 +137,7 @@ interface TextLineSource { fun lines(encoding: DetectedEncoding): Flow<String> }
 | 故障 | 策略（降级矩阵） |
 |---|---|
 | TTS 不可用（引擎缺失/初始化失败） | 阻止开始会话 + 引导安装语音数据；已有会话安全终止 |
-| 神经 TTS 不可用 / 合成失败（FR-23，2026-09-20） | EN 段当场回退系统 TTS 同段播完 + 进程内粘滞降级；ZH 段不受影响；取消照常重抛不降级（`LangRoutedSpeechSynthesizer`，AUDIO_ENGINE_SPEC §8/§9） |
+| 神经 TTS 不可用 / 合成失败（FR-23 + FR-24，2026-09-20） | 对应语言族段当场回退系统 TTS 同段播完 + 进程内粘滞降级（EN 族 / ZH 族独立互不牵连）；取消照常重抛不降级（`LangRoutedSpeechSynthesizer`，AUDIO_ENGINE_SPEC §8/§9） |
 | 例句无 `audioUri` / 音频加载失败 | **TTS 朗读 sentence 兜底**（FR-3），记日志 |
 | SpeechRecognizer 不可用（权限拒绝/无引擎） | 会话继续，命令窗口退化为"手动会了按钮"（NFR-8） |
 | 识别到未知文本 | 忽略并保持监听直到窗口超时（不误杀） |

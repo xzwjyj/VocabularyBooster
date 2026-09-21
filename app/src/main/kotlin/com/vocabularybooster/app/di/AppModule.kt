@@ -63,10 +63,11 @@ val appModule = module {
     single<LogSink> { AndroidLogSink() }
     single<DatabaseDriverFactoryProvider> { AndroidDatabaseDriverFactoryProvider(androidContext()) }
     single<AudioPlayer> { Media3AudioPlayer(androidContext()) }
-    // FR-23 v2（2026-09-20）：TTS 路由装配——EN_* → SherpaOnnx 神经引擎（口音=模型，vivo 无厂商
-    // 英音包也生效）；ZH_CN → 系统引擎；神经非 READY/speak 异常 → EN 段回退系统（进程内粘滞）。
-    single { TtsSpeechSynthesizer(androidContext(), get()) } // 系统引擎：ZH 主路 + EN 降级兜底（FR-19 音色应用仅系统路）
-    single { SherpaOnnxSpeechSynthesizer(androidContext()) } // 神经引擎：assets 直读 Piper 模型，构造即预热
+    // FR-23 v2 + FR-24（2026-09-20）：TTS 路由装配——EN_* → SherpaOnnx 神经引擎 Piper 模型
+    //（口音=模型，vivo 无厂商英音包也生效）；ZH_CN → 同引擎 melo 模型（单音色，FR-19 键复用）；
+    // 神经非 READY/speak 异常 → 对应语言族回退系统（进程内粘滞，互不牵连）。
+    single { TtsSpeechSynthesizer(androidContext(), get()) } // 系统引擎：降级兜底（FR-19 音色应用仅系统路）
+    single { SherpaOnnxSpeechSynthesizer(androidContext(), get()) } // 神经引擎：双模型驻留（piper + melo），构造即并行预热
     single<SpeechSynthesizer> {
         // 复合绑定防自引用：裸 get() 按参数类型 SpeechSynthesizer 解析回本绑定自身 →
         // StackOverflowError（Koin 4 陷阱，同 FallbackDictionaryProvider 先例）——必须按具体类型解析

@@ -188,4 +188,29 @@
 
 **测试**：jvmTest `LangRoutedSpeechSynthesizerTest` 路由组 9（TC-AE-30：路由表 / 非 READY 走系统 / READY 英文零系统调用 / 异常同段回退 + 粘滞 / 取消重抛不降级 / stop 双转发 / 音色联动 / readiness 投影）。**全门禁绿**：jvmTest / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug（APK 324MB，内容验证含双模型 + 355 espeak 文件 + 4 个 .so）。神经 actual 平台管线不设模拟器自动化 = vivo 装机走查
 
-**状态**：已实现全门禁绿；vivo 装机验证待执行（任意词神经自然语音 / 英音切换下一英文段 / 中文段零变化 / 缓存命中段间隙缩短 / 杀进程预热 / 降级回退不中断）
+**状态**：✅ 已交付——vivo 装机验收通过（用户确认 2026-09-20），commit `e38c2a2`
+
+### ADR-012: FR-24 中文段端内实时神经 TTS（kokoro int8 双模型驻留）
+
+**日期**：2026-09-20（用户批准 SPEC_CHANGE_REQUEST_NEURAL_ZH_TTS + IMPLEMENTATION_PLAN_NEURAL_ZH_TTS（选型 kokoro int8）后执行）
+
+**决策**：
+- **选型**：kokoro-int8-multi-lang-v1_1（hexgrad Kokoro-82M-v1.1-zh，Apache-2.0，sherpa-onnx 官方转换）——2025 StyleTTS2 系、开源端内 zh 质量第一梯队；140MB 级体积 < melo 159MB 且**多说话人**（103 sid：zf 女 3-57 / zm 男 58-102——FR-19 中文音色可暴露，本批精选 4 枚）；int8 量化损失轻微、fp32 347.9MB 排除；**备胎 vits-melo-tts-zh_en**（VITS 路径一行 config 差异，fetch_deps 层切换代码零改动）；fanchen / matcha 质量与「去机械感」目标冲突排除。装机实证纪律：听感 / RTF 不达标 → 换 melo 复验
+- **双模型驻留（ADR-011「单模型驻留」裁决按语言族细化）**：piper 槽（EN 双口音，换载语义不变）+ kokoro 槽（ZH 单模型）各自独立单线程 dispatcher——**预热并行、合成互不阻塞**（EN↔ZH 交替段是词循环常态）；跨族不再互斥；RAM 由装机 PSS 实证裁决，超预期则 ZH 改懒加载
+- **kokoro 数据布局（FR-23 解包结论推广）**：模型 / voices / tokens 单文件 assets 直读（piper 实证路径）；espeak-ng-data / jieba dict 目录树 + 双 lexicon（us-en,zh 逗号列表）+ 3 rule fst（date / number / phone-zh）解包至 filesDir `tts/kokoro-data/`（完成标记 `<target>.complete` 邻侧统一，单文件与目录树同口径）——native 对目录树与逗号列表只认真实路径（ruleFsts 的 kaldifst 读取无 assets 回退）；gb-en 词典不随包（EN 段由 piper 承接，ZH 段拉丁词 us-en 覆盖）
+- **中文音色（sid）**：`settings.ttsVoiceZh`（FR-19 键复用，**设置页零改动**）→ 精选 4 枚（zf_001(3) 女·缺省 / zf_051(33) 女 / zm_009(58) 男 / zm_068(91) 男，官方 v1.1-zh sid 表）；**sid 进 WAV 缓存键**（切换音色不播旧缓存）；rate → speed 同 EN；pitch 不生效（两模型均无基频参数）
+- **readiness 与降级**：双预热落定后任一成功 READY / 双败 UNAVAILABLE（INITIALIZING 期全部段先走系统）；失败槽进程内粘滞（speak 直接抛）；路由器 ZH_CN 分支与 EN 同构（非 READY / 非取消异常 → 当场回退系统 + **每语言族**进程内粘滞，单模型故障不牵连另一族）；取消重抛红线不变
+- **采样率按模型**：piper 22050 / kokoro 24000——采样率取自 OfflineTts 实例并随 WAV 缓存头往返，AudioTrack 按段构建（缓存与播放管线本就参数化，零结构改动）
+- **体积**：assets `tts/kokoro/` 208.9MB（jieba 树排除脚本 / 文档），APK ~324MB → ~500MB（SCR 预估 465MB 按 tar 压缩体积；实际按解压后 assets 计，用户已批准档位）
+
+**测试**：jvmTest `LangRoutedSpeechSynthesizerTest` 13（TC-AE-30 EN 回归 8 + TC-AE-31 ZH 族 5；实测 13/13 绿 2026-09-20 晚）；门禁：jvmTest / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug。kokoro actual（sid / jieba / 24kHz / 双预热 / PSS）= vivo 装机走查
+
+**附录：kokoro 人耳否决 → melo 备胎切换（2026-09-20 晚）**：
+
+- **kokoro 批装机实证完成度**：门禁全绿（jvmTest 41 类 315/0，ImportPerfTest 按机器级故障先例排除——证据「bug list.md」第五/六签名）；装机坑 #5 修复后 kokoro 正常出声（diag `kokoro loaded speakers=103 rate=24000` / `prewarm en=true zh=true result=READY ms=2349` / PSS 488MB 双模型驻留稳定）。装机坑 #5：vendored `OfflineTts(assetManager≠null)` 时 kokoro 的 lexicon 逗号列表读取器一律走 assets 分支（「absolute path + assetManager NOT set to null」告警），绝对路径读失败 → native `exit(-1)` 拖崩全进程（EXIT_SELF status=255）→ **ZH 槽整槽 newFromFile**（全输入解包 filesDir）；piper 的 espeak 读取器无此问题，EN 槽保持 newFromAsset。**v1.20 的「kokoro 三大件 assets 直读」布局被证伪废止**
+- **人耳判定否决**：用户判定中文听感「还不如上一版」（系统 TTS）——质量目标未达，触发本 ADR「听感 / RTF 不达标 → 换 melo 复验」预授权条款，无需新 SCR
+- **melo 切换**：ZH 槽 = vits-melo-tts-zh_en（MyShell MeloTTS 官方转换，MIT；fp32 model 170.4MB——tarball 内 model.int8.onnx 为 git-lfs 指针桩不可用；44.1kHz；zh+en 混合 lexicon；jieba dict + date/number/phone ruleFsts + new_heteronym ruleFars 多音字）。数据布局沿袭装机坑 #5 教训**整槽 newFromFile** 解包 filesDir `tts/melo-data/`；中文音色 4 sid → **单音色**（模型单说话人平台限制；FR-19 键复用 / 未知值回缺省不变；voice id 进缓存键，换模型键空间天然隔离）；设备遗留 `tts/kokoro-data`（~168MB）启动后台回收
+- **melo 批实测（门禁）**：assets `tts/melo` 191.2MB / APK 464.7MB / jvmTest 41 类 315/0 + testDebugUnitTest + detekt×2 + checkPlatformBoundaries + assembleDebug 全绿（路由组 13 例零改动——引擎无关）；44.1kHz 与预热 RTF 以装机 diag 实测为准
+- **若 melo 人耳仍不达**：端内开源可选已尽第一梯队（kokoro 否决 / melo 待验 / matcha·fanchen 质量冲突 / zipvoice-distill-int8 109MB 新架构未验证）——届时向用户呈三选项（zipvoice 试装 / 云 TTS 立项 / 维持系统 TTS 撤 FR-24 神经部分），不再自行迭代
+
+**状态**：kokoro 批装机人耳否决；已按预授权备胎切换 melo（见附录）并全门禁绿；vivo 装机二轮人耳验收待执行（中文自然度 / 英文零变化 / 首播延迟与缓存 / 降级模拟 / 双预热 / PSS）
