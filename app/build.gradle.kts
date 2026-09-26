@@ -31,6 +31,13 @@ android {
     buildFeatures {
         compose = true
     }
+    // 本地 JVM 单测：未 mock 的 android.jar 方法（android.util.Log 等）返回默认值而非抛异常
+    // （WordPronouncer 失败路径仅记日志——测试关注协程不崩溃，不测日志本身）
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 // Kotlin↔Java 字节码版本一致（AGP compileOptions 17 ↔ Kotlin jvmTarget 17）

@@ -6,6 +6,7 @@ import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.AchievementType
 import com.vocabularybooster.domain.model.BookCompletedPayload
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.learning.MasterySource
 import com.vocabularybooster.learning.ResumeResult
 import com.vocabularybooster.learning.StartResult
@@ -102,7 +103,12 @@ class LearningSessionViewModelTest {
             scope = orchestratorScope,
         )
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        return LearningSessionViewModel(orchestrator, achievements, eventBus)
+        return LearningSessionViewModel(
+            orchestrator,
+            achievements,
+            eventBus,
+            WordPronouncer(synthesizer, settings, orchestratorScope), // FR-22 扩展：音标旁试听（共享调度器 scope）
+        )
             .also { viewModelStore.put("learning", it) }
     }
 
@@ -224,6 +230,28 @@ class LearningSessionViewModelTest {
         assertEquals(1, playing.segmentIndex) // 新词 seg0（用户可见 1 起）
         assertEquals(listOf(LearningSessionFixtures.SESSION_ID), engine.previousCalls) // 恰转发一次
         assertTrue(engine.markMasteredCalls.isEmpty()) // FR-11：previous 不触碰掌握
+    }
+
+    // —— N. 音标旁朗读转发（FR-22 扩展，TC-IPAPRON-05）——
+
+    @Test
+    fun pronounceWordSpeaksWithAccentWithoutTouchingSessionOrMastery() = runTest {
+        settings.ttsRate = 0.8f // 用户语速随试听（与会话朗读听感一致）
+        val vm = assembleWithStore()
+        vm.start(LearningSessionFixtures.BOOK_ID)
+        advanceUntilIdle()
+
+        vm.pronounceWord("boost", Lang.EN_GB) // N：一次性试听——不经编排器、零掌握
+        advanceUntilIdle()
+
+        val preview = synthesizer.requests.last() // 会话段之后追加的试听请求
+        assertEquals("boost", preview.text)
+        assertEquals(Lang.EN_GB, preview.lang)
+        assertEquals(0.8f, preview.rate, 0f)
+        assertEquals(1, engine.advanceCalls.size) // 会话零推进（纯预览不入段状态机）
+        assertTrue(engine.markMasteredCalls.isEmpty())
+        val playing = vm.ui as LearningUiState.Playing
+        assertEquals("boost", playing.wordText) // UI 状态不被试听扰动
     }
 
     // —— D. COMMAND_WINDOW 倒计时投影 ——

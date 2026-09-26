@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.event.DomainEventBus
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.PlaybackContent
 import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.learning.ExitResult
@@ -34,6 +35,7 @@ class LearningSessionViewModel(
     private val orchestrator: PlaybackOrchestrator,
     private val achievementRepository: AchievementRepository,
     private val eventBus: DomainEventBus,
+    private val pronouncer: WordPronouncer,
 ) : ViewModel() {
 
     /** 学习屏 UI 状态（PlaybackState 的 app 层 immutable 投影）。 */
@@ -193,6 +195,14 @@ class LearningSessionViewModel(
     fun next() = launchCommand { orchestrator.next() }
 
     fun replay() = launchCommand { orchestrator.replay() }
+
+    /**
+     * 音标旁朗读（FR-22 扩展）：以对应口音一次性试听当前词——纯预览，不经编排器、
+     * 不入播放段状态机、不改掌握；口音设置（settings.ttsAccent）不动。
+     */
+    fun pronounceWord(text: String, lang: Lang) {
+        pronouncer.pronounce(text, lang)
+    }
 
     /**
      * 「会了」按钮（FR-7 / NFR-8，Phase 5 Step 1 裁决 D2）：与语音命令汇合于编排器
@@ -437,7 +447,7 @@ private fun PlaybackState.toUiState(cachedWordText: String?, cachedSegment: Segm
         is PlaybackState.CommandWindow -> LearningUiState.CommandWindow(
             // CommandWindow 态不携带词文本（PlaybackState 契约）——由调用方传入展示缓存保持 UI 连续性，
             // 非第二播放状态源；窗口归属词恒等于此前 Playing 的词（advance 发生在窗口结束后）。
-            wordText = cachedWordText?.takeIf { it.isNotEmpty() } ?: "…",
+            wordText = cachedWordText?.takeIf { it.isNotEmpty() } ?: COMMAND_WINDOW_WORD_PLACEHOLDER,
             groupIndex = wordRef.groupIndex + 1,
             remainingMs = remainingMs,
             totalMs = totalMs,
@@ -456,6 +466,9 @@ internal fun SegmentType.label(): String = when (this) {
     SegmentType.EXAMPLE_AUDIO -> "例句"
     SegmentType.EXAMPLE_CN -> "例句译文"
 }
+
+/** CommandWindow 态词文本缺缓存时的占位（IpaSpeechRow 据此禁用朗读按钮——占位词不可播）。 */
+internal const val COMMAND_WINDOW_WORD_PLACEHOLDER: String = "…"
 
 // —— 学习屏词内容卡片（展示投影，纯渲染数据；播放语义全在编排器/Segment）——
 

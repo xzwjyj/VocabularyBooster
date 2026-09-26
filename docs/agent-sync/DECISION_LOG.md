@@ -306,3 +306,14 @@
 **根因**：`Media3AudioPlayer.resolveAssetToFileUri` 把 `asset://` 例句音频复制到 `cacheDir/video_audio/` 后**「已存在即复用」永不失效**——SCR-AUDIOTRIM / SCR-SENTMERGE 重裁音频靠「重打包即生效」分发（DB 路径不变），但设备 cache 里躺着旧剪裁拷贝（legion 实证：cache 旧 7.2s vs APK 新 13.27s），Media3 一直播旧件。与 ADR-008 词典 sqlite 旧缓存（user_version 铁律）同类教训，音频路径此前无失效机制。取证：whisper 逐个转写 APK 资产六文件，句尾词全部在（内容完整，问题只在设备缓存）；`audioDurationMs` 恒 null 且播放到自然 EOF，排除 DB 时长截断。
 **决策**（用户 2026-09-26 批准「全部修好」，纯 androidMain actual 内部改动）：废止复用缓存——**每次 prepare 从 APK 重拷**再以 file:// 播放（例句音频 ≤~200KB，逐次复制开销可忽略；与 user_version 失效机制同理取最简形态）。装新包后**全部例句音频自动换新**（六文件同机制，含可能残留旧拷贝的 clutch/precipice/rabid/ravenous），无需清缓存 / 无 DB 手术 / 无资产版本号。
 **验收**：门禁全绿（jvmTest / testDebugUnitTest×2 / detekt×2 / checkPlatformBoundaries / assembleDebug 648MB）。装机机器验证✓（2026-09-26 vivo）：修复前设备 cache 实证 legion/siege 拷贝 = 117230B（旧 7.2s，09-25 21:04 拷入）vs APK 资产 213361B（13.27s）；装新包后 ravenous 例句段缓存 mtime 即时刷新、legion 完整词循环播至例句段时缓存 117230→213361（新剪裁生效，例句原文段高亮播放取证）。人耳终验（整句 ~13.3s 到 bites away）交接用户。**装机走查教训**：① 走查期间用户同时操作设备（书单改名/派生本/暂停）会造成极困惑的假象状态（会话莫名暂停、零 speak 日志、回主页）——走查前先与用户确认设备独占；② 恢复会话从持久化段续播（可能直接落在译文段后直进下一词），验证例句音频段需走完整词循环（上一个回跳 + 全段播放）；③ unzip 通配符在 git-bash 对大 APK 列表会静默返回 0 条，验证 APK 资产完整性须先 `unzip -l > file` 全量列表再 grep。
+
+### SCR-IPAPRONOUNCE: US/UK 音标旁口音试听小按钮（2026-09-26）
+
+**问题**：用户提出「在US和UK音标旁边各增加一个语音朗读小按钮」——双音标（FR-22）只是文字，想听某词两种口音的实际发音差异，须进设置切口音再入会话才能对比，试听成本高。
+**决策**（用户 2026-09-26 直接指示实现；FR-22 v1.24 加法扩展，纯 app 层）：
+- **三处渲染点统一换件**：查词结果行 / 查词详情头 / 学习会话词卡面板的双音标行，由单行 Text（formatIpaLine）改为 `IpaSpeechRow`——US 与 UK 音标各旁挂一个小朗读按钮（自绘 Material volume_up 矢量图标 ic_volume_up.xml，紧凑 28dp 触达，**不引入 material-icons-extended 依赖**——648MB APK 下未开 R8 引入扩展图标库不值）；某侧音标缺失该侧按钮随音标一并不渲染（与单显规则一致）；CommandWindow 占位词（「…」）按钮禁用。
+- **一次性试听通道（非播放段）**：按钮 → 各 ViewModel `pronounceWord(text, lang)`（UI → VM 委托纪律）→ app 层 `WordPronouncer`（Koin 单例，应用级 Main.immediate scope）直接调 `SpeechSynthesizer` 端口以**点击口音** speak 该词——LangRouted 路由到 piper 神经引擎（FR-23），EN_GB 即英音模型，无厂商英音包设备同样生效。
+- **不改设置口音**：`settings.ttsAccent` 不读不写——点英音试听后，会话口音仍是用户设置值（副作用仅神经引擎换载英音模型，下次会话英文段换回、秒级加载延迟，记录为 v1 已知边界）；语速/音调沿用用户设置（与会话朗读听感一致）；重复点击取消上一次未播完的试听（SCR-BUTTONLAG 后取消即时停声；`CancellationException` 重抛红线）；失败仅记日志（降级语义在路由器内消化）；空白词不播。
+- **与播放段的并发关系（v1 已知边界）**：会话 TTS 段播放中试听 → Sherpa speakMutex 自然排队（插在当前段之后，不抢段）；例句原声段（Media3）不经该锁、可能短暂叠加。零引擎/编排器/端口/actual 改动，零 schema 变更。
+**测试**（TC-IPAPRON-01…05，TEST_PLAN v2.26）：app 单测 `WordPronouncerTest` 4（请求形态 / 空白防误触 / 重听取消上一次 + 取消重抛锁定 / 失败不崩溃）+ `LearningSessionViewModelTest` N 组（会话 VM 转发：试听请求追加、零推进零掌握、UI 不扰动）；androidTest 两处构造点补装配（Phase2UiFlowTest 用新 NoopSpeechSynthesizer、BookDeletedRecoveryUiSmokeTest 复用真实 TtsSpeechSynthesizer）。
+**验收**：门禁全绿（jvmTest up-to-date 合法——shared 零改动 / testDebugUnitTest×2 / detekt×2 / checkPlatformBoundaries / assembleDebug）；装机走查交接用户（三屏按钮出对应口音 / 试听后设置口音不变 / 重复点击即时换听 / 无英音词只显 US 侧）。

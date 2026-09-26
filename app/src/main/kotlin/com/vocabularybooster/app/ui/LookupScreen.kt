@@ -13,9 +13,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.domain.model.Word
 import org.koin.androidx.compose.koinViewModel
 
@@ -43,7 +45,7 @@ fun LookupScreen(
             )
             else -> LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
                 items(results, key = { it.wordId }) { word ->
-                    WordResultRow(word, onClick = { onWordClick(word.text) })
+                    WordResultRow(word, onClick = { onWordClick(word.text) }, onPronounce = viewModel::pronounceWord)
                     HorizontalDivider()
                 }
             }
@@ -52,21 +54,23 @@ fun LookupScreen(
 }
 
 @Composable
-private fun WordResultRow(word: Word, onClick: () -> Unit) {
+private fun WordResultRow(word: Word, onClick: () -> Unit, onPronounce: (String, Lang) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("search_result_${word.text}")
             .clickable { onClick() }
             .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(word.text, style = MaterialTheme.typography.titleMedium)
-        formatIpaLine(word.ipaAm, word.ipaBr)?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(start = 12.dp),
-            )
-        }
+        IpaSpeechRow(
+            wordText = word.text,
+            ipaAm = word.ipaAm,
+            ipaBr = word.ipaBr,
+            onPronounce = onPronounce,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(start = 12.dp),
+        )
     }
 }

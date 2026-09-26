@@ -14,6 +14,7 @@ import com.vocabularybooster.app.ui.LookupViewModel
 import com.vocabularybooster.app.ui.SettingsViewModel
 import com.vocabularybooster.app.ui.StatsViewModel
 import com.vocabularybooster.app.ui.WordBooksViewModel
+import com.vocabularybooster.app.ui.WordPronouncer
 import com.vocabularybooster.app.ui.WordSelectionEditorViewModel
 import com.vocabularybooster.app.ui.WordDetailViewModel
 import com.vocabularybooster.platform.BundledDictionaryProvider
@@ -138,8 +139,18 @@ val appModule = module {
         )
     }
 
-    viewModel { LookupViewModel(get()) }
-    viewModel { WordDetailViewModel(get(), get()) }
+    // FR-22 扩展：音标旁口音试听——一次性 speak（不改设置口音），查词/详情/会话三屏共用；
+    // 独立应用级 scope（Main.immediate，同编排器先例）——跨屏共用一份取消链（新试听取消旧试听）
+    single {
+        WordPronouncer(
+            synthesizer = get(),
+            settingsRepository = get(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        )
+    }
+
+    viewModel { LookupViewModel(get(), get()) }
+    viewModel { WordDetailViewModel(get(), get(), get()) }
     viewModel { WordBooksViewModel(get()) }
     viewModel { BookDetailViewModel(get()) }
     viewModel { WordSelectionEditorViewModel(get(), get()) } // Phase 8.5：词条选择编辑（FR-17）
@@ -150,5 +161,5 @@ val appModule = module {
     viewModel { ImportViewModel(get(), get()) }
 
     // Phase 4 Step 4：学习会话屏——ViewModel 只委托应用级 PlaybackOrchestrator 单例
-    viewModel { LearningSessionViewModel(get(), get(), get()) } // Phase 6：+ 勋章仓储/事件总线（仪式页快照）
+    viewModel { LearningSessionViewModel(get(), get(), get(), get()) } // Phase 6：+ 勋章仓储/事件总线（仪式页快照）
 }

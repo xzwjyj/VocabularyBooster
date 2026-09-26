@@ -45,6 +45,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** 查词（FR-1）：查询 → 结果列表。 */
 class LookupViewModel(
     private val wordRepository: WordRepository,
+    private val pronouncer: WordPronouncer,
 ) : ViewModel() {
 
     var query by mutableStateOf("")
@@ -61,12 +62,18 @@ class LookupViewModel(
             searched = true
         }
     }
+
+    /** 音标旁朗读（FR-22 扩展）：以对应口音一次性试听该结果词，不改设置口音。 */
+    fun pronounceWord(text: String, lang: Lang) {
+        pronouncer.pronounce(text, lang)
+    }
 }
 
 /** 词条详情（FR-2 排序渲染）+ 保存流（FR-5）。 */
 class WordDetailViewModel(
     private val wordRepository: WordRepository,
     private val wordBookRepository: WordBookRepository,
+    private val pronouncer: WordPronouncer,
 ) : ViewModel() {
 
     var detail by mutableStateOf<WordDetail?>(null)
@@ -102,6 +109,11 @@ class WordDetailViewModel(
             loadFailed = detail == null
             books = wordBookRepository.getWordBooks()
         }
+    }
+
+    /** 音标旁朗读（FR-22 扩展）：以对应口音一次性试听当前词，不改设置口音。 */
+    fun pronounceWord(text: String, lang: Lang) {
+        pronouncer.pronounce(text, lang)
     }
 
     fun toggleBook(wordBookId: Long) {

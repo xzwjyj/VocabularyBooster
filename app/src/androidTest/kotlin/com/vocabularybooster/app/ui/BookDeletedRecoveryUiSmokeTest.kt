@@ -75,6 +75,7 @@ class BookDeletedRecoveryUiSmokeTest {
     private lateinit var orchestrator: PlaybackOrchestrator
     private lateinit var audioPlayer: Media3AudioPlayer
     private lateinit var synthesizer: TtsSpeechSynthesizer
+    private lateinit var settings: SqlDelightLearningSettingsRepository
     private lateinit var scope: CoroutineScope
 
     @Before
@@ -83,7 +84,7 @@ class BookDeletedRecoveryUiSmokeTest {
             withContext(Dispatchers.Main.immediate) {
                 driver = AndroidSqliteDriver(VocabularyDatabase.Schema, context) // in-memory
                 database = VocabularyDatabase(driver)
-                val settings = SqlDelightLearningSettingsRepository(database)
+                settings = SqlDelightLearningSettingsRepository(database)
                 val sessions = SqlDelightLearningSessionRepository(database, clock)
                 books = SqlDelightWordBookRepository(database, clock)
                 words = SqlDelightWordRepository(database)
@@ -149,11 +150,13 @@ class BookDeletedRecoveryUiSmokeTest {
         val exited = AtomicBoolean(false)
         val viewModel = runBlocking {
             withContext(Dispatchers.Main.immediate) {
-                // Phase 6 三参（仪式页快照）：独立栈补齐勋章仓储 + 事件总线（BOOK_DELETED 路径不触及）
+                // Phase 6 三参（仪式页快照）：独立栈补齐勋章仓储 + 事件总线（BOOK_DELETED 路径不触及）；
+                // +音标旁试听（FR-22 扩展，朗读按钮不在本用例断言路径——真实端口装配即可）
                 LearningSessionViewModel(
                     orchestrator,
                     SqlDelightAchievementRepository(database),
                     DefaultDomainEventBus(),
+                    WordPronouncer(synthesizer, settings, scope),
                 )
             } // 全新编排器 = 进程重建
         }

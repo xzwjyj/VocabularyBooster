@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.playback.Segment
 import com.vocabularybooster.playback.SegmentOwner
 import com.vocabularybooster.playback.SegmentType
@@ -102,6 +103,7 @@ fun LearningSessionScreen(
             detail = viewModel.wordDetail,
             onExit = onExit,
             onMasterWord = viewModel::masterCurrentWord,
+            onPronounce = viewModel::pronounceWord,
         )
 
         // 麦克风权限：非阻断提示条（仅会话中显示；点击才发起系统授权，无自动请求）
@@ -214,6 +216,7 @@ private fun ColumnScope.SessionContent(
     detail: LearningWordDetail?,
     onExit: () -> Unit,
     onMasterWord: () -> Unit,
+    onPronounce: (String, Lang) -> Unit,
 ) {
     when (state) {
         is LearningUiState.Loading -> {
@@ -245,8 +248,10 @@ private fun ColumnScope.SessionContent(
                 )
             }
             WordDetailPanel(
+                wordText = state.wordText,
                 detail = detail,
                 currentSegment = state.currentSegment,
+                onPronounce = onPronounce,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -263,8 +268,10 @@ private fun ColumnScope.SessionContent(
                     .testTag("learning_state"),
             )
             WordDetailPanel(
+                wordText = state.wordText,
                 detail = detail,
                 currentSegment = state.currentSegment,
+                onPronounce = onPronounce,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -315,8 +322,10 @@ private fun ColumnScope.SessionContent(
                     .testTag("btn_mastered"),
             ) { Text("会了") }
             WordDetailPanel(
+                wordText = state.wordText,
                 detail = detail,
                 currentSegment = null, // 窗口期无播放内容——卡片平铺不高亮
+                onPronounce = onPronounce,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -334,8 +343,10 @@ private fun ColumnScope.SessionContent(
                     .testTag("learning_state"),
             )
             WordDetailPanel(
+                wordText = state.wordText,
                 detail = detail,
                 currentSegment = state.currentSegment,
+                onPronounce = onPronounce,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -414,14 +425,16 @@ private fun WordHeader(wordText: String, groupIndex: Int, wordPlaying: Boolean =
 }
 
 /**
- * 词内容卡片面板（bug list「学习会话显示完整词信息」）：音标 + 释义卡 + 例句卡滚动列表。
- * 高亮 = 当前段 owner 命中的卡片（primaryContainer 底 + primary 边框），段内 EN/CN 行加粗。
- * detail 为 null（换词加载间隙）时收起，不渲染旧词内容。
+ * 词内容卡片面板（bug list「学习会话显示完整词信息」）：音标（+口音试听按钮，FR-22 扩展）
+ * + 释义卡 + 例句卡滚动列表。高亮 = 当前段 owner 命中的卡片（primaryContainer 底 + primary 边框），
+ * 段内 EN/CN 行加粗。detail 为 null（换词加载间隙）时收起，不渲染旧词内容。
  */
 @Composable
 private fun WordDetailPanel(
+    wordText: String,
     detail: LearningWordDetail?,
     currentSegment: Segment?,
+    onPronounce: (String, Lang) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (detail == null) return
@@ -431,16 +444,17 @@ private fun WordDetailPanel(
             .verticalScroll(rememberScrollState())
             .testTag("learning_word_detail"),
     ) {
-        formatIpaLine(detail.ipaAm, detail.ipaBr)?.let { ipa ->
-            Text(
-                ipa,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier
-                    .padding(bottom = 4.dp)
-                    .testTag("learning_word_ipa"),
-            )
-        }
+        IpaSpeechRow(
+            wordText = wordText,
+            ipaAm = detail.ipaAm,
+            ipaBr = detail.ipaBr,
+            onPronounce = onPronounce,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier
+                .padding(bottom = 4.dp)
+                .testTag("learning_word_ipa"),
+        )
         detail.definitions.forEach { definition ->
             DefinitionCard(
                 definition = definition,

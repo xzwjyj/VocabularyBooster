@@ -189,6 +189,8 @@
 
 **Previous 组内回退控制（SCR-PREVWORD，v2.25 已登记，TC-AE-34）**：FR-11 加法扩展——学习会话「上一个」按钮，与「下一个」逐点对称的纯导航（组内降序取最近未掌握前驱 / 跳 MASTERED / 组首回绕组尾 / 零掌握写入 / 窗口作废 / Paused 可用）。装机走查：vivo 双行控制条布局、组首回绕体感（按钮全程有效）、窗口/暂停态下「上一个」行为、词卡面板随换词刷新。
 
+**音标旁口音试听（SCR-IPAPRONOUNCE，v2.26 已登记，TC-IPAPRON-01…05）**：FR-22 v1.24 加法扩展——纯 app 层一次性 speak（`WordPronouncer`，端口/引擎零改动不设引擎用例）。app 单测 `WordPronouncerTest` 4 用例（01 请求形态：词文本 / 点击口音 / 语速音调沿用设置 / utteranceId 唯一；02 空白词防误触；03 重听取消上一次——取消传播进 speak 内锁**取消重抛红线**；04 speak 失败仅记日志协程正常结束）+ `LearningSessionViewModelTest` N 组 1 用例（05 会话 VM 转发：试听追加请求、会话零推进零掌握、UI 状态不扰动）。装机走查：vivo 三屏（查词结果 / 查词详情 / 会话面板）点 US/UK 按钮出对应口音语音、试听后设置页口音不变、重复点击即时换听、无英音音标词只显 US 侧按钮。
+
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
@@ -214,7 +216,7 @@
 | FR-19 | TC-UI 音色组（VM 单测 + 冒烟 + jvmTest 设置键往返） |
 | FR-20 | TC-UI 统计组（jvmTest 聚合 + 统计卡冒烟） |
 | FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
-| FR-22 | TC-UI 口音组（jvmTest SegmentBuilder 映射 + 编排器口音段 + 设置键往返 + 回填组英音 / app 单测 VM 口音 + TtsLocales EN_GB / androidTest 设置冒烟；装机走查双显与口音朗读） |
+| FR-22 | TC-UI 口音组（jvmTest SegmentBuilder 映射 + 编排器口音段 + 设置键往返 + 回填组英音 / app 单测 VM 口音 + TtsLocales EN_GB / androidTest 设置冒烟；装机走查双显与口音朗读）+ TC-IPAPRON 组（v1.24 音标旁试听） |
 | FR-23 | TC-AE-30 路由组（jvmTest LangRoutedSpeechSynthesizerTest 9：路由 / 非 READY 走系统 / 异常同段回退粘滞 / 取消红线 / stop 双转发 / 音色联动 / readiness 投影）；神经 actual 装机走查（自然度 / 英音 / 缓存命中 / 降级不中断） |
 | FR-24 | TC-AE-31 ZH 族组（jvmTest LangRoutedSpeechSynthesizerTest 5：全语言路由 / ZH 非 READY 走系统 / ZH 异常回退粘滞 / 每族独立 / ZH 取消与音色联动）+ TC-AE-32 数字归一化组（jvmTest ZhTtsTextNormalizerTest 边界表，SCR-ZHNUM）；melo actual 装机走查（中文自然度 / 首播延迟与缓存 / 双预热 / EN↔ZH 驻留与 PSS；数字读音装机复验） |
 
@@ -304,3 +306,4 @@
 | 2.23 | 2026-09-25 | **ZH TTS 数字归一化用例登记（SCR-ZHNUM / FR-24 缺陷修复）**：新增 **TC-AE-32**（jvmTest `ZhTtsTextNormalizerTest` 边界组 7：整数位权边界表（0/10/100/101/110/1000/1001/1010/1100/3000/6000/万级/十万零一十二/亿级三例/123456789）/ 小数逐位 / 前导零逐位 / 字母守卫（MP3·3D·1990s）/ >12 位防御不转 / legion 装机原文混合句 / 无数字与空串）+ 测试组段 + FR 矩阵 FR-24 行注记；装机走查项（legion 段数字中读复验 + 旧缓存不复发）。根因：zipvoice 前端对非 CJK 词硬编码 espeak en-us，半角数字被英读。上游：`SPEC_CHANGE_REQUEST_ZH_NUMBER_TTS.md`、AUDIO_ENGINE_SPEC v2.7 |
 | 2.24 | 2026-09-26 | **拼读字母停顿用例登记（SCR-SPELLPAUSE / FR-10 缺陷修复 + FR-15 新设置）**：新增 **TC-AE-33**（commonTest `SpellingAudioAssemblerTest` 拼接数学组 6 + jvmTest 编排器 letterPauseMs 携带/游标懒读（L4）+ 设置仓储新键 round-trip/越界/损坏 + app 设置 VM 缺省与即时持久化；`SegmentBuilderTest`/`PlaybackOrchestratorRestartTest` 期望更新为逗号格式）+ 测试组段 + FR 矩阵 FR-10/FR-15 行注记；装机走查项（人耳一字母一顿 / 0.2s·1.0s 设置变化可感 / 旧缓存不复发）。上游：PROJECT_SPEC v1.22、`SPEC_CHANGE_REQUEST_SPELLING_PAUSE.md`、AUDIO_ENGINE_SPEC v2.8 |
 | 2.25 | 2026-09-26 | **Previous 组内回退控制用例登记（SCR-PREVWORD / FR-11 v1.23 加法扩展）**：新增 **TC-AE-34**（commonTest `LearningEnginePreviousTest` 11 用例 + jvmTest `PlaybackOrchestratorStateTest` TC-AE-34 组 5 用例与终态风暴补 previous + `PlaybackOrchestratorRestartTest` 陈旧 position 镜像 + app `LearningSessionViewModelTest` J2 转发）+ 测试组段 + FR 矩阵 FR-11 行注记；装机走查项（双行控制条 / 组首回绕体感 / 窗口与暂停态 / 词卡面板刷新）。上游：PROJECT_SPEC v1.23、`SPEC_CHANGE_REQUEST_PREV_WORD.md`、AUDIO_ENGINE_SPEC v2.9、LEARNING_ENGINE_SPEC v1.6 |
+| 2.26 | 2026-09-26 | **音标旁口音试听用例登记（SCR-IPAPRONOUNCE / FR-22 v1.24 加法扩展）**：新增 **TC-IPAPRON-01…05**（app 单测 `WordPronouncerTest` 4：请求形态（词文本/口音/语速音调沿用设置/utteranceId 唯一）/ 空白词防误触 / 重听取消上一次（取消重抛红线锁定）/ 失败仅记日志；`LearningSessionViewModelTest` N 组 1：会话 VM 转发零推进零掌握 UI 不扰动——纯 app 层无引擎用例）+ 测试组段 + FR 矩阵 FR-22 行注记；装机走查项（三屏按钮出对应口音 / 试听不改设置口音 / 重复点击即时换听 / 无英音词只显 US 侧按钮）。上游：PROJECT_SPEC v1.24、AUDIO_ENGINE_SPEC v2.11、DECISION_LOG SCR-IPAPRONOUNCE |

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.vocabularybooster.data.SqlDelightLearningSettingsRepository
 import com.vocabularybooster.data.SqlDelightWordBookRepository
 import com.vocabularybooster.data.SqlDelightWordRepository
 import com.vocabularybooster.data.seed.SEED_DICTIONARY_JSON
@@ -23,6 +24,9 @@ import com.vocabularybooster.data.seed.SeedImporter
 import com.vocabularybooster.db.VocabularyDatabase
 import com.vocabularybooster.domain.repository.WordBookRepository
 import com.vocabularybooster.domain.repository.WordRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
@@ -64,8 +68,14 @@ class Phase2UiFlowTest {
     }
 
     private fun composeLookupToDetail() {
-        val lookupVm = LookupViewModel(wordRepository)
-        val detailVm = WordDetailViewModel(wordRepository, wordBookRepository)
+        // 音标旁朗读按钮（FR-22 扩展）不在本冒烟断言路径——零副作用 Fake 装配即可
+        val pronouncer = WordPronouncer(
+            synthesizer = NoopSpeechSynthesizer,
+            settingsRepository = SqlDelightLearningSettingsRepository(database),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        )
+        val lookupVm = LookupViewModel(wordRepository, pronouncer)
+        val detailVm = WordDetailViewModel(wordRepository, wordBookRepository, pronouncer)
         composeRule.setContent {
             MaterialTheme {
                 var openWord by remember { mutableStateOf<String?>(null) }
