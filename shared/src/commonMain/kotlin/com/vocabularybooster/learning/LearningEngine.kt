@@ -46,6 +46,20 @@ public interface LearningEngine {
     public suspend fun advance(sessionId: Long): AdvanceResult
 
     /**
+     * 回退到上一个待播词（FR-11 Previous / SCR-PREVWORD 2026-09-26，LE spec §5 previousWord）：
+     * [advance] 的镜像裁决——纯位置推进，不改掌握状态。排序 = 当前组（未掌握词的最小
+     * groupIndex 组）内 `orderInGroup` **降序**取最近未掌握前驱（跳过 MASTERED，与 advance 对称）；
+     * 组首回绕到组内**最后一个**未掌握词（镜像前进方向的组内循环回绕；组内唯一未掌握词 =
+     * 回绕自身，播放层等效重播）。previous 永不离开当前组（更早的组已全掌握）→
+     * [AdvanceResult.NextWord.completedGroupIndex] 恒 null（组完成载体仅属前进推进）。
+     * 当前位同为持久化 PLAYING 推导（零引擎内存位）；无播放位（开场/掌握后顺延）→
+     * 取组内最大 `orderInGroup`（advance 对称取最小的镜像）。终态会话重复调用 = 幂等只读
+     * （与 advance 同一防线）；会话不存在 →
+     * [com.vocabularybooster.domain.repository.RepositoryValidationException]。
+     */
+    public suspend fun previous(sessionId: Long): AdvanceResult
+
+    /**
      * 退出会话（LE spec §8，Phase 3 Step 5C/5D）：会话 ACTIVE 时按**数据库实时状态**三分支裁决——
      * 分支 C（REMAINING = Q3 = 0）→ COMPLETED；分支 A（零掌握，Q3 > 0）→ ABANDONED，
      * [ExitResult.derivedWordBookId] = null；分支 B（部分掌握，Q3 > 0）→ ABANDONED +

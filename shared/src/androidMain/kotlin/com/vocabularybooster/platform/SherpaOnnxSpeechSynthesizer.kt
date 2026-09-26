@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import com.k2fsa.sherpa.onnx.GenerationConfig
+import com.k2fsa.sherpa.onnx.GeneratedAudio
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
@@ -18,7 +19,9 @@ import com.vocabularybooster.speech.Readiness
 import com.vocabularybooster.speech.SegmentResult
 import com.vocabularybooster.speech.SpeakRequest
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.speech.SpellingAudioAssembler
 import com.vocabularybooster.speech.TtsVoice
+import com.vocabularybooster.speech.ZhTtsTextNormalizer
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
@@ -30,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -57,6 +61,10 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   不足段补静音至超缓冲——vivo mixer 对未填满缓冲的轨道不启动消费，vivo 实证）；阻塞写在
  *   IO 线程执行（编排器经 Main 调入）；float → 16-bit LE 单声道统一管线；采样率按模型取自
  *   OfflineTts 实例（piper 22050 / zipvoice 24000）并随 WAV 缓存头往返。
+ * - **拼读段精确停顿**（SCR-SPELLPAUSE）：`letterPauseMs` 非空的 EN 段按逗号拼读格式拆字母
+ *   逐个 `generate`，PCM 相邻拼接、字母间插 pauseMs 静音（SpellingAudioAssembler——逗号自然
+ *   停顿是模型韵律不可调，精确停顿必须显式静音）；拼接结果整段进 WAV 缓存（键含 sp{ms} 维度），
+ *   命中后零合成。
  * - **中文音色**：zipvoice 零样本——每次合成需 referenceAudio + referenceText（prompt.wav）；
  *   `availableVoices(ZH_CN)` 恒一枚（zipvoice 零样本不限音色，固定用内置 prompt）。
  * - **暂停/恢复语义**（ADR-09，同系统 TTS 段）：stop = 标记 + AudioTrack pause/flush，
@@ -174,12 +182,22 @@ public class SherpaOnnxSpeechSynthesizer(
         } else {
             null
         }
+        // ZH 段数字预归一化（SCR-ZHNUM）：zipvoice 前端对非 CJK 词硬编码 espeak en-us，
+        // 半角数字（3000→"three thousand"）被英读；归一化文本同时进缓存键——
+        // 旧错误读音缓存因键变天然失键不复用（LRU 自然淘汰）
+        val synthText = if (request.lang == Lang.ZH_CN) {
+            ZhTtsTextNormalizer.normalize(request.text)
+        } else {
+            request.text
+        }
         val engineTag = if (request.lang == Lang.ZH_CN) "zipvoice" else "vits"
-        val cacheFile = cacheFileFor(request.lang, request.text, speed, voiceId)
-        val cached = readCache(cacheFile)
+        val pauseMs = request.letterPauseMs
+        val cacheFile = cacheFileFor(request.lang, synthText, speed, voiceId, pauseMs)
+        // SCR-BUTTONLAG：缓存读取（长段 ~1MB 文件 IO）移出主线程（编排器 scope = Main.immediate）
+        val cached = withContext(Dispatchers.IO) { readCache(cacheFile) }
         diag(
-            "speak lang=${request.lang} engine=$engineTag " +
-                "len=${request.text.length} speed=$speed cache=${cached != null}",
+            "speak lang=${request.lang} engine=$engineTag len=${synthText.length} " +
+                "speed=$speed pause=${pauseMs ?: '-'} cache=${cached != null}",
         )
 
         acquireFocus()
@@ -207,13 +225,16 @@ public class SherpaOnnxSpeechSynthesizer(
                             referenceText = ZIPVOICE_PROMPT_TEXT,
                             numSteps = 4,
                         )
-                        model!!.generateWithConfig(text = request.text, config = genConfig)
+                        model!!.generateWithConfig(text = synthText, config = genConfig)
+                    } else if (pauseMs != null) {
+                        model!!.generateSpelling(synthText, pauseMs, speed)
                     } else {
-                        model!!.generate(text = request.text, sid = 0, speed = speed)
+                        model!!.generate(text = synthText, sid = 0, speed = speed)
                     }
                 }
                 diag("generated samples=${audio.samples.size} rate=${audio.sampleRate} ms=${audio.samples.size * 1000 / audio.sampleRate}")
-                data = audio.samples.toPcm16Le()
+                // SCR-BUTTONLAG：float→PCM16 转换（~50 万样本循环）移出主线程
+                data = withContext(Dispatchers.IO) { audio.samples.toPcm16Le() }
                 // 后台写缓存（失败仅记忽略——缓存是优化非正确性）
                 scope.launch {
                     runCatching {
@@ -244,17 +265,23 @@ public class SherpaOnnxSpeechSynthesizer(
                 // 对策：缓冲缩至 16KB，且不足一缓冲的段补静音至超出缓冲（必然填满 + 阻塞写
                 // 各至少一次）；补静音 ≤0.46s 尾巴仅落在 <16KB 的微型段。阻塞写在 IO 线程执行
                 //（编排器经 Main 调 speak，大段可写数秒）。
+                //
+                // SCR-BUTTONLAG：循环同时感知协程取消——阻塞写只认 stopRequested 会让
+                // cancelAndJoin（编排器 pause/next/会了/exit 均先取消驱动协程再 stop()）以 1×
+                // 实时速率喂完整段剩余 PCM（长中文段可达数秒~十几秒），期间声音照播、状态不切。
+                // 取消后 CE 在 awaitDrain 首个 delay 抛出 → finally 立即 pause/flush/release 停声；
+                // 最坏等一个 16KB 块（≤0.4s）。
                 val first = minOf(data.size, WRITE_CHUNK_BYTES)
                 writeBytes(data.copyOfRange(0, first))
                 newTrack.play()
                 var offset = first
-                while (offset < data.size && !stopRequested) {
+                while (offset < data.size && !stopRequested && isActive) {
                     val len = minOf(data.size - offset, WRITE_CHUNK_BYTES)
                     writeBytes(data.copyOfRange(offset, offset + len))
                     offset += len
                 }
                 val padNeeded = TRACK_BUFFER_BYTES + PAD_EXTRA_BYTES - writtenShorts.toInt() * BYTES_PER_SHORT
-                if (padNeeded > 0 && !stopRequested) {
+                if (padNeeded > 0 && !stopRequested && isActive) {
                     writeBytes(ByteArray(padNeeded))
                 }
             }
@@ -330,6 +357,22 @@ public class SherpaOnnxSpeechSynthesizer(
     }
 
     private fun dispatcherFor(lang: Lang) = if (lang == Lang.ZH_CN) zipvoiceDispatcher else piperDispatcher
+
+    /**
+     * SCR-SPELLPAUSE：拼读段逐字母合成 + 静音拼接（字母子段空音频剔除——撇号/空格等
+     * 非字母字符合成必空）；全部字母无有效音频 → 抛异常由路由器按语言族降级。
+     */
+    private fun OfflineTts.generateSpelling(text: String, pauseMs: Int, speed: Float): GeneratedAudio {
+        val letters = SpellingAudioAssembler.lettersOf(text)
+        val parts = letters.map { generate(text = it, sid = 0, speed = speed).samples }
+            .filter { it.isNotEmpty() }
+        check(parts.isNotEmpty()) { "拼读字母合成无有效音频（letters=${letters.size}）" }
+        val rate = sampleRate()
+        return GeneratedAudio(
+            samples = SpellingAudioAssembler.joinWithSilence(parts, pauseMs, rate),
+            sampleRate = rate,
+        )
+    }
 
     private fun createPiperTts(lang: Lang): OfflineTts {
         val (dir, onnx) = when (lang) {
@@ -470,11 +513,19 @@ public class SherpaOnnxSpeechSynthesizer(
 
     // ---- 磁盘缓存（16-bit PCM WAV，自写头；命中免合成）----
 
-    private fun cacheFileFor(lang: Lang, text: String, speed: Float, voiceKey: String?): File {
-        // voiceKey：ZH 段音色 id——切换音色不得命中旧缓存；EN 无音色维度，键格式不变
+    private fun cacheFileFor(
+        lang: Lang,
+        text: String,
+        speed: Float,
+        voiceKey: String?,
+        letterPauseMs: Int? = null,
+    ): File {
+        // voiceKey：ZH 段音色 id——切换音色不得命中旧缓存；EN 无音色维度，键格式不变。
+        // letterPauseMs：拼读段停顿维度（SCR-SPELLPAUSE）——改停顿设置不得命中旧拼接缓存。
         val voicePart = voiceKey?.let { "|$it" } ?: ""
+        val pausePart = letterPauseMs?.let { "|sp$it" } ?: ""
         val key = MessageDigest.getInstance("SHA-256")
-            .digest("${lang.tag}$voicePart|${String.format(Locale.ROOT, "%.2f", speed)}|$text".toByteArray())
+            .digest("${lang.tag}$voicePart|${String.format(Locale.ROOT, "%.2f", speed)}|$text$pausePart".toByteArray())
             .joinToString("") { "%02x".format(it) }
         return File(cacheDir, "$key.wav")
     }

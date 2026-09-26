@@ -270,4 +270,31 @@ class SettingsViewModelTest {
             Dispatchers.resetMain()
         }
     }
+
+    // —— SCR-SPELLPAUSE 拼读字母停顿：缺省 400ms、滑杆变更即时持久化、失败不前滚 ——
+
+    @Test
+    fun spellingPauseDefaultsAndSliderChangePersistsImmediately() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fake = newFake()
+            val vm = SettingsViewModel(fake, newSynth())
+            advanceUntilIdle()
+            assertEquals(400, vm.spellingPauseMs) // 缺省
+            vm.onSpellingPauseChange(250)
+            advanceUntilIdle()
+            assertEquals(250, fake.spellingPauseMs)
+            assertEquals(250, vm.spellingPauseMs)
+            assertNull(vm.message)
+
+            fake.failWrites = true
+            vm.onSpellingPauseChange(800)
+            advanceUntilIdle()
+            assertEquals(250, fake.spellingPauseMs) // 未写入
+            assertEquals(250, vm.spellingPauseMs) // 显示不前滚
+            assertEquals("保存失败：测试注入的写入失败", vm.message)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
 }

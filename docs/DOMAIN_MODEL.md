@@ -260,7 +260,7 @@ ACTIVE ──用户退出，0<MASTERED 且 REMAINING>0─────▶ ABANDON
 ### 8.3 SessionWord
 ```
 PENDING ──开始播放──▶ PLAYING ──"会了"──▶ MASTERED
-   └──────────────────Next 跳过──────────────▶（回到组内循环，仍 PENDING）
+   └─────────────Next/Previous 跳过（v1.7）─────▶（回到组内循环，仍 PENDING）
 ```
 
 **SKIPPED 裁决（v1，Phase 3 规格对齐）**：v1 学习引擎**不产生 `SKIPPED`**。Next 控制不改变状态（词保持 PENDING，留在组内循环等待下轮）；`nextWord()`、退出三分支裁决、完成检测、会话恢复均不依赖该状态。`SKIPPED` 保留为 schema 预留扩展状态（未来"用户显式跳过并移出循环"类需求），启用须走需求变更流程（PROJECT_SPEC §7）。
@@ -298,7 +298,7 @@ completion = masteredEntryCount / entryCount
 | `CompletionDetector` | 组完成→推进下一组；书完成→事件 | LEARNING_ENGINE_SPEC §7 |
 | `WordBookDeriver` | 退出三分支裁决（零掌握不派生 / 部分掌握且复制交集非空派生 DERIVED 快照本 / 全部完成不派生；交集 = 当前母本 entries ∩ SessionWord 非 MASTERED，空则不建本） | LEARNING_ENGINE_SPEC §8 |
 | `SegmentBuilder` | Word + 开关 → 播放分段序列（I-8） | AUDIO_ENGINE_SPEC §3 |
-| `PlaybackOrchestrator` | 播放状态机（Play/Pause/Resume/Next/Replay/Exit） | AUDIO_ENGINE_SPEC §5 |
+| `PlaybackOrchestrator` | 播放状态机（Play/Pause/Resume/Next/Previous/Replay/Exit） | AUDIO_ENGINE_SPEC §3/§6 |
 | `CommandParser` | 识别文本 → VoiceCommand | AUDIO_ENGINE_SPEC §7 |
 | `ImportEngine` | 编码检测/解析/去重/流式导入 | IMPORT_SPEC |
 | `AchievementEngine` | 事件 → 判定 → 幂等授予 | ACHIEVEMENT_SPEC |
@@ -314,3 +314,4 @@ completion = masteredEntryCount / entryCount
 | 1.4 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§2.4 DERIVED「未掌握词快照」补边界——以退出时刻母本仍存在的 entry 为界（当前母本 WordBookEntry ∩ 本会话 SessionWord 非 MASTERED），交集为空不建空本；§10 WordBookDeriver 职责同步 |
 | 1.5 | 2026-09-18 | Phase 6 落地形态：§9 载荷对齐实现（WordBookCompleted = sessionId+wordBookId；AchievementUnlocked = achievementId+type(String)+wordBookId?）+ 落地形态段（DomainEventBus 端口 / DefaultDomainEventBus / ✅ 标记 v1 已实现两事件） |
 | 1.6 | 2026-09-18 | Phase 7 落地形态：§9 `ImportFinished` ✅——载荷对齐实现（targetWordBookId + 六项计数，原「五项计数报告」口径修正）；✅ 事件计数 两枚 → 三枚 |
+| 1.7 | 2026-09-26 | **SCR-PREVWORD（FR-11 v1.23 Previous 控制）**：§8.3 图「Next 跳过」→「Next/Previous 跳过」（previous 与 next 同为纯导航，词保持 PENDING 留在组内循环）；§10 `PlaybackOrchestrator` 控制清单 +Previous（并修正过时的规格引用 §5 → §3/§6）。上游：PROJECT_SPEC v1.23 |

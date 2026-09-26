@@ -81,8 +81,12 @@ public object SegmentBuilder {
         durationMs = example.audioDurationMs,
     )
 
-    /** SPELLING 逐字母文本：`booster` → `b-o-o-s-t-e-r`（AUDIO_ENGINE_SPEC §1 表）。 */
-    private fun spellingText(text: String): String = text.lowercase().map { "$it" }.joinToString("-")
+    /**
+     * SPELLING 逐字母文本：`booster` → `b, o, o, s, t, e, r`（AUDIO_ENGINE_SPEC §1 表）。
+     * 逗号分隔（SCR-SPELLPAUSE）：未实现逐字母拼接的渲染路径靠逗号获得自然停顿；
+     * 神经/系统 actual 按 `", "` 拆字母逐个合成 + 显式静音（时长见 settings.spellingPauseMs）。
+     */
+    private fun spellingText(text: String): String = text.lowercase().map { "$it" }.joinToString(", ")
 
     private const val BASE_RATE_SCALE: Float = 1.0f
     private const val SPELLING_RATE_SCALE: Float = 0.8f

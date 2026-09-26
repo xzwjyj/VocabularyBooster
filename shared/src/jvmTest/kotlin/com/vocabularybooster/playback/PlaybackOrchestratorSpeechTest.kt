@@ -49,6 +49,7 @@ class PlaybackOrchestratorSpeechTest {
     private class RecordingEngine(var snapshot: SessionSnapshot) : LearningEngine {
         val markMasteredCalls = mutableListOf<Triple<Long, Long, MasterySource>>()
         val advanceCalls = mutableListOf<Long>()
+        val previousCalls = mutableListOf<Long>()
         val exitCalls = mutableListOf<Long>()
 
         /** advance 词序（循环脚本）；耗尽 → BookComplete。首元素 = 起始词。 */
@@ -70,6 +71,19 @@ class PlaybackOrchestratorSpeechTest {
                 AdvanceResult.BookComplete
             } else {
                 AdvanceResult.NextWord(WordRef(sessionId, wordId, groupIndex = 0, orderInGroup = advanceCalls.size - 1), null)
+            }
+        }
+
+        /** previous 词序（循环脚本，SCR-PREVWORD）；耗尽 → BookComplete。 */
+        var previousWordIds: List<Long> = emptyList()
+
+        override suspend fun previous(sessionId: Long): AdvanceResult {
+            val wordId = previousWordIds.getOrNull(previousCalls.size)
+            previousCalls += sessionId
+            return if (wordId == null) {
+                AdvanceResult.BookComplete
+            } else {
+                AdvanceResult.NextWord(WordRef(sessionId, wordId, groupIndex = 0, orderInGroup = 0), null)
             }
         }
 

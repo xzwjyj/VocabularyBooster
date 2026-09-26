@@ -48,7 +48,7 @@ class SegmentBuilderTest {
 
         val expected = listOf(
             Triple(SegmentType.PRONUNCIATION, "booster", Lang.EN_US),
-            Triple(SegmentType.SPELLING, "b-o-o-s-t-e-r", Lang.EN_US),
+            Triple(SegmentType.SPELLING, "b, o, o, s, t, e, r", Lang.EN_US),
             Triple(SegmentType.MEANING_EN, "a device", Lang.EN_US),
             Triple(SegmentType.MEANING_CN, "助推器", Lang.ZH_CN),
             Triple(SegmentType.EXAMPLE_AUDIO, "a booster rocket", Lang.EN_US),

@@ -143,6 +143,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) {
             valueText = "%.2f".format(viewModel.ttsRate),
             value = viewModel.ttsRate.coerceIn(RATE_MIN, RATE_MAX),
             onValueChange = { viewModel.onRateChange(snapToRateStep(it)) },
+            range = RATE_MIN..RATE_MAX,
+            steps = RATE_STEP_COUNT,
             tag = "settings_rate_slider",
         )
         SliderRow(
@@ -150,7 +152,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) {
             valueText = "%.2f".format(viewModel.ttsPitch),
             value = viewModel.ttsPitch.coerceIn(RATE_MIN, RATE_MAX),
             onValueChange = { viewModel.onPitchChange(snapToRateStep(it)) },
+            range = RATE_MIN..RATE_MAX,
+            steps = RATE_STEP_COUNT,
             tag = "settings_pitch_slider",
+        )
+        SliderRow(
+            label = "拼读字母停顿",
+            valueText = "${"%.2f".format(viewModel.spellingPauseMs / MILLIS_PER_SECOND)} 秒",
+            value = viewModel.spellingPauseMs
+                .coerceIn(SPELLING_PAUSE_UI_MIN_MS, SPELLING_PAUSE_UI_MAX_MS)
+                .toFloat(),
+            onValueChange = { raw ->
+                // 拖动值吸附到 50ms 档位（M3 步进吸附兜底——中途值不落库）
+                val snapped = SPELLING_PAUSE_UI_MIN_MS +
+                    round((raw - SPELLING_PAUSE_UI_MIN_MS) / SPELLING_PAUSE_STEP_MS) * SPELLING_PAUSE_STEP_MS
+                viewModel.onSpellingPauseChange(snapped.toInt())
+            },
+            range = SPELLING_PAUSE_UI_MIN_MS.toFloat()..SPELLING_PAUSE_UI_MAX_MS.toFloat(),
+            steps = SPELLING_PAUSE_STEP_COUNT,
+            tag = "settings_spelling_pause_slider",
+        )
+        Text(
+            "拼写朗读时每个字母之间的停顿；变更在下一个拼写段落生效",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
         )
         Text(
             "发音口音（英文段朗读）",
@@ -332,13 +357,15 @@ private fun ToggleRow(label: String, checked: Boolean, tag: String, onCheckedCha
     }
 }
 
-/** 语速/音调共用滑条形态（同范围同档位 0.5–2.0、步进 0.05）。 */
+/** 滑条形态（范围与档位由调用方给出——语速/音调与拼读停顿共用）。 */
 @Composable
 private fun SliderRow(
     label: String,
     valueText: String,
     value: Float,
     onValueChange: (Float) -> Unit,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
     tag: String,
 ) {
     Column(
@@ -353,8 +380,8 @@ private fun SliderRow(
         Slider(
             value = value,
             onValueChange = onValueChange,
-            valueRange = RATE_MIN..RATE_MAX,
-            steps = RATE_STEP_COUNT,
+            valueRange = range,
+            steps = steps,
             modifier = Modifier.testTag(tag),
         )
     }
@@ -381,3 +408,11 @@ private const val RATE_STEP: Float = 0.05f
 
 /** 滑条中间档位数 = (2.0−0.5)/0.05 − 1 = 29（浮点步进用整数常量避免舍入漂移）。 */
 private const val RATE_STEP_COUNT: Int = 29
+
+// 拼读停顿 UI 档位（SCR-SPELLPAUSE）：端口上限 2000ms，UI 滑杆取常用段 0.1–1.0s
+private const val SPELLING_PAUSE_UI_MIN_MS: Int = 100
+private const val SPELLING_PAUSE_UI_MAX_MS: Int = 1_000
+private const val SPELLING_PAUSE_STEP_MS: Float = 50f
+
+/** 滑条中间档位数 = (1000−100)/50 − 1 = 17（端点不计）。 */
+private const val SPELLING_PAUSE_STEP_COUNT: Int = 17

@@ -114,6 +114,9 @@
 | TC-AE-29 | **系统引擎响应看门狗（裁决 E4，2026-09-14；androidTest·模拟器 + vivo M1 手动）**：健康服务安静窗口**零误触**——静默 listenOnce → Timeout 且 `isAvailable` 保持 true（回调持续到达，看门狗不判死；既有静默用例扩展断言）；僵尸服务路径（零回调 → 1500ms 判死 → HardFailure → 拉低 `isAvailable` → E3 同窗回退 Vosk）无法自动化伪造死服务 = vivo V2436A M1 手动矩阵实证（日志链：watchdog 判死 → VB-Vosk onResult text=…）；判死不产生命令语义（D5 红线）。两 actual 全链路识别日志（onResults/onError/看门狗/onResult 文本）为诊断辅助，非断言对象 |
 | TC-AE-30 | **TTS 语言路由与降级——EN 族（FR-23 v2，2026-09-20；jvmTest·commonTest `LangRoutedSpeechSynthesizerTest`）**：路由表 EN_US/EN_GB → 神经引擎；神经 INITIALIZING / UNAVAILABLE → EN 段走系统（预热完成自动切换语义）；神经 READY 时英文零系统调用；神经 `speak` 非取消异常 → **同段回退系统播完** + 进程内粘滞（后续 EN 段零神经调用）；`CancellationException` 重抛不降级（恢复后下一 EN 段回神经——取消红线）；`stop()` 双转发；`availableVoices` 随路由与降级联动（EN 神经承接取神经、降级取系统）；readiness 投影系统引擎（UI 零变化）。神经 actual（native 合成 / AudioTrack 排空 / WAV 缓存 / 焦点）为平台管线不设模拟器自动化 = vivo 装机走查（任意词自然语音 / 英音切换 / 缓存命中段间隙 / 降级不中断） |
 | TC-AE-31 | **TTS 语言路由与降级——ZH 族与每族独立（FR-24，2026-09-20；同测试类）**：READY 时全语言（EN_US/EN_GB/ZH_CN）路由神经、系统零调用；ZH 神经 INITIALIZING → ZH 段先走系统；ZH `speak` 非取消异常 → 同段回退系统播完 + ZH 族进程内粘滞；**每语言族独立降级**——ZH 故障降级后 EN 段仍走神经不受牵连；ZH 取消重抛不降级（恢复后 ZH 回神经）；`availableVoices` 按族联动（ZH 神经承接取神经精选枚举、ZH 族降级取系统）。melo actual（单音色 / jieba 分词 / 44.1kHz 管线 / 双预热并行）为平台管线 = vivo 装机走查（中文自然度 / 首播延迟与缓存命中 / 双模型预热 / EN↔ZH 交替驻留与 PSS；「音色切换」走查项随单说话人模型撤销，v2.22） |
+| TC-AE-32 | **ZH TTS 文本数字归一化（SCR-ZHNUM / FR-24 缺陷修复，2026-09-25；jvmTest·commonTest `ZhTtsTextNormalizerTest`）**：整数位权转换（0→零 / 10→十 / 100→一百 / 101→一百零一 / 110→一百一十 / 1000→一千 / 1001→一千零一 / 1010→一千零一十 / 1100→一千一百 / 3000→三千 / 6000→六千 / 万级 10000·12000 / 十万·100012→十万零一十二 / 一百万 / 亿级 100000000·100010000→一亿零一万·100000001→一亿零一 / 123456789 全位权）；小数逐位（3.14→三点一四、0.5→零点五、10.25→十点二五）；前导零串逐位（007→零零七、09.5→零九点五）；**字母守卫**（MP3 / 3D / 1990s 及句中「支持 MP3 播放」原样不转——英文混排语境保持 espeak 英读）；整数 >12 位防御性不转；中文句中自由数字转换（legion 装机缺陷原文「由3000至6000名…100至200名」→ 三千/六千/一百/二百）；无数字文本与空串原样返回 |
+| TC-AE-33 | **SPELLING 段逐字母精确停顿（SCR-SPELLPAUSE / FR-10 缺陷修复 + FR-15 新设置，2026-09-26；commonTest + jvmTest + app 单测）**：`SpellingAudioAssemblerTest`（commonTest）——字母拆分（`b, o, o, s, t, e, r`→7 / 撇号与空格片段剔除 / 非逗号格式单元素）、静音仅字母间无首尾（400ms@22050=8820 样本）、三字母两段静音布局、单字母无静音、空列表兜底、非整除截断；`PlaybackOrchestratorStateTest`（jvmTest）——仅 SPELLING 段携带 letterPauseMs（缺省 400）其余段恒 null、设置变更下一拼写段生效（L4 游标懒读）；`LearningSettingsRepositoryTest`（jvmTest）——新键缺省 400 / 往返 upsert / 越界 99·2001 拒写且原值不变 / 损坏与低于下限存量值同语义抛；`SegmentBuilderTest` / `PlaybackOrchestratorRestartTest` 期望更新为逗号格式；`SettingsViewModelTest`（app）——缺省 400 / 滑杆变更即时持久化 / 写失败不前滚且提示。神经逐字母拼接与系统多 utterance 队列为平台管线 = vivo 装机走查（人耳一字母一顿 / 设置 0.2s·1.0s 重播变化可感 / 旧连读缓存不复发 / tts_diag `pause=` 字段） |
+| TC-AE-34 | **Previous 组内回退控制（SCR-PREVWORD / FR-11 v1.23，2026-09-26；commonTest + jvmTest + app 单测）**：`LearningEnginePreviousTest`（commonTest）——组内 `orderInGroup` 降序取前一词并迁移 PLAYING（前词回 PENDING）/ 跳过 MASTERED 到最近前驱 / 组首回绕组内最后未掌握词（不回退进已掌握前组，20 词 2 组锁定不变量）/ 组内唯一未掌握词回绕自身 / 纯导航零掌握写入 / 无 PLAYING 位取组内最大 / 终态幂等只读 / 非 ACTIVE 零写入 / 会话不存在抛契约异常 / 新引擎实例零内存位续推；`PlaybackOrchestratorStateTest`（jvmTest）——Playing 中 previous 纯跳转（PENDING 回循环 + PLAYING 迁移 + 未掌握数不减 + position 跟随新词）/ 跳过 MASTERED / CommandWindow 中作废窗口立即 Playing(上一词, seg0) / Paused 中跳上一词 seg0 / 单未掌握词等效重播；`PlaybackOrchestratorRestartTest`——previous 换词后陈旧 position 双匹配不误用（L3 镜像）；`LearningSessionViewModelTest`（app）——J2 previous 转发恰一次 `engine.previous` 零 `markMastered`、新词 Playing seg0；`exitStopsPortsClearsPositionAndIsIdempotent` 终态重入风暴补 previous。装机走查：双行控制条布局 / 组首回绕体感（按钮全程有效无禁用态）/ 窗口与暂停态下行为 / 词卡面板随换词刷新 |
 
 > **TC-AE 编号裁决（L5，2026-09-05）**：沿用 TEST_PLAN/ROADMAP 既有 `TC-<模块>-<序号>` 体系，新增自 TC-AE-13 顺序递增（后续新增从 TC-AE-20 起）；**不设 Phase 专属第二编号体系**。
 
@@ -180,6 +183,12 @@
 
 **中文段神经 TTS（FR-24，v1.20 已登记，TC-AE-31）**：jvmTest 同测试类 +ZH 族组 5（全语言路由神经 / ZH 非 READY 走系统 / ZH 异常同段回退 + 粘滞 / 每语言族独立降级 / ZH 取消红线 + 音色按族联动）；既有 TC-AE-30 EN 组零回归。melo actual（单音色、jieba 分词、44.1kHz、双模型并行预热、RAM）为平台管线不设引擎用例——vivo 装机走查：中文段自然语音、英文段零变化、首播延迟实测、降级模拟、杀进程双预热、EN↔ZH 交替驻留与 PSS（「音色切换」走查项随 melo 单说话人模型撤销）。
 
+**ZH 段文本数字归一化（SCR-ZHNUM，v2.23 已登记，TC-AE-32）**：jvmTest `ZhTtsTextNormalizerTest` 边界组 7（整数位权边界表 / 小数逐位 / 前导零逐位 / 字母守卫 MP3·3D·1990s / >12 位防御 / legion 装机原文混合句 / 无数字与空串）。装机走查：vivo 重播 legion 中文段数字读「三千」「六千」「一百」「二百」，修复前错误读音 WAV 缓存不复发（归一化文本进缓存键）。
+
+**拼读字母精确停顿（SCR-SPELLPAUSE，v2.24 已登记，TC-AE-33）**：拼写连读缺陷修复（piper 前端连字符无停顿 token）——逗号文本格式 + `letterPauseMs` 逐字母渲染（神经 = `SpellingAudioAssembler` 静音拼接；系统降级 = 多 utterance + `playSilentUtterance`）+ 新设置 `settings.spellingPauseMs`（缺省 400ms）。装机走查：vivo 播拼写段人耳确认一字母一顿；设置改 0.2s / 1.0s 重播变化可感；旧连读 WAV 缓存不复发（文本格式 + `sp{pauseMs}` 键维度双重失键）。
+
+**Previous 组内回退控制（SCR-PREVWORD，v2.25 已登记，TC-AE-34）**：FR-11 加法扩展——学习会话「上一个」按钮，与「下一个」逐点对称的纯导航（组内降序取最近未掌握前驱 / 跳 MASTERED / 组首回绕组尾 / 零掌握写入 / 窗口作废 / Paused 可用）。装机走查：vivo 双行控制条布局、组首回绕体感（按钮全程有效）、窗口/暂停态下「上一个」行为、词卡面板随换词刷新。
+
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
@@ -194,12 +203,12 @@
 | FR-7 | TC-LE-04、TC-AE-04/05/10/25/26 |
 | FR-8 | TC-LE-05/06、TC-AC |
 | FR-9 | TC-LE-07/08/11、TC-DB-05/07 |
-| FR-10 | TC-AE-01/02 |
-| FR-11 | TC-AE-07/08/09 |
+| FR-10 | TC-AE-01/02 + TC-AE-33 拼读停顿组（SCR-SPELLPAUSE） |
+| FR-11 | TC-AE-07/08/09 + TC-AE-34 Previous 组（SCR-PREVWORD） |
 | FR-12 | TC-AE-03/06/25/26/27/28/29 |
 | FR-13 | TC-AC 全组 |
 | FR-14 | TC-IMP 全组 |
-| FR-15 | TC-UI 设置、TC-LE-02 |
+| FR-15 | TC-UI 设置、TC-LE-02 + 设置 VM 拼读停顿滑杆（TC-AE-33 app 组） |
 | FR-17 | TC-UI 词条编辑组（jvmTest 仓储 + VM 单测 + 冒烟） |
 | FR-18 | TC-UI 词典组（jvmTest 按需导入 + androidTest 真实 asset 冒烟） |
 | FR-19 | TC-UI 音色组（VM 单测 + 冒烟 + jvmTest 设置键往返） |
@@ -207,7 +216,7 @@
 | FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
 | FR-22 | TC-UI 口音组（jvmTest SegmentBuilder 映射 + 编排器口音段 + 设置键往返 + 回填组英音 / app 单测 VM 口音 + TtsLocales EN_GB / androidTest 设置冒烟；装机走查双显与口音朗读） |
 | FR-23 | TC-AE-30 路由组（jvmTest LangRoutedSpeechSynthesizerTest 9：路由 / 非 READY 走系统 / 异常同段回退粘滞 / 取消红线 / stop 双转发 / 音色联动 / readiness 投影）；神经 actual 装机走查（自然度 / 英音 / 缓存命中 / 降级不中断） |
-| FR-24 | TC-AE-31 ZH 族组（jvmTest LangRoutedSpeechSynthesizerTest 5：全语言路由 / ZH 非 READY 走系统 / ZH 异常回退粘滞 / 每族独立 / ZH 取消与音色联动）；melo actual 装机走查（中文自然度 / 首播延迟与缓存 / 双预热 / EN↔ZH 驻留与 PSS） |
+| FR-24 | TC-AE-31 ZH 族组（jvmTest LangRoutedSpeechSynthesizerTest 5：全语言路由 / ZH 非 READY 走系统 / ZH 异常回退粘滞 / 每族独立 / ZH 取消与音色联动）+ TC-AE-32 数字归一化组（jvmTest ZhTtsTextNormalizerTest 边界表，SCR-ZHNUM）；melo actual 装机走查（中文自然度 / 首播延迟与缓存 / 双预热 / EN↔ZH 驻留与 PSS；数字读音装机复验） |
 
 ## 6. 覆盖率门槛（Kover，Phase 质量门）
 
@@ -292,3 +301,6 @@
 | 2.20 | 2026-09-20 | **端内实时神经 TTS 用例登记（FR-23 v1.19）**：新增 **TC-AE-30**（jvmTest `LangRoutedSpeechSynthesizerTest` 路由组 9：路由表 / 非 READY 与 UNAVAILABLE 走系统 / READY 英文零系统调用 / speak 异常同段回退 + 进程内粘滞 / 取消重抛不降级 / stop 双转发 / availableVoices 联动 / readiness 投影系统）；+FR-23 测试组段（既有 FR-22 口音组零改动即回归——口音=模型消费时映射不变；神经 actual 平台管线不设引擎用例 = vivo 装机走查：自然度 / 英音切换 / 中文段零变化 / 缓存命中段间隙 / 杀进程预热 / 降级不中断）；FR 矩阵 +FR-23 行。上游：PROJECT_SPEC v1.19、`SPEC_CHANGE_REQUEST_PIPER_TTS.md`、AUDIO_ENGINE_SPEC v2.4 |
 | 2.21 | 2026-09-20 | **中文段神经 TTS 用例登记（FR-24 v1.20）**：TC-AE-30 收敛为 EN 族回归组（ZH 路由迁出）；新增 **TC-AE-31**（ZH 族 + 每语言族独立降级组 5：全语言路由神经 / ZH 非 READY 走系统 / ZH 异常同段回退 + 粘滞 / 每族独立（ZH 故障不牵连 EN）/ ZH 取消重抛 + availableVoices 按族联动）；+FR-24 测试组段（kokoro actual 平台管线不设引擎用例 = vivo 装机走查：中文自然度 / 英文零变化 / sid 音色切换 / 首播延迟与缓存 / 双预热 / PSS）；FR 矩阵 +FR-24 行。上游：PROJECT_SPEC v1.20、`SPEC_CHANGE_REQUEST_NEURAL_ZH_TTS.md`、AUDIO_ENGINE_SPEC v2.5 |
 | 2.22 | 2026-09-20 | **FR-24 ZH 模型备胎切换 kokoro → melo（PROJECT_SPEC v1.21，装机人耳否决触发）**：TC-AE-31 用例零变化（路由组引擎无关，13/13 随 melo 批门禁复验绿）；装机走查口径更新为 melo actual（单音色 / jieba / 44.1kHz / 双预热），「sid 音色切换下一 ZH 段生效」走查项随单说话人模型撤销 |
+| 2.23 | 2026-09-25 | **ZH TTS 数字归一化用例登记（SCR-ZHNUM / FR-24 缺陷修复）**：新增 **TC-AE-32**（jvmTest `ZhTtsTextNormalizerTest` 边界组 7：整数位权边界表（0/10/100/101/110/1000/1001/1010/1100/3000/6000/万级/十万零一十二/亿级三例/123456789）/ 小数逐位 / 前导零逐位 / 字母守卫（MP3·3D·1990s）/ >12 位防御不转 / legion 装机原文混合句 / 无数字与空串）+ 测试组段 + FR 矩阵 FR-24 行注记；装机走查项（legion 段数字中读复验 + 旧缓存不复发）。根因：zipvoice 前端对非 CJK 词硬编码 espeak en-us，半角数字被英读。上游：`SPEC_CHANGE_REQUEST_ZH_NUMBER_TTS.md`、AUDIO_ENGINE_SPEC v2.7 |
+| 2.24 | 2026-09-26 | **拼读字母停顿用例登记（SCR-SPELLPAUSE / FR-10 缺陷修复 + FR-15 新设置）**：新增 **TC-AE-33**（commonTest `SpellingAudioAssemblerTest` 拼接数学组 6 + jvmTest 编排器 letterPauseMs 携带/游标懒读（L4）+ 设置仓储新键 round-trip/越界/损坏 + app 设置 VM 缺省与即时持久化；`SegmentBuilderTest`/`PlaybackOrchestratorRestartTest` 期望更新为逗号格式）+ 测试组段 + FR 矩阵 FR-10/FR-15 行注记；装机走查项（人耳一字母一顿 / 0.2s·1.0s 设置变化可感 / 旧缓存不复发）。上游：PROJECT_SPEC v1.22、`SPEC_CHANGE_REQUEST_SPELLING_PAUSE.md`、AUDIO_ENGINE_SPEC v2.8 |
+| 2.25 | 2026-09-26 | **Previous 组内回退控制用例登记（SCR-PREVWORD / FR-11 v1.23 加法扩展）**：新增 **TC-AE-34**（commonTest `LearningEnginePreviousTest` 11 用例 + jvmTest `PlaybackOrchestratorStateTest` TC-AE-34 组 5 用例与终态风暴补 previous + `PlaybackOrchestratorRestartTest` 陈旧 position 镜像 + app `LearningSessionViewModelTest` J2 转发）+ 测试组段 + FR 矩阵 FR-11 行注记；装机走查项（双行控制条 / 组首回绕体感 / 窗口与暂停态 / 词卡面板刷新）。上游：PROJECT_SPEC v1.23、`SPEC_CHANGE_REQUEST_PREV_WORD.md`、AUDIO_ENGINE_SPEC v2.9、LEARNING_ENGINE_SPEC v1.6 |

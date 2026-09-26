@@ -179,6 +179,15 @@ internal class FakeLearningSettingsRepository(
     override suspend fun setTtsAccent(value: Lang) {
         ttsAccent = value
     }
+
+    // SCR-SPELLPAUSE 拼读停顿键：字段可变（letterPauseMs 懒读测试直接改）
+    var spellingPauseMs: Int = LearningSettingsRepository.DEFAULT_SPELLING_PAUSE_MS
+
+    override suspend fun getSpellingPauseMs(): Int = spellingPauseMs
+
+    override suspend fun setSpellingPauseMs(value: Int) {
+        spellingPauseMs = value
+    }
 }
 
 /**

@@ -182,11 +182,13 @@ class LearningSessionViewModel(
         pendingBookId = null
     }
 
-    // —— 传输控制（AUDIO §6 五控制，全部经编排器；不触碰 AudioPlayer/SpeechSynthesizer）——
+    // —— 传输控制（AUDIO §6 六控制（v2.9 +Previous），全部经编排器；不触碰 AudioPlayer/SpeechSynthesizer）——
 
     fun pause() = launchCommand { orchestrator.pause() }
 
     fun resume() = launchCommand { orchestrator.resume() }
+
+    fun previous() = launchCommand { orchestrator.previous() }
 
     fun next() = launchCommand { orchestrator.next() }
 

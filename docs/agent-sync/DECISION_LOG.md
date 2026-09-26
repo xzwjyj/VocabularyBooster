@@ -214,3 +214,80 @@
 - **若 melo 人耳仍不达**：端内开源可选已尽第一梯队（kokoro 否决 / melo 待验 / matcha·fanchen 质量冲突 / zipvoice-distill-int8 109MB 新架构未验证）——届时向用户呈三选项（zipvoice 试装 / 云 TTS 立项 / 维持系统 TTS 撤 FR-24 神经部分），不再自行迭代
 
 **状态**：kokoro 批装机人耳否决；已按预授权备胎切换 melo（见附录）并全门禁绿；vivo 装机二轮人耳验收待执行（中文自然度 / 英文零变化 / 首播延迟与缓存 / 降级模拟 / 双预热 / PSS）
+
+---
+
+### SCR-AUDIOTRIM: 视频导入例句音频 BGM 前奏裁剪（2026-09-25）
+
+**问题**：巫师三批次例句音频读句前纯 BGM 前奏过长（clutch 实测 22.4s 片段语音 11.2s 才开始）。
+**根因**：word_matcher 直接用 Whisper segment 边界剪切；持续 BGM 下 segment start 远早于首词。
+**决策**（用户 2026-09-25 批准，方案见 SPEC_CHANGE_REQUEST_AUDIO_TRIM.md）：
+- 工具修复：speech_recognizer 开启 word_timestamps=True 并在 JSON 输出 words；word_matcher 剪切边界改为词级（首词−0.25s → 末词+0.5s，speech_bounds_from_words），无词级回退 segment 边界（SRT 路径不变）
+- 既有批次：一次性脚本 workspace/retrim_audio.py（whisper 重跑 + difflib 对齐 data.json 句子，相似度 0.98–1.00）只重裁 6 条音频，data.json 逐字节不变；APK 内 asset:// 直读，装新包即生效无需重导入
+**验收**：新 clutch 10.3s / precipice 10.2s 等，whisper 复核语音起点 0.0s；APK 重建（648MB）并归档 workspace/output/VocabularyBooster_2026-09-25_175500_001.apk。
+**附带**：shared/build 与 app/build 各出现一处「not a regular file」损坏产物（Synology 同步目录已知故障模式），停 daemon 后整目录删除重建即恢复。
+
+### SCR-ZHNUM: ZH 段 TTS 数字读音修复（2026-09-25）
+
+**问题**：巫师三批次 legion 中文释义段「…通常由3000至6000名步兵和100至200名骑兵组成。」数字被读成英语（"three thousand"），其余中文正常。
+**根因**（三层取证）：① 视频导入 meaningCN 含半角数字；② sherpa-onnx zipvoice 前端 = `MatchaTtsLexicon`，查词路径 lexicon 词条 → 单 token → CJK 逐字，**其余非 CJK 硬编码 `voice="en-us"` 走 espeak-ng**；③ 随包 lexicon.txt 68,037 行全为单汉字拼音、无数字词条 → "3000" 落 espeak 英读（上游 ZipVoice Python 版自带数字正则化，移植未含；tokens.txt 单数字 token 仅单字符命中）；WAV 缓存按原文键放大复发。
+**决策**（用户 2026-09-25 批准，方案见 SPEC_CHANGE_REQUEST_ZH_NUMBER_TTS.md）：
+- commonMain 新增 `ZhTtsTextNormalizer` 纯函数（speech 包）：自由数字串 → 中文读法（整数位权 十/百/千/万/亿、组内零填充、最高位一十省一；小数点后逐位；前导零串逐位；紧邻 ASCII 字母不转——MP3/3D/1990s 保持 espeak 英读；**整数 >12 位防御性不转——较 SCR 预告的 16 位收紧：万/亿两级大单位以上（万亿级）未实现，防乱读**）；转换用字（零~十/百千万亿/点）已验证全在 lexicon 内
+- androidMain `SherpaOnnxSpeechSynthesizer`：ZH_CN 段合成前归一化，归一化文本**同时进 WAV 缓存键与 generateWithConfig**——旧错误读音缓存天然失键不复用（LRU 自然淘汰）；EN 段 / 系统 TTS 降级路径 / 模型资产 / 路由器零变化
+**测试**：jvmTest `ZhTtsTextNormalizerTest`（**TC-AE-32**）边界组 7 全绿；门禁 jvmTest / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug。装机验收：vivo 重播 legion 中文段数字中读（三千/六千/一百/二百）+ 旧缓存不复发。
+**门禁附记（2026-09-25）**：① 全量 jvmTest 两次机器级故障（executor 4s 崩 + 复跑挂死 20 分钟，ImportPerfTest 首类受害）→ 按 ADR-007 先例排除 ImportPerfTest 跑门禁（43 类 324/0 绿；证据「bug list.md」第七签名）；同日 shared/build 再现「not a regular file」损坏产物（Synology 同步故障模式，rm -rf 重建）。② 视频导入批（未提交、零测试覆盖）VideoImportEngine.kt 10 项既有 detekt 违规挡门禁——用户批准顺手修复：词性排序 when 表 9 魔法数 → PART_OF_SPESS_ORDER 查表（noun=1…phrase=10、未知=99 数值不变）+ 102 行 import 拆 findOrCreateWord / importEntry / nextEntryOrder / isEntryInWordBook（查询序与字段逐一等价）；app VocabularyBoosterApp.kt 宽泛 catch 按仓库 @Suppress 先例标注。detekt×2 / testDebugUnitTest / checkPlatformBoundaries / assembleDebug（618MB，含视频导入资产）全绿。
+
+### SCR-SPELLPAUSE: 拼写段逐字母精确停顿 + 停顿时长设置（2026-09-26）
+
+**问题**：用户报告拼写段字母连读（"l-e-g-i-o-n" 六个字母名连成一段话），要求「一个字母一顿的清晰拼读」，且停顿时长需在设置里可调。
+**根因**（sherpa-onnx 源码取证）：piper 前端 `phonemize_eSpeak` 按标点切句且标点作为音素保留进 VITS token 流（模型渲染停顿帧）；**连字符只是普通词内分隔符，不产生停顿 token → 必连读**；逗号停顿时长是模型训练韵律（~0.2–0.4s 随上下文浮动），**不能精确控制**——可调停顿只能逐字母合成 + 显式静音拼接。
+**决策**（用户 2026-09-26 批准，方案见 SPEC_CHANGE_REQUEST_SPELLING_PAUSE.md）：
+- 拼写段文本格式 `-` → `", "`（`booster` → `b, o, o, s, t, e, r`）——未实现逐字母拼接的渲染路径靠逗号获得自然停顿（格式即优雅降级，iOS 初版直接受益）
+- `SpeakRequest` 加法扩展 `letterPauseMs`；编排器仅 SPELLING 段下发 `settings.spellingPauseMs`（缺省 400ms、写校验 100–2000ms、设置页滑杆 0.1–1.0s 即时持久化），游标懒读——变更自下一拼写段生效（L4 对齐）
+- 神经 actual：按 `", "` 拆字母逐个 `generate` + commonMain 纯函数 `SpellingAudioAssembler.joinWithSilence` 字母间静音拼接（毫秒精确、无首尾静音）；整段进 WAV 缓存，键增 `sp{pauseMs}` 维度（旧连读缓存因文本格式 + 停顿维度双重失键）
+- **系统降级路径同步实现精确停顿（用户裁决，否决「仅逗号自然停顿」的推荐项）**：多 utterance 队列逐字母 `speak(QUEUE_ADD)` + 字母间 `playSilentUtterance`，监听器按段 id 集合匹配（末字母 onDone / 集合内任一 onError 整段失败 / onStop → completed=false；普通段单元素集合语义零变化）
+**测试与门禁（2026-09-26）**：jvmTest 332/332（TC-AE-33 拼读停顿组 + `SpellingAudioAssemblerTest`；ImportPerfTest 按 ADR-007 机器级故障先例继续排除）+ :shared:testDebugUnitTest + :app:testDebugUnitTest + detekt×2（修复 SettingsScreen TooManyFunctions / SpellingAudioAssembler MagicNumber / 测试行超长三项）+ checkPlatformBoundaries + assembleDebug（648MB）全绿；门禁期间 shared/build 与 app/build 各现一次「not a regular file」Synology 同步损坏（停 daemon 整删重建恢复）、一次 executor 机器级崩溃复跑即绿。测试实现修正两处：`lettersOf` 过滤条件由非空白收紧为「含字母/数字」（撇号/连字符片段不保留）；编排器测试的拼写段期望文本同步逗号格式并补 `advanceTimeBy` 起播推进。
+**装机验收（vivo，2026-09-26）**：tts_diag.log 取证逐字母链路 `speak lang=EN_US engine=vits len=22 speed=0.8 pause=400` + `generated samples=156658 rate=22050 ms=7104`（ravenous 逗号文本 22 字符；8 字母音频 + 7×400ms 拼接静音）；用户人耳验收「一字母一顿，清晰 ✓」通过。停顿滑杆变更加权未单独人耳走查——机器侧由 jvmTest TC-AE-33（变更自下一拼写段生效）与 WAV 缓存键 `sp{pauseMs}` 维度覆盖。
+
+### 巫师三释义机翻质量修复：data.json 五条定稿 + 设备 DB 一次性手术（2026-09-26）
+
+**问题**：用户报告 clutch 中文释义「(传递性)紧紧抓住或抓住」语义重复、未体现英文原义。审计全批 6 条：5 条机翻质量问题（clutch 同义重复；legion 标签直译且定义欠完整；siege / rabid / ravenous 欠精确，其中 ravenous 英文释义本身以 "s extremely…" 截断开头）；precipice 无问题。
+**根因**：`tools/video_importer/translator.py` 用 MyMemory 免费 MT（en→zh-CN）机翻——无括号标签（transitive/by extension 等）与术语处理，机翻文本未人工复核直接进 data.json。
+**决策**（用户 2026-09-26 批准「改全部五条 + 设备 DB 修复」）：
+- data.json 五条人工定稿（version 1→2）：clutch「（及物）紧紧抓住；攥住。」；legion 军团定义整句（3000–6000 步兵 / 100–200 骑兵）；siege「围攻；围困（包围要塞、孤立守军并持续攻击）。」；rabid「（引申）狂怒的；狂暴的；极其激烈的。」；ravenous 英文补全 +「极其饥饿的；狼吞虎咽的。」；precipice 用户明示不动。APK 重打包随资产分发（对已导入设备惰性，仅新装/重导生效）
+- **设备 DB 走一次性手术而非删本重导**：VideoImportEngine 跳过已在词条目且 Word 行复用——修 data.json 不自愈，删本重导会产生重复 DefinitionEntry；force-stop → run-as 拉库 → sqlite 定点 UPDATE（wordId + 旧释义精确匹配；5 条 CN + 1 条 EN，各 rowcount=1；掌握 / 会话 / 勾选行零触碰）→ push 回写 → 重启。UI 逐条核验五条全部生效（clutch/legion/siege/rabid/ravenous 编辑弹层文案即新释义）
+- TTS WAV 缓存按原文键 → 新释义自动失键重新合成；legion 数字段经 SCR-ZHNUM 归一化读「三千 / 六千 / 一百 / 二百」
+**遗留缺口（未来 SCR 候选，未立项）**：已导入批次无数据刷新路径——导出侧修正后无增量更新既有行的机制，本次以一次性 DB 手术兜底；根治需导入更新语义（按 entry 版本 diff 或强制刷新入口）。
+
+### SCR-SENTMERGE: 视频导入跨 segment 句子合并 + legion/siege 例句截断修复（2026-09-26）
+
+**问题**：用户报告 legion 例句读完 "…laid siege to every fortress" 即截断（视频原句后面还有内容）；siege 词条共用同句同样截断。
+**根因**：Whisper VAD 在 28.62s 把一句旁白劈成两个紧邻 segment（seg1 无句末标点 + seg2 紧邻续接 "from here to the Blue Mountains…"）；`extract_sentences_for_words` 以 segment 为不可分句子单元，无跨段合并 → 文本与音频都断在 fortress。SCR-AUDIOTRIM 只修了段内 BGM 边界，未覆盖段间断裂。
+**决策**（用户 2026-09-26 批准，例句边界用户裁决「整句到 away.」）：
+- 工具：`word_matcher.merge_continuation_segments`——提取前预合并（上一段无句末标点 `.?!` 且当前段 start ≤ 上段 end + 1.0s → 合并文本/词表/时间跨度；浅拷贝不改调用方）；冒烟验证 6 词全部正确命中、precipice 边界无回归、`rabbit→rabid` 修正链路不变
+- data.json v2→v3：legion + siege 例句整句（"…every fortress from here to the Blue Mountains, rabid and ravenous he bites and bites away."）+ 译文定稿（顺带修复「皇帝皇帝」重复机翻）；rabid/ravenous 词条例句保持现状（用户批准不动项）
+- 音频重裁：legion_0 / siege_0.mp3 按词级边界 21.87–35.14（whisper 缓存复用，未重跑识别）7.2s → 13.3s；`asset://` 路径不变，重打包即生效
+- 设备 DB 手术：Example 表 2 行（exampleId=2/3，sentence 精确匹配 + 同 UPDATE 改 chineseTranslation，rowcount=2 验证）
+**验收**：门禁全绿（jvmTest 对 commonMain 无变化 up-to-date 合法；SENTMERGE 零 Kotlin 改动）；装机 UI 例句整句上屏 ✓；例句音频与暂停响应人耳验收交接用户。
+
+### SCR-BUTTONLAG: 学习会话按钮反馈卡顿——神经 TTS 写入循环取消不感知（2026-09-26）
+
+**问题**：用户报告学习会话继续/暂停、退出等按键反馈卡顿不丝滑。
+**根因**（两层）：① 主因——`SherpaOnnxSpeechSynthesizer.speak()` 的 PCM 写入循环以 1× 实时速率逐 16KB 块喂 AudioTrack 流缓冲，循环只认 `stopRequested`（仅 `stop()` 置位）不感知协程取消，`AudioTrack.write(BLOCKING)` 不可打断；而编排器五控制（pause/next/会了/exit）均为「先 `cancelAndJoin` 再 `synthesizer.stop()`」（防 stop 后 speak 正常返回继续推进下一词的竞态，不可反转）→ TTS 段播放中点暂停要等写入喂完整段剩余 PCM（长中文段 5–15s），期间声音照播、状态不切。例句文件段（Media3 CE 处理立即 pause）与系统 TTS（CE → tts.stop()）路径无此问题。② 次因——编排器 scope = Main.immediate，speak() 主体在主线程做 readCache（~1MB 文件读）与 toPcm16Le（~50 万样本循环）→ 逐词多段推进主线程反复磁盘 IO 丢帧。
+**决策**（用户 2026-09-26 批准，纯 androidMain actual 内部改动，端口/编排器/语义零变化）：
+- 写入循环与补静音条件追加 `isActive`（withContext 块内 CoroutineScope.isActive）；取消后 CE 于 withContext 出口抛出 → 既有 finally（track pause/flush/release）即刻停声；`cancelAndJoin` 最坏等一个 16KB 块（≤0.4s）
+- readCache 与 toPcm16Le 包 withContext(Dispatchers.IO) 挪出主线程；diag 同步小追加保留（取证优先）
+- 已知边界（记录不修）：cache-miss 首播的生成期（native generate 不可中断）点暂停仍受 RTF 限制（秒级、仅首播窗口，缓存后不复现）
+**验收**：门禁全绿（shared jvmTest/testDebugUnitTest + app testDebugUnitTest + detekt×2 + checkPlatformBoundaries + assembleDebug 648MB；门禁期 shared/build 与 app/build 各现一次「not a regular file」Synology 同步损坏，停 daemon 整删重建）；vivo 装机取证（2026-09-26）：拼读段 7.1s 音频写入进行到 ~4.5s 处点暂停 → **575ms** 内 stop invoked、无 write/drain 收尾行（写入中途被掐、立即静音）——修复前同场景需等剩余音频全部喂完。人耳验收（连续暂停/继续/退出跟手）交接用户。
+
+### SCR-PREVWORD: 学习会话「上一个」控制（2026-09-26）
+
+**问题**：学习会话只有前向导航（「下一个」），错过刚播的词只能等组内循环绕回或「重播」当前词，无法立即回听上一个词。
+**根因**：控制集自 Phase 4 定型为 Play/Pause/Resume/Next/Replay/Exit（FR-11），「上一个」在代码与全部规格中不存在——全新控制而非缺陷，走 SCR 流程。引擎位置 = 持久化单一 `PLAYING` 行，previous 可从 (groupIndex, orderInGroup, status) 纯推导，**无 DB 迁移、无新设置**。
+**决策**（用户 2026-09-26 批准，方案见 SPEC_CHANGE_REQUEST_PREV_WORD.md，8 条冻结语义）：
+- 引擎 `previous(sessionId)` = advance 的镜像：当前组内 `orderInGroup` 降序取最近**未掌握**前驱（跳 MASTERED）；组首回绕组内最后一个未掌握词（镜像正向组内循环，**按钮永远有效无禁用态**）；恒组内（会话只停在最小未掌握组、更早组必然全掌握的不变量 ⇒ `completedGroupIndex` 恒 null）；纯导航零掌握写入；唯一未掌握词回绕自身（播放层等效重播）；无 PLAYING 位取组内最大；终态幂等只读；复用 `AdvanceResult` 不新建密封类型
+- 编排器 `previous()` 镜像 `next()`（`cancelStep()` → `stopPorts()` 顺序保持 SCR-BUTTONLAG 裁决不可反转）；`advanceAndAdopt` 参数化为 `jumpAndAdopt`（advance/previous 双变体共用）；窗口作废/词卡刷新/VM 转发全走既有路径
+- UI 底栏双行（用户裁决）：行 1「上一个/下一个/重播」、行 2「暂停(继续)+退出」，两行 SpaceEvenly；既有 testTag 全保留
+- v1 仅按钮，不加语音命令（预留命令表不动）
+**测试**（TC-AE-34，三段）：commonTest `LearningEnginePreviousTest` 11 用例（镜像裁决全表）+ jvmTest StateTest 5 用例（纯跳转/跳过已掌握/窗口作废/Paused 起跳/单词自回绕）+ RestartTest previous 镜像（L3 双匹配钉死）+ app VM J2 转发用例；终态重入风暴补 `previous()`；接口加方法致两处手写 Fake（RecordingEngine / FakeLearningEngine）同批 override。
+**验收**：门禁 jvmTest 348/349 + testDebugUnitTest ×2 + detekt ×2 + checkPlatformBoundaries + assembleDebug（648MB）全绿——唯一失败 ImportPerfTest 机器级故障窗口再现（同日两跑两种形态：JDBC NPE → SQLITE 语法错误，非确定性且本批零 import 代码，按 ADR-007 先例排除）；门禁修复三项 detekt（DefaultLearningEngine TooManyFunctions 12>11 加 @Suppress 标注 + 测试两行超长缩注）；assembleDebug 首跑 mergeDebugResources 再现「not a regular file」Synology 同步损坏（停 daemon + rm -rf app/build 重建即恢复，先例路径）。测试实现修正两处场景构造：previousSelectsNearestUnmastered / newEngineInstanceContinuesPrevious 原构造掌握全部前驱（实际是组首回绕场景，实现行为正确）——改为纯跳转留未掌握前驱形态。装机走查（vivo，2026-09-26）：双行控制条布局上屏 ✓、组首回绕 clutch→precipice 自 seg0 起播 ✓、词卡随换词刷新 ✓（均截图取证）；窗口/暂停态「上一个」行为与回绕体感人耳验收交接用户。

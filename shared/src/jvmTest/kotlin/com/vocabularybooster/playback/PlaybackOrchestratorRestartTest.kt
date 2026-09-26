@@ -122,7 +122,7 @@ class PlaybackOrchestratorRestartTest {
             val playing = assertIs<PlaybackState.Playing>(harnessB.orchestrator.state.value)
             assertEquals(seeded.wordIds[0], playing.wordRef.wordId) // 词级真相 = 库内 PLAYING 词 1
             assertEquals(1, playing.segmentIndex) // 段级恢复 = KV position(seg1)
-            assertEquals("a-l-p-h-a", harnessB.tts.requests.single().text) // seg1 = SPELLING 重读
+            assertEquals("a, l, p, h, a", harnessB.tts.requests.single().text) // seg1 = SPELLING 重读（逗号拼读格式）
         } finally {
             reopened.close()
         }
@@ -158,6 +158,44 @@ class PlaybackOrchestratorRestartTest {
             assertEquals(seeded.wordIds[1], playing.wordRef.wordId) // 新 PLAYING 词 2
             assertEquals(0, playing.segmentIndex) // 陈旧 position 被忽略，从 seg0
             assertEquals("beta", harnessB.tts.requests.single().text)
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
+    fun previousSwitchedPlayingWordWithStalePositionResumesNewWordFromZero() = runTest {
+        // TC-AE-34 restart 段（:132 advance 变体的 previous 镜像）：换词后的陈旧 KV 窗口
+        // 与 advance 路径同构——词级真相迁移即失效，恢复侧按新词 seg0 起播。
+        val db = TestDb.file()
+        val seeded = db.seedTwoWordsWithSelections()
+        val sessionId: Long
+        try {
+            val harness = RealHarness(db, backgroundScope)
+            val started = assertIs<StartResult.Started>(harness.engine.startSession(seeded.bookId))
+            sessionId = started.snapshot.session.sessionId
+            assertIs<AdvanceResult.NextWord>(harness.engine.advance(sessionId)) // 词 1 PLAYING
+            assertIs<AdvanceResult.NextWord>(harness.engine.advance(sessionId)) // 词 2 PLAYING
+            // 陈旧段级信息：仍指向词 2 的 seg3
+            harness.position.save(
+                PlaybackPosition(sessionId, seeded.wordIds[1], segmentIndex = 3, offsetMs = 500L, phase = PlaybackPhase.PLAYING),
+            )
+            // 词级真相已换：previous 回退 PLAYING → 词 1（position 未跟上，L3 冲突场景）
+            assertIs<AdvanceResult.NextWord>(harness.engine.previous(sessionId))
+        } finally {
+            db.close()
+        }
+
+        val reopened = TestDb.fileExisting(db.path!!)
+        try {
+            val harnessB = RealHarness(reopened, backgroundScope)
+            assertIs<ResumeResult.Resumed>(harnessB.orchestrator.resumeSession(sessionId))
+            runCurrent()
+
+            val playing = assertIs<PlaybackState.Playing>(harnessB.orchestrator.state.value)
+            assertEquals(seeded.wordIds[0], playing.wordRef.wordId) // 回退后的新 PLAYING 词 1
+            assertEquals(0, playing.segmentIndex) // 陈旧 position 被忽略，从 seg0
+            assertEquals("alpha", harnessB.tts.requests.single().text)
         } finally {
             reopened.close()
         }

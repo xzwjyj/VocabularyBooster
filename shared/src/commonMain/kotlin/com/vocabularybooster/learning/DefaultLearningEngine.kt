@@ -23,6 +23,9 @@ import kotlinx.coroutines.sync.withLock
  * 防线 2 = 引擎串行化——会话状态变更（start/resume/mark/advance/exit）经 [sessionStateMutex] 串行执行。
  * 播放循环的注入 CoroutineScope 属 Phase 4（ARCHITECTURE §7），本步不引入。
  */
+// 接口全控制面（start/resume/mark/advance/previous/exit + 会话快照/完成）各自成函数——
+// v2.9 previous 加入后为 12，均为规格定义入口，无可合并的私有重复
+@Suppress("TooManyFunctions")
 public class DefaultLearningEngine(
     private val sessionRepository: LearningSessionRepository,
     private val settingsRepository: LearningSettingsRepository,
@@ -116,6 +119,10 @@ public class DefaultLearningEngine(
         advanceLocked(sessionId)
     }
 
+    override suspend fun previous(sessionId: Long): AdvanceResult = sessionStateMutex.withLock {
+        previousLocked(sessionId)
+    }
+
     override suspend fun exitSession(sessionId: Long): ExitResult = sessionStateMutex.withLock {
         exitSessionLocked(sessionId)
     }
@@ -178,6 +185,36 @@ public class DefaultLearningEngine(
         return AdvanceResult.NextWord(
             ref = WordRef(sessionId, next.wordId, next.groupIndex, next.orderInGroup),
             completedGroupIndex = completedGroupIndexBefore(snapshot.words, next.groupIndex),
+        )
+    }
+
+    // LE spec §5 previousWord 的位置裁决镜像 advanceLocked（终态幂等 / 会话完成 / 组内降序 / 组首回绕），
+    // 每个裁决即返回，收敛单出口会掩盖规格结构
+    @Suppress("ReturnCount")
+    private suspend fun previousLocked(sessionId: Long): AdvanceResult {
+        val snapshot = sessionRepository.getSessionWithWords(sessionId)
+            ?: throw RepositoryValidationException("会话不存在：sessionId=$sessionId")
+        // 终态会话重复 previous：幂等只读，不触碰状态（与 advanceLocked 同一防线）
+        if (snapshot.session.status != SessionStatus.ACTIVE) return AdvanceResult.BookComplete
+        // 完成判据唯一权威 = CompletionDetector（LE spec §7）——与 advanceLocked 共用前置
+        if (snapshot.words.isEmpty() || CompletionDetector.isSessionComplete(snapshot.words)) {
+            return completeSessionLocked(snapshot)
+        }
+        // §5 previousWord 选择：与 advanceLocked 同一选择域（未掌握词 × 最小 groupIndex 组）——
+        // previous 恒组内：更早的组已全掌握（组推进仅在当前组全掌握时发生）
+        val unmastered = snapshot.words.filter { it.status != SessionWordStatus.MASTERED }
+        val group = unmastered.minOf { it.groupIndex }
+        val inGroup = unmastered.filter { it.groupIndex == group }
+        val playing = inGroup.firstOrNull { it.status == SessionWordStatus.PLAYING }
+        // cur = 持久化播放位（无播放词 = 开场/掌握后顺延 → 组内最大，advance 取最小的镜像）；
+        // 组首回绕：无更小 orderInGroup 的未掌握词 → 组内最后一个未掌握词（唯一未掌握词 = 自身）
+        val previous = inGroup.lastOrNull { playing == null || it.orderInGroup < playing.orderInGroup }
+            ?: inGroup.last()
+        sessionRepository.setPlayingWord(sessionId, previous.wordId)
+        return AdvanceResult.NextWord(
+            ref = WordRef(sessionId, previous.wordId, previous.groupIndex, previous.orderInGroup),
+            // previous 永不离开当前组 → 无 §7 组完成语义（载体仅属前进推进）
+            completedGroupIndex = null,
         )
     }
 

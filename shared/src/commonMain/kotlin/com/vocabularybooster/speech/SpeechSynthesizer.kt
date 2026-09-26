@@ -43,6 +43,11 @@ public data class SpeakRequest(
     val lang: Lang,
     val rate: Float,
     val pitch: Float,
+    /**
+     * SPELLING 段字母间停顿时长（SCR-SPELLPAUSE，AUDIO_ENGINE_SPEC §8）：null = 普通段
+     * 整段合成；非 null = 文本为逗号拼读格式，actual 逐字母合成/朗读并以此时长停顿。
+     */
+    val letterPauseMs: Int? = null,
 )
 
 /** 单段播放结果（TTS/文件音频段共用）。 */

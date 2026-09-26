@@ -30,6 +30,28 @@ class LearningSettingsRepositoryTest {
         assertEquals(1.0f, repo.getTtsRate())
         assertEquals(1.0f, repo.getTtsPitch())
         assertEquals(Lang.EN_US, repo.getTtsAccent()) // FR-22：缺省美音
+        assertEquals(400, repo.getSpellingPauseMs()) // SCR-SPELLPAUSE：缺省 400ms
+    }
+
+    // —— SCR-SPELLPAUSE 拼读停顿：往返、范围拒写且原值不变、损坏/越界存量值同语义失败 ——
+
+    @Test
+    fun spellingPauseRoundTripAndRangeChecks() = runTest {
+        val repo = newRepo(TestDb.inMemory())
+        repo.setSpellingPauseMs(150)
+        assertEquals(150, repo.getSpellingPauseMs())
+        repo.setSpellingPauseMs(600) // upsert 覆盖
+        assertEquals(600, repo.getSpellingPauseMs())
+        // 越界拒写且原值不变（写校验镜像读侧）
+        assertFailsWith<RepositoryValidationException> { repo.setSpellingPauseMs(99) }
+        assertFailsWith<RepositoryValidationException> { repo.setSpellingPauseMs(2_001) }
+        assertEquals(600, repo.getSpellingPauseMs())
+
+        val db = TestDb.inMemory()
+        db.database.appSettingQueries.upsertSetting("settings.spellingPauseMs", "not-json")
+        assertFailsWith<RepositoryValidationException> { newRepo(db).getSpellingPauseMs() }
+        db.database.appSettingQueries.upsertSetting("settings.spellingPauseMs", "50") // JSON 合法但低于下限
+        assertFailsWith<RepositoryValidationException> { newRepo(db).getSpellingPauseMs() }
     }
 
     // —— FR-22 发音口音：缺省美音、往返、ZH_CN 拒写、损坏值与既有键同语义失败 ——
@@ -157,6 +179,7 @@ class LearningSettingsRepositoryTest {
         repo.setTtsRate(1.25f)
         repo.setTtsPitch(0.9f)
         repo.setTtsAccent(Lang.EN_GB)
+        repo.setSpellingPauseMs(600)
         repo.setPlaybackToggles(PlaybackToggles(pronunciation = false, exampleCn = false))
         db.close()
 
@@ -167,6 +190,7 @@ class LearningSettingsRepositoryTest {
         assertEquals(1.25f, reread.getTtsRate())
         assertEquals(0.9f, reread.getTtsPitch())
         assertEquals(Lang.EN_GB, reread.getTtsAccent())
+        assertEquals(600, reread.getSpellingPauseMs())
         assertEquals(PlaybackToggles(pronunciation = false, exampleCn = false), reread.getPlaybackToggles())
         reopened.close()
     }

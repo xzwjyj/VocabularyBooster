@@ -459,6 +459,10 @@ class SettingsViewModel(
     /** 发音口音（FR-22）：美音（缺省）/ 英音；只影响英文段，下一 Segment 生效。 */
     var ttsAccent by mutableStateOf(LearningSettingsRepository.DEFAULT_TTS_ACCENT)
         private set
+
+    /** 拼读字母停顿（SCR-SPELLPAUSE）：SPELLING 段字母间静音时长；下一拼写段生效。 */
+    var spellingPauseMs by mutableStateOf(LearningSettingsRepository.DEFAULT_SPELLING_PAUSE_MS)
+        private set
     var message by mutableStateOf<String?>(null)
         private set
 
@@ -496,6 +500,7 @@ class SettingsViewModel(
                 ttsRate = settingsRepository.getTtsRate()
                 ttsPitch = settingsRepository.getTtsPitch()
                 ttsAccent = settingsRepository.getTtsAccent()
+                spellingPauseMs = settingsRepository.getSpellingPauseMs()
                 voiceEnId = settingsRepository.getTtsVoiceEn()
                 voiceZhId = settingsRepository.getTtsVoiceZh()
             }.onFailure { message = "设置加载失败：${it.message}" }
@@ -572,6 +577,18 @@ class SettingsViewModel(
             runCatching { settingsRepository.setTtsPitch(value) }
                 .onSuccess {
                     ttsPitch = value
+                    message = null
+                }
+                .onFailure { e -> message = "保存失败：${e.message}" }
+        }
+    }
+
+    /** 拼读字母停顿滑条变更（SCR-SPELLPAUSE，单位 ms）。 */
+    fun onSpellingPauseChange(value: Int) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.setSpellingPauseMs(value) }
+                .onSuccess {
+                    spellingPauseMs = value
                     message = null
                 }
                 .onFailure { e -> message = "保存失败：${e.message}" }

@@ -125,6 +125,7 @@ class FakeLearningEngine(
     val startCalls = mutableListOf<Long>()
     val resumeCalls = mutableListOf<Long>()
     val advanceCalls = mutableListOf<Long>()
+    val previousCalls = mutableListOf<Long>()
     val exitCalls = mutableListOf<Long>()
     var bookCompleteOnAdvance = false
 
@@ -162,6 +163,19 @@ class FakeLearningEngine(
         }
     }
 
+    /** previous 词序（循环取用，SCR-PREVWORD）；耗尽 → BookComplete。 */
+    var previousWordIds: List<Long> = emptyList()
+
+    override suspend fun previous(sessionId: Long): AdvanceResult {
+        previousCalls += sessionId
+        val wordId = previousWordIds.getOrNull(previousCalls.size - 1)
+        return if (wordId == null) {
+            AdvanceResult.BookComplete
+        } else {
+            AdvanceResult.NextWord(WordRef(sessionId, wordId, groupIndex = 0, orderInGroup = 0), null)
+        }
+    }
+
     override suspend fun exitSession(sessionId: Long): ExitResult {
         exitCalls += sessionId
         return ExitResult(derivedWordBookId = null)
@@ -191,6 +205,7 @@ class FakeLearningSettingsRepository(
     var ttsVoiceEn: String? = null,
     var ttsVoiceZh: String? = null,
     var ttsAccent: Lang = LearningSettingsRepository.DEFAULT_TTS_ACCENT,
+    var spellingPauseMs: Int = LearningSettingsRepository.DEFAULT_SPELLING_PAUSE_MS,
     var failWrites: Boolean = false,
 ) : LearningSettingsRepository {
     override suspend fun getGroupSize(): Int = groupSize
@@ -201,6 +216,7 @@ class FakeLearningSettingsRepository(
     override suspend fun getTtsVoiceEn(): String? = ttsVoiceEn
     override suspend fun getTtsVoiceZh(): String? = ttsVoiceZh
     override suspend fun getTtsAccent(): Lang = ttsAccent
+    override suspend fun getSpellingPauseMs(): Int = spellingPauseMs
 
     override suspend fun setGroupSize(value: Int) {
         failIfRequested()
@@ -240,6 +256,11 @@ class FakeLearningSettingsRepository(
     override suspend fun setTtsAccent(value: Lang) {
         failIfRequested()
         ttsAccent = value
+    }
+
+    override suspend fun setSpellingPauseMs(value: Int) {
+        failIfRequested()
+        spellingPauseMs = value
     }
 
     private fun failIfRequested() {

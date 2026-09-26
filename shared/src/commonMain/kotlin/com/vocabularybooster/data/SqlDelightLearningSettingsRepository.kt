@@ -147,6 +147,35 @@ public class SqlDelightLearningSettingsRepository(
         database.appSettingQueries.upsertSetting(TTS_ACCENT_KEY, json.encodeToString(value.name))
     }
 
+    // —— SCR-SPELLPAUSE 拼读字母停顿（FR-15 加法扩展）：缺键默认 400ms；范围校验镜像写侧 ——
+
+    override suspend fun getSpellingPauseMs(): Int = withContext(dispatcher) {
+        val raw = database.appSettingQueries.selectSetting(SPELLING_PAUSE_KEY).executeAsOneOrNull()
+            ?: return@withContext LearningSettingsRepository.DEFAULT_SPELLING_PAUSE_MS
+        val value = runCatching { json.decodeFromString<Int>(raw) }.getOrElse {
+            throw RepositoryValidationException("设置值损坏（key=$SPELLING_PAUSE_KEY）：无法解析为拼读停顿时长")
+        }
+        if (value !in LearningSettingsRepository.MIN_SPELLING_PAUSE_MS..
+            LearningSettingsRepository.MAX_SPELLING_PAUSE_MS
+        ) {
+            throw RepositoryValidationException(spellingPauseRangeError(value))
+        }
+        value
+    }
+
+    override suspend fun setSpellingPauseMs(value: Int): Unit = withContext(dispatcher) {
+        if (value !in LearningSettingsRepository.MIN_SPELLING_PAUSE_MS..
+            LearningSettingsRepository.MAX_SPELLING_PAUSE_MS
+        ) {
+            throw RepositoryValidationException(spellingPauseRangeError(value))
+        }
+        database.appSettingQueries.upsertSetting(SPELLING_PAUSE_KEY, json.encodeToString(value))
+    }
+
+    private fun spellingPauseRangeError(value: Int): String =
+        "spellingPauseMs 须在 ${LearningSettingsRepository.MIN_SPELLING_PAUSE_MS}–" +
+            "${LearningSettingsRepository.MAX_SPELLING_PAUSE_MS}ms：$value（key=$SPELLING_PAUSE_KEY）"
+
     private suspend fun getVoiceId(key: String): String? = withContext(dispatcher) {
         val raw = database.appSettingQueries.selectSetting(key).executeAsOneOrNull() ?: return@withContext null
         runCatching { json.decodeFromString<String>(raw) }.getOrNull() // 损坏 → null（音色失效同级降级）
@@ -172,6 +201,7 @@ public class SqlDelightLearningSettingsRepository(
         const val TTS_VOICE_EN_KEY = "settings.ttsVoiceEn"
         const val TTS_VOICE_ZH_KEY = "settings.ttsVoiceZh"
         const val TTS_ACCENT_KEY = "settings.ttsAccent"
+        const val SPELLING_PAUSE_KEY = "settings.spellingPauseMs"
 
         // 前向兼容：未来新增开关键不破坏旧值读取（未知键忽略，缺省字段取默认）
         val json = Json { ignoreUnknownKeys = true }

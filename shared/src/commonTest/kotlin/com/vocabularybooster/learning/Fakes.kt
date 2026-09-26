@@ -266,6 +266,11 @@ internal class FakeLearningSettingsRepository(
     override suspend fun getTtsAccent(): Lang = LearningSettingsRepository.DEFAULT_TTS_ACCENT
 
     override suspend fun setTtsAccent(value: Lang) = Unit
+
+    // SCR-SPELLPAUSE 拼读停顿键良性桩（引擎测试不涉拼读停顿）
+    override suspend fun getSpellingPauseMs(): Int = LearningSettingsRepository.DEFAULT_SPELLING_PAUSE_MS
+
+    override suspend fun setSpellingPauseMs(value: Int) = Unit
 }
 
 /**

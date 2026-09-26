@@ -63,7 +63,7 @@ import kotlin.math.min
  * 控制类操作先 cancelAndJoin 再改状态——不存在两个 PLAYING 驱动流。advance+换词装载包在
  * [NonCancellable] 中：暂停/取消不会观察到「库已换 PLAYING 词而内存仍是旧词」的半迁移态。
  */
-@Suppress("TooManyFunctions", "LongParameterList") // §3 逐事件一个入口 + §6 五控制 + §5 依赖 = 规格装配全量
+@Suppress("TooManyFunctions", "LongParameterList") // §3 逐事件一个入口 + §6 六控制（v2.9 +Previous）+ §5 依赖 = 规格装配全量
 public class PlaybackOrchestrator(
     private val engine: LearningEngine,
     private val contentRepository: PlaybackContentRepository,
@@ -181,6 +181,18 @@ public class PlaybackOrchestrator(
         cancelStep()
         stopPorts()
         if (!advanceAndAdopt()) launchDriveLoop()
+    }
+
+    /**
+     * Previous（FR-11 v1.23，SCR-PREVWORD）：Next 的镜像纯跳转——cancelAndJoin → 停端口 →
+     * 引擎 previous()，不标记掌握；窗口开着则作废该窗口（当前词回 PENDING 留在循环）。
+     * 组内降序取最近未掌握前驱、组首回绕组尾由引擎裁决（LE spec §5 previousWord）。
+     */
+    public suspend fun previous(): Unit = controlMutex.withLock {
+        if (!_state.value.isTransportActive()) return@withLock
+        cancelStep()
+        stopPorts()
+        if (!retreatAndAdopt()) launchDriveLoop()
     }
 
     /** Replay：当前词从 seg0 重播；命令窗口若开着则作废（§6）。 */
@@ -337,13 +349,21 @@ public class PlaybackOrchestrator(
         currentSpec = null
     }
 
-    /** 组装 TTS 请求（§1/§3 裁决 L6）：语言逐段切换；rate = 段基础倍率 × ttsRate 设置；pitch 取设置。 */
+    /**
+     * 组装 TTS 请求（§1/§3 裁决 L6）：语言逐段切换；rate = 段基础倍率 × ttsRate 设置；pitch 取设置。
+     * SPELLING 段附字母间停顿（SCR-SPELLPAUSE）——游标逐段懒读，生效粒度 = 下一拼写段（对齐 L4）。
+     */
     private suspend fun speakRequestFor(spec: SegmentSpec): SpeakRequest = SpeakRequest(
         utteranceId = "seg-${activeSessionId()}-${activeWordId()}-$playedCount",
         text = spec.text.orEmpty(),
         lang = spec.lang,
         rate = spec.rateScale * settingsRepository.getTtsRate(),
         pitch = settingsRepository.getTtsPitch(),
+        letterPauseMs = if (spec.type == SegmentType.SPELLING) {
+            settingsRepository.getSpellingPauseMs()
+        } else {
+            null
+        },
     )
 
     /**
@@ -525,8 +545,18 @@ public class PlaybackOrchestrator(
      * 包 [NonCancellable]：advance（库内 PLAYING 迁移）与游标装载原子完成，
      * 暂停取消不产生「库已换词、内存未跟上」的半迁移态。
      */
-    private suspend fun advanceAndAdopt(): Boolean = withContext(NonCancellable) {
-        when (val result = engine.advance(activeSessionId())) {
+    private suspend fun advanceAndAdopt(): Boolean = jumpAndAdopt { engine.advance(activeSessionId()) }
+
+    /** SCR-PREVWORD：回退变体——引擎 previous()（组内降序 + 组首回绕），装载语义与前进完全一致。 */
+    private suspend fun retreatAndAdopt(): Boolean = jumpAndAdopt { engine.previous(activeSessionId()) }
+
+    /**
+     * 换词装载原子完成（前进/回退共享体）：引擎位置迁移（库内 PLAYING 换词）与游标装载
+     * （[loadWord] 重置 specCursor=0）包 [NonCancellable]——暂停/取消不产生
+     * 「库已换词、内存未跟上」的半迁移态。返回 true = BookComplete 终态。
+     */
+    private suspend fun jumpAndAdopt(jump: suspend () -> AdvanceResult): Boolean = withContext(NonCancellable) {
+        when (val result = jump()) {
             is AdvanceResult.NextWord -> {
                 loadWord(result.ref)
                 false

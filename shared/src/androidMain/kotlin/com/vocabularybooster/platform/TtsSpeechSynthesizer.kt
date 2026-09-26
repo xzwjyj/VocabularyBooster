@@ -11,6 +11,7 @@ import com.vocabularybooster.speech.Readiness
 import com.vocabularybooster.speech.SegmentResult
 import com.vocabularybooster.speech.SpeakRequest
 import com.vocabularybooster.speech.SpeechSynthesizer
+import com.vocabularybooster.speech.SpellingAudioAssembler
 import com.vocabularybooster.speech.TtsVoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -35,6 +36,10 @@ import java.util.Locale
  * - **完成**：UtteranceProgressListener 回调驱动 CompletableDeferred（不依赖固定 sleep）；
  *   `stop()` 真正调用 `TextToSpeech.stop()`（不只改 Kotlin 状态），在途 utterance 以
  *   `completed=false` 收场（onStop / 手动补全，先到先得）。
+ * - **拼读段多 utterance**（SCR-SPELLPAUSE）：`letterPauseMs` 非空且 ≥2 个有效字母时，
+ *   逐字母 `speak(QUEUE_ADD)` + 字母间 `playSilentUtterance(pauseMs)`，等待**末字母** id
+ *   收尾；监听器按「段 id 集合」匹配（集合内任一 onError → 整段异常，中间字母 onDone 忽略）。
+ *   普通段（letterPauseMs = null）单 utterance 路径语义零变化。
  * - **生命周期**：initialize → speak → stop → `release()`（shutdown）。release 后 speak 抛异常。
  */
 public class TtsSpeechSynthesizer(
@@ -53,7 +58,11 @@ public class TtsSpeechSynthesizer(
     // 主线程限定（speak/stop/release 均主线程触达）；released 另被 init 回调线程只读 → @Volatile
     @Volatile
     private var released = false
-    private var pendingUtteranceId: String? = null
+
+    // 在途段 utterance 集合（拼读段 = 字母 + 静音多 utterance，SCR-SPELLPAUSE）：
+    // 末字母 id = 完成信号；集合内任一 onError → 整段异常；任一 onStop → 整段中止。
+    private var pendingFinalId: String? = null
+    private var pendingSegmentIds: Set<String> = emptySet()
     private var pendingUtterance: CompletableDeferred<SegmentResult>? = null
 
     private val tts: TextToSpeech = TextToSpeech(appContext) { status ->
@@ -75,7 +84,7 @@ public class TtsSpeechSynthesizer(
             override fun onStart(utteranceId: String?) = Unit
 
             override fun onDone(utteranceId: String?) {
-                if (utteranceId == pendingUtteranceId) {
+                if (utteranceId == pendingFinalId) {
                     pendingUtterance?.complete(
                         SegmentResult(utteranceId = utteranceId.orEmpty(), completed = true)
                     )
@@ -84,23 +93,15 @@ public class TtsSpeechSynthesizer(
 
             @Deprecated("API 21 起由 onError(utteranceId, errorCode) 取代")
             override fun onError(utteranceId: String?) {
-                if (utteranceId == pendingUtteranceId) {
-                    pendingUtterance?.completeExceptionally(
-                        IllegalStateException("TTS utterance 失败：$utteranceId")
-                    )
-                }
+                failPendingSegment(utteranceId, detail = "")
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                if (utteranceId == pendingUtteranceId) {
-                    pendingUtterance?.completeExceptionally(
-                        IllegalStateException("TTS utterance 失败（code=$errorCode）：$utteranceId")
-                    )
-                }
+                failPendingSegment(utteranceId, detail = "（code=$errorCode）")
             }
 
             override fun onStop(utteranceId: String?, interrupted: Boolean) {
-                if (utteranceId == pendingUtteranceId) {
+                if (utteranceId in pendingSegmentIds) {
                     pendingUtterance?.complete(
                         SegmentResult(utteranceId = utteranceId.orEmpty(), completed = false)
                     )
@@ -116,25 +117,83 @@ public class TtsSpeechSynthesizer(
         tts.setSpeechRate(request.rate)
         tts.setPitch(request.pitch)
 
-        val awaiter = CompletableDeferred<SegmentResult>()
-        pendingUtteranceId = request.utteranceId
-        pendingUtterance = awaiter
-        val queued = tts.speak(request.text, TextToSpeech.QUEUE_FLUSH, /* params = */ null, request.utteranceId)
-        if (queued != TextToSpeech.SUCCESS) {
-            pendingUtteranceId = null
-            pendingUtterance = null
-            throw IllegalStateException("TTS speak 提交失败（result=$queued）")
+        // 拼读段（≥2 个有效字母）走多 utterance 队列；单字母词/普通段走单 utterance 既有路径
+        val letters =
+            if (request.letterPauseMs != null) SpellingAudioAssembler.lettersOf(request.text) else emptyList()
+        val spelling = letters.size > 1
+        val finalId = if (spelling) "${request.utteranceId}-l${letters.size - 1}" else request.utteranceId
+        val segmentIds = if (spelling) {
+            buildSet {
+                letters.indices.forEach { add("${request.utteranceId}-l$it") }
+                (0 until letters.size - 1).forEach { add("${request.utteranceId}-s$it") }
+            }
+        } else {
+            setOf(request.utteranceId)
         }
+
+        val awaiter = CompletableDeferred<SegmentResult>()
+        pendingFinalId = finalId
+        pendingSegmentIds = segmentIds
+        pendingUtterance = awaiter
         try {
-            awaiter.await() // onDone（完成）/ onError（异常）/ onStop+stop()（completed=false）
+            if (spelling) {
+                submitSpellingQueue(request.utteranceId, letters, request.letterPauseMs!!)?.let { error ->
+                    tts.stop() // 清半截队列（已入队字母不得在本段收尾后冒播）
+                    throw IllegalStateException(error)
+                }
+            } else {
+                val queued = tts.speak(request.text, TextToSpeech.QUEUE_FLUSH, /* params = */ null, finalId)
+                if (queued != TextToSpeech.SUCCESS) {
+                    throw IllegalStateException("TTS speak 提交失败（result=$queued）")
+                }
+            }
+            awaiter.await() // 末 utterance onDone（完成）/ 段内 onError（异常）/ onStop+stop()（completed=false）
         } catch (e: CancellationException) {
             tts.stop() // 取消 = 立即真停（§8 stop 语义），位置概念不适用 TTS 段（ADR-09 重读）
             throw e
         } finally {
-            if (pendingUtteranceId == request.utteranceId) {
-                pendingUtteranceId = null
+            if (pendingFinalId == finalId) {
+                pendingFinalId = null
+                pendingSegmentIds = emptySet()
                 pendingUtterance = null
             }
+        }
+    }
+
+    /**
+     * 拼读队列提交（SCR-SPELLPAUSE）：逐字母 `speak`（首个 QUEUE_FLUSH 清残留，其余
+     * QUEUE_ADD 保序）+ 字母间 `playSilentUtterance(pauseMs)`（平台原生静音 utterance，
+     * onDone 按时长触发）。返回 null = 全部入队成功；非 null = 失败描述（调用方 stop 清队列后抛）。
+     */
+    private fun submitSpellingQueue(
+        utteranceId: String,
+        letters: List<String>,
+        pauseMs: Int,
+    ): String? {
+        letters.forEachIndexed { index, letter ->
+            val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            val spoken = tts.speak(letter, mode, /* params = */ null, "$utteranceId-l$index")
+            if (spoken != TextToSpeech.SUCCESS) {
+                return "TTS speak 提交失败（result=$spoken，letter=$letter）"
+            }
+            if (index < letters.size - 1) {
+                val silent = tts.playSilentUtterance(
+                    pauseMs.toLong(), TextToSpeech.QUEUE_ADD, "$utteranceId-s$index",
+                )
+                if (silent != TextToSpeech.SUCCESS) {
+                    return "TTS playSilentUtterance 提交失败（result=$silent）"
+                }
+            }
+        }
+        return null
+    }
+
+    /** 段内任一 utterance 失败 → 整段异常（多 utterance 拼读段中间失败不得静默挂等末字母）。 */
+    private fun failPendingSegment(utteranceId: String?, detail: String) {
+        if (utteranceId != null && utteranceId in pendingSegmentIds) {
+            pendingUtterance?.completeExceptionally(
+                IllegalStateException("TTS utterance 失败$detail：$utteranceId")
+            )
         }
     }
 
@@ -208,15 +267,16 @@ public class TtsSpeechSynthesizer(
         }
     }
 
-    /** 立即停止：真正调用 `TextToSpeech.stop()`（异步派发 onStop 收尾在途 await）。 */
+    /** 立即停止：真正调用 `TextToSpeech.stop()`（异步派发 onStop 收尾在途 await + 即时补全兜底）。 */
     override fun stop() {
         ensureOnMainThread()
         if (released) return
         tts.stop()
         pendingUtterance?.complete(
-            SegmentResult(utteranceId = pendingUtteranceId.orEmpty(), completed = false)
+            SegmentResult(utteranceId = pendingFinalId.orEmpty(), completed = false)
         )
-        pendingUtteranceId = null
+        pendingFinalId = null
+        pendingSegmentIds = emptySet()
         pendingUtterance = null
     }
 
@@ -228,9 +288,10 @@ public class TtsSpeechSynthesizer(
         tts.stop()
         tts.shutdown()
         pendingUtterance?.complete(
-            SegmentResult(utteranceId = pendingUtteranceId.orEmpty(), completed = false)
+            SegmentResult(utteranceId = pendingFinalId.orEmpty(), completed = false)
         )
-        pendingUtteranceId = null
+        pendingFinalId = null
+        pendingSegmentIds = emptySet()
         pendingUtterance = null
         _readiness.value = Readiness.UNAVAILABLE
     }

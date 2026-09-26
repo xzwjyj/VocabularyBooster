@@ -183,7 +183,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 开关 | 控制的 Segment |
 |---|---|
 | Word Pronunciation（单词发音） | 词的读音（v1：TTS 朗读单词；`audioUri` 字段为未来授权音频预留） |
-| Word Spelling（单词拼写） | 逐字母朗读拼写（如 `b-o-o-s-t-e-r`） |
+| Word Spelling（单词拼写） | 逐字母朗读拼写（如 `b, o, o, s, t, e, r`，逗号分隔——字母间停顿时长可设置，v1.22） |
 | Meaning EN（英文释义） | 每个选中 DefinitionEntry 的 MeaningEN |
 | Meaning CN（中文释义） | 每个选中 DefinitionEntry 的 MeaningCN |
 | Example（例句） | 例句原声/原文朗读（含例句音频） |
@@ -201,10 +201,11 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | **Pause** | 暂停，冻结当前位置 `(wordIndex, segmentIndex, offsetMs)` |
 | **Resume** | 从冻结位置继续——**绝不从头重播整个 Word** |
 | **Next** | 立即跳到队列下一个未掌握 Word（**不**标记 MASTERED） |
+| **Previous**（v1.23，SCR-PREVWORD） | 立即跳到**当前组内**上一个未掌握 Word（**不**标记 MASTERED；跳过已掌握词；组首回绕到组内最后一个未掌握词——与 Next 的组内循环对称） |
 | **Replay** | 重播当前 Word（从该 Word 的第一个 Segment 开始） |
 | **Exit** | 退出会话，触发 FR-9 流程（若整本未完成） |
 
-- **验收**：Pause→Resume 恢复到同一 Segment 的同一进度（文件音频恢复到 offsetMs；TTS Segment 允许整段重读——系统 TTS 无 seek 能力，属已确认的平台限制，但**不得**回到 Word 开头）；Next/Replay 不改变任何词的掌握状态。
+- **验收**：Pause→Resume 恢复到同一 Segment 的同一进度（文件音频恢复到 offsetMs；TTS Segment 允许整段重读——系统 TTS 无 seek 能力，属已确认的平台限制，但**不得**回到 Word 开头）；Next/Previous/Replay 不改变任何词的掌握状态。
 
 ### FR-12 语音识别交互协议
 
@@ -248,6 +249,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | `commandWindowMs`（命令窗口时长） | 4000 |
 | 六项播放开关（FR-10） | 全开 |
 | TTS 语速 / 音调 | 1.0 / 1.0 |
+| 拼读字母停顿（`settings.spellingPauseMs`，v1.22） | 400ms（设置页滑杆 0.1–1.0s、步进 0.05s；变更自下一个拼写段生效） |
 | 发音口音（FR-22） | 美音（EN_US；可选英音 EN_GB） |
 | "会了"命令别名 | 会了、记住了、掌握了（**固定代码常量**——可配置性再延后，2026-09-18 裁决） |
 
@@ -398,7 +400,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | "会了" → MASTERED → 移出队列 → 下一个；组完成 → 下一组 | FR-7 / FR-8 |
 | 退出：剔除已 MASTERED，另存"原名称+日期时间"新本，复用不复制 | FR-9 |
 | 播放配置六项独立开关 | FR-10 |
-| Play / Pause / Resume / Next / Replay / Exit；Pause/Resume 保持状态 | FR-11 |
+| Play / Pause / Resume / Next / Previous / Replay / Exit；Pause/Resume 保持状态 | FR-11 |
 | 语音控制 v1 仅"会了"，预留暂停/继续/下一个/再来一次/退出；TTS 期间不识别 | FR-12 |
 | 完成勋章：停止播放 / 永久保存 / 未来扩展 | FR-13 |
 | TXT 导入：编码 / 格式 / 去重 / 大文件 / 目标生词本 | FR-14 |
@@ -437,3 +439,5 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.19 | 2026-09-20 | **新增 FR-23 英文段端内实时神经 TTS**（用户批准 SPEC_CHANGE_REQUEST_PIPER_TTS v2 + IMPLEMENTATION_PLAN_PIPER_RT_TTS；同日 v1 预录方案装机实证「无差异」证伪撤销——词表命中与实际播放内容覆盖错位且预录无法覆盖长尾，未提交全量回退）：`LangRoutedSpeechSynthesizer` 按段语言路由（EN_* → SherpaOnnx 神经引擎（sherpa-onnx v1.13.8 + Piper VITS medium en_US lessac / en_GB alan，模型单文件 assets 直读 + espeak-ng-data 解包至 filesDir；整段合成分块直写 AudioTrack，16KB 缓冲 + 补静音对冲 OEM 不消费短轨道）；ZH_CN → 系统零变化）；口音 = 模型（FR-22 消费时映射不变，无厂商英音包设备也生效）；单英文模型驻留换载；WAV 磁盘缓存 100MB LRU；非 READY / speak 非取消异常 → EN 段当场回退系统 TTS 进程内粘滞，取消重抛不降级；rate clamp 0.5–2.0、pitch 不生效（VITS 限制）；APK 196MB → ~324MB。零 schema 变更。下游同步：AUDIO_ENGINE_SPEC v2.4 / ARCHITECTURE §5 / TEST_PLAN v2.20；决策记录：ADR-011 |
 | 1.20 | 2026-09-20 | **新增 FR-24 中文段端内实时神经 TTS**（用户批准 SPEC_CHANGE_REQUEST_NEURAL_ZH_TTS + IMPLEMENTATION_PLAN_NEURAL_ZH_TTS，选型 kokoro int8）：`SherpaOnnxSpeechSynthesizer` 扩双模型驻留（piper EN 槽 + kokoro int8 v1.1-zh ZH 槽（~114MB onnx + ~54MB voices，24kHz / 103 sid；模型三大件 assets 直读，espeak / jieba dict / 双 lexicon / rule fst 解包 filesDir），双 dispatcher 并行预热）；中文音色 = `settings.ttsVoiceZh`（FR-19 键复用，设置页零改动）映射精选 sid 4 枚（zf_001 缺省 / zf_051 / zm_009 / zm_068），sid 进缓存键；路由器 ZH 分支与 EN 同构（非 READY / 非取消异常 → 当场回退系统 + 每语言族进程内粘滞，两族互不牵连）；APK ~324MB → ~500MB。零 schema 变更。下游同步：AUDIO_ENGINE_SPEC v2.5 / ARCHITECTURE §5 / TEST_PLAN v2.21；决策记录：ADR-012 |
 | 1.21 | 2026-09-20 | **FR-24 ZH 模型备胎切换 kokoro → melo**（kokoro int8 装机人耳否决——用户判定「还不如上一版」，按 ADR-012 预授权备胎执行）：ZH 槽 = vits-melo-tts-zh_en（MyShell MeloTTS 官方转换，MIT；fp32 170.4MB，zh+en 混合词典，单说话人女声，44.1kHz）；**整槽 newFromFile** 全输入解包 filesDir `tts/melo-data/`（kokoro 装机坑 #5：lexicon 读取器 assetManager 非空一律走 assets 分支 → 绝对路径读失败 native exit(-1) 拖崩全进程——v1.20 的「模型三大件 assets 直读」布局被装机证伪并废止）；中文音色枚举从 kokoro 4 sid 收敛为单音色（melo 单说话人平台限制；FR-19 键复用、未知值回缺省不变）；assets tts/kokoro 208.9MB → tts/melo 191.2MB（int8 为 git-lfs 指针桩不可用 → fp32）；设备遗留 `tts/kokoro-data` 启动回收。下游同步：AUDIO_ENGINE_SPEC v2.6 / ARCHITECTURE §5 / SCR 修订；决策：ADR-012 附录 |
+| 1.22 | 2026-09-26 | **FR-10 拼写段逐字母精确停顿 + FR-15 新设置「拼读字母停顿」**（用户批准 SPEC_CHANGE_REQUEST_SPELLING_PAUSE；缺陷：拼写段字母连读——piper 前端连字符不产生停顿 token，逗号停顿为模型韵律不可控）：拼写段文本 `-` 连接改 `", "` 逗号分隔（`booster` → `b, o, o, s, t, e, r`；未实现逐字母拼接的渲染路径靠逗号获得自然停顿 = 优雅降级，iOS 初版直接受益）；`SpeakRequest` 加法扩展 `letterPauseMs`（编排器仅 SPELLING 段下发、逐段游标懒读——生效粒度 = 下一拼写段，L4 对齐）；神经 actual 逐字母合成 + commonMain 纯函数 `SpellingAudioAssembler` 字母间显式静音拼接（毫秒精确、仅字母间无首尾静音），整段进 WAV 缓存且键增 `sp{pauseMs}` 维度（旧连读缓存天然失键）；系统降级路径同步精确停顿（多 utterance 队列 + `playSilentUtterance`，用户裁决）；新键 `settings.spellingPauseMs` 缺省 400ms、写校验 100–2000ms、设置页滑杆即时持久化。零 schema 变更（KV 加法键）。下游同步：AUDIO_ENGINE_SPEC v2.8 / DATABASE_SCHEMA v1.11 / TEST_PLAN v2.24（TC-AE-33）；决策记录：SCR-SPELLPAUSE（DECISION_LOG） |
+| 1.23 | 2026-09-26 | **FR-11 加法扩展：新增 Previous 控制**（用户批准 SPEC_CHANGE_REQUEST_PREV_WORD——学习会话缺「上一个」导航，Next 单向，错过刚播的词只能等组内循环绕回）：跳到**当前组内**上一个未掌握 Word，跳过已掌握词；**组首回绕**到组内最后一个未掌握词（与 Next 组内循环对称，按钮永远有效）；纯导航零掌握写入（当前词回 PENDING 留在循环）；CommandWindow 开着则作废窗口跳上一词、Paused 可用（均镜像 Next）；组内唯一未掌握词回绕自身 = 等效重播；v1 仅按钮入口（预留语音命令表不动）。实现 = 引擎 `previous()`（advance 的镜像裁决，`completedGroupIndex` 恒 null）+ 编排器 `previous()`（next 镜像，adopt 参数化共享体）。零 schema 变更（纯推导）。UI 底栏改双行（上行 上一个/下一个/重播，下行 暂停+退出）。下游同步：AUDIO_ENGINE_SPEC v2.9 / LEARNING_ENGINE_SPEC v1.6 / DOMAIN_MODEL v1.7 / TEST_PLAN v2.25（TC-AE-34）；决策记录：SCR-PREVWORD（DECISION_LOG） |

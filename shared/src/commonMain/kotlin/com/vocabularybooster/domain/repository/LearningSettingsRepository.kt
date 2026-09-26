@@ -76,6 +76,15 @@ public interface LearningSettingsRepository {
     /** 写口音；值只能是 [Lang.EN_US]/[Lang.EN_GB]（ZH_CN 非口音选项），否则 [RepositoryValidationException]。 */
     public suspend fun setTtsAccent(value: Lang)
 
+    /**
+     * `settings.spellingPauseMs`：拼读段（SPELLING）字母间停顿时长（SCR-SPELLPAUSE，
+     * FR-15 加法扩展）。生效粒度 = 下一 SPELLING Segment（编排器游标懒读，对齐 L4）。
+     */
+    public suspend fun getSpellingPauseMs(): Int
+
+    /** 写拼读停顿；范围 [MIN_SPELLING_PAUSE_MS, MAX_SPELLING_PAUSE_MS]，越界 [RepositoryValidationException]。 */
+    public suspend fun setSpellingPauseMs(value: Int)
+
     public companion object {
         /** 内置默认值（DATABASE_SCHEMA §2.11）；不进入 GroupSplitter——纯函数保持由调用方传入。 */
         public const val DEFAULT_GROUP_SIZE: Int = 10
@@ -90,5 +99,14 @@ public interface LearningSettingsRepository {
 
         /** 发音口音默认美音（FR-22）。 */
         public val DEFAULT_TTS_ACCENT: Lang = Lang.EN_US
+
+        /** 拼读字母停顿默认 400ms（SCR-SPELLPAUSE）。 */
+        public const val DEFAULT_SPELLING_PAUSE_MS: Int = 400
+
+        /** 拼读字母停顿下限 100ms（写校验与设置页滑杆共用）。 */
+        public const val MIN_SPELLING_PAUSE_MS: Int = 100
+
+        /** 拼读字母停顿上限 2000ms（写校验共用；滑杆上限 1000ms）。 */
+        public const val MAX_SPELLING_PAUSE_MS: Int = 2_000
     }
 }

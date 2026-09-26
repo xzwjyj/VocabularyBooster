@@ -130,6 +130,7 @@ fun LearningSessionScreen(
                 ui = ui,
                 onPause = viewModel::pause,
                 onResume = viewModel::resume,
+                onPrevious = viewModel::previous,
                 onNext = viewModel::next,
                 onReplay = viewModel::replay,
                 onExit = { showExitConfirm = true },
@@ -553,32 +554,48 @@ private fun HighlightCard(
     }
 }
 
-/** 播放控制条（FR-11）：全部转发 ViewModel 命令（→ PlaybackOrchestrator）。 */
+/**
+ * 播放控制条（FR-11）：全部转发 ViewModel 命令（→ PlaybackOrchestrator）。
+ * 两行布局（SCR-PREVWORD v1.23）：行 1 = 词间导航（上一个/下一个）+ 重播；行 2 = 暂停(继续) + 退出。
+ */
 @Composable
 private fun PlaybackControls(
     ui: LearningUiState,
     onPause: () -> Unit,
     onResume: () -> Unit,
+    onPrevious: () -> Unit,
     onNext: () -> Unit,
     onReplay: () -> Unit,
     onExit: () -> Unit,
 ) {
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .padding(bottom = 16.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        when (ui) {
-            is LearningUiState.Playing, is LearningUiState.CommandWindow ->
-                OutlinedButton(onClick = onPause, modifier = Modifier.testTag("btn_pause")) { Text("暂停") }
-            is LearningUiState.Paused, is LearningUiState.Error ->
-                Button(onClick = onResume, modifier = Modifier.testTag("btn_resume")) { Text("继续") }
-            else -> Unit
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            OutlinedButton(onClick = onPrevious, modifier = Modifier.testTag("btn_prev")) { Text("上一个") }
+            OutlinedButton(onClick = onNext, modifier = Modifier.testTag("btn_next")) { Text("下一个") }
+            OutlinedButton(onClick = onReplay, modifier = Modifier.testTag("btn_replay")) { Text("重播") }
         }
-        OutlinedButton(onClick = onNext, modifier = Modifier.testTag("btn_next")) { Text("下一个") }
-        OutlinedButton(onClick = onReplay, modifier = Modifier.testTag("btn_replay")) { Text("重播") }
-        OutlinedButton(onClick = onExit, modifier = Modifier.testTag("btn_exit")) { Text("退出") }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            when (ui) {
+                is LearningUiState.Playing, is LearningUiState.CommandWindow ->
+                    OutlinedButton(onClick = onPause, modifier = Modifier.testTag("btn_pause")) { Text("暂停") }
+                is LearningUiState.Paused, is LearningUiState.Error ->
+                    Button(onClick = onResume, modifier = Modifier.testTag("btn_resume")) { Text("继续") }
+                else -> Unit
+            }
+            OutlinedButton(onClick = onExit, modifier = Modifier.testTag("btn_exit")) { Text("退出") }
+        }
     }
 }
 

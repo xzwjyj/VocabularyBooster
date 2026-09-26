@@ -3,6 +3,7 @@ package com.vocabularybooster.platform
 import android.content.Context
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * AudioPlayer 的 Android 实现（AUDIO_ENGINE_SPEC §8 平台 actual 契约）：
@@ -205,16 +207,35 @@ public class Media3AudioPlayer(
     // —— 内部（全部主线程限定） ——
 
     /**
-     * audioUri 解析：`res://<资源名>`（平台中立逻辑 scheme，种子/DB 存储形态）→
-     * `android.resource://<packageName>/raw/<资源名>`（DefaultDataSource → RawResourceDataSource）；
+     * audioUri 解析：
+     * - `res://<资源名>` → android.resource://<packageName>/raw/<资源名>（RawResourceDataSource）
+     * - `asset://<路径>` → 复制到 cache 目录后以 `file://` 播放（规避 DataSource scheme/资产压缩差异，
+     *   任何 DataSource 都能读；例句音频都是小文件，一次性复制可接受）
      * 其余 scheme（http/file/content…）原样透传。平台专属知识只存在于本 actual。
      */
     private fun resolveUri(audioUri: String): String =
-        if (audioUri.startsWith(RES_URI_SCHEME)) {
-            "android.resource://${appContext.packageName}/raw/${audioUri.removePrefix(RES_URI_SCHEME)}"
-        } else {
-            audioUri
+        when {
+            audioUri.startsWith(RES_URI_SCHEME) -> {
+                "android.resource://${appContext.packageName}/raw/${audioUri.removePrefix(RES_URI_SCHEME)}"
+            }
+            audioUri.startsWith(ASSET_URI_SCHEME) -> {
+                resolveAssetToFileUri(audioUri.removePrefix(ASSET_URI_SCHEME))
+            }
+            else -> audioUri
         }
+
+    /** asset 路径 → cache 中的 file:// URI（首次访问复制，之后复用）。 */
+    private fun resolveAssetToFileUri(assetPath: String): String {
+        val safeName = assetPath.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val cached = File(File(appContext.cacheDir, "video_audio"), safeName)
+        if (!cached.exists()) {
+            cached.parentFile?.mkdirs()
+            appContext.assets.open(assetPath).use { input ->
+                cached.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        return Uri.fromFile(cached).toString()
+    }
 
     private fun resetForNewTrack() {
         stopProgressTicker()
@@ -298,6 +319,9 @@ public class Media3AudioPlayer(
 
         /** 平台中立随包资产 scheme（SeedData 注记；iOS actual 对应 bundle resource）。 */
         const val RES_URI_SCHEME: String = "res://"
+
+        /** APK assets 目录逻辑 scheme（VideoImportEngine 生成的例句原声路径）。 */
+        const val ASSET_URI_SCHEME: String = "asset://"
 
         /** 例句朗读属语音内容：USAGE_MEDIA + SPEECH（焦点属性与 Media3 常用配置一致）。 */
         val EXO_AUDIO_ATTRIBUTES: androidx.media3.common.AudioAttributes =

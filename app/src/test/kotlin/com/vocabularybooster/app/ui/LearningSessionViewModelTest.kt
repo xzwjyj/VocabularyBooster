@@ -205,6 +205,27 @@ class LearningSessionViewModelTest {
         assertEquals(1, playing.segmentIndex)
     }
 
+    // —— J2. Previous 命令转发（SCR-PREVWORD，TC-AE-34）——
+
+    @Test
+    fun previousForwardsToEnginePreviousWithoutMastery() = runTest {
+        engine.previousWordIds = listOf(LearningSessionFixtures.WORD_BOOST)
+        val vm = assembleWithStore()
+        vm.start(LearningSessionFixtures.BOOK_ID)
+        advanceUntilIdle()
+        vm.next() // 起始 advance → boost；next advance → abandon（回退的出发点）
+        advanceUntilIdle()
+
+        vm.previous() // J2：UI → ViewModel → orchestrator.previous()（纯跳转，零掌握）
+        advanceUntilIdle()
+
+        val playing = vm.ui as LearningUiState.Playing
+        assertEquals("boost", playing.wordText) // 回退词（previous #1）
+        assertEquals(1, playing.segmentIndex) // 新词 seg0（用户可见 1 起）
+        assertEquals(listOf(LearningSessionFixtures.SESSION_ID), engine.previousCalls) // 恰转发一次
+        assertTrue(engine.markMasteredCalls.isEmpty()) // FR-11：previous 不触碰掌握
+    }
+
     // —— D. COMMAND_WINDOW 倒计时投影 ——
 
     @Test

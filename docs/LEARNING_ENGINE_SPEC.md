@@ -77,6 +77,22 @@ nextWord(session):
 - 语义保证：**组内循环**（一轮播完回到组内第一个未掌握词）；组空则自然推进到下一组（§7）；`orderInGroup` 顺序严格保持。
 - **SKIPPED 裁决（v1）**：v1 引擎**不产生 `SKIPPED`** 状态（见 DOMAIN_MODEL §8.3）——Next 控制不改变 SessionWord 状态（词保持 PENDING 留在组内循环）。上式 `status != MASTERED` 在 v1 恒等价于 `status ∈ {PENDING, PLAYING}`；§6 幂等、§7 完成检测、§8 退出裁决、§9 恢复均不隐含依赖 SKIPPED。
 
+**previousWord（v1.6，SCR-PREVWORD / FR-11 Previous，2026-09-26）**——`nextWord` 的镜像裁决：
+
+```
+previousWord(session):
+  words = SessionWord WHERE sessionId AND status != MASTERED
+  if words.isEmpty(): return BookComplete
+  g = min(groupIndex of words)                        # previous 恒组内：更早的组已全掌握（不变量）
+  cur = 当前播放中的 orderInGroup（若有，否则 g 组内 max）
+  prev = words in group g with orderInGroup < cur     # 降序取最近前驱（自动跳过已掌握词）
+  if prev.isEmpty(): prev = words in group g          # 组首回绕 → 组内最后一个未掌握词
+  return prev.last
+```
+
+- 语义保证：与 `nextWord` 逐点对称——组内 `orderInGroup` **降序**取最近未掌握前驱、跳过 MASTERED、**组首回绕到组内最后一个未掌握词**（镜像前进方向的组内循环回绕，组内唯一未掌握词 = 回绕自身，播放层等效重播）；纯导航，不改任何 SessionWord 状态（被离开的词经 `setPlayingWord` 既有事务回 PENDING 留在循环）。
+- previous 永不离开当前组（`min(groupIndex)` 选择域与前进共享，不变式镜像保持）→ 返回的 `completedGroupIndex` **恒 null**（组完成载体仅属前进推进，§7）。终态会话重复 previous = 幂等只读（与 `nextWord` 同一防线）；无 PLAYING 位（开场/掌握后顺延）→ `cur` 取组内 **max**（advance 对称取 min 的镜像）。
+
 ## 6. "会了"落库（MasteryMarker）
 
 - 入口唯一：`markMastered(sessionId, wordId, source: VOICE | BUTTON)`——语音与按钮完全等价（NFR-8）。
@@ -152,6 +168,7 @@ interface LearningEngine {
     suspend fun resumeSession(sessionId: Long): ResumeResult
     suspend fun markMastered(sessionId: Long, wordId: Long, source: MasterySource): MasteryResult
     suspend fun advance(sessionId: Long): AdvanceResult        // WordRef | BookComplete
+    suspend fun previous(sessionId: Long): AdvanceResult      // v1.6（SCR-PREVWORD）：组内回退镜像裁决，completedGroupIndex 恒 null
     suspend fun exitSession(sessionId: Long): ExitResult      // ExitResult(derivedWordBookId: Long?, sessionCompleted: Boolean)
     fun abandon(reason: AbandonReason)
 }
@@ -178,3 +195,4 @@ interface LearningEngine {
 | 1.3 | 2026-09-04 | Step 5D 验收裁决（交集语义）：§8 步骤 3 明确派生集合 = **当前母本仍存在 entries ∩ 本会话 SessionWord(status != MASTERED)**（Q5 原文语义；entryOrder/pendingTranslation 恒取自母本行）；新增 **effectiveRemaining 空集规则**——分支 B 交集为空 → 不创建空 DERIVED 本（Case 3），会话仍 ABANDONED、derivedWordBookId = null；SessionExited 括注同步 |
 | 1.4 | 2026-09-18 | Phase 6：§11 `ExitResult` 增 `sessionCompleted`（分支 C 首退 true / 幂等重入 false）+ 事件锚点语义说明（ADR-002 快照口径的 §8 全文对齐另循 ADR-002 工作流，本版不重复改写） |
 | 1.5 | 2026-09-18 | Phase 8：§12 增设置端口注记——`LearningSettingsRepository` 写方法自 Phase 8 设置页提供（FR-15 即时持久化；写路径权威校验在 jvmTest 真实仓储）；生效时机零引擎改动（groupSize 会话固化、开关/语速/音调每段、窗口每窗重读既有事实的文字化） |
+| 1.6 | 2026-09-26 | **新增 previousWord 镜像裁决（SCR-PREVWORD，用户批准，FR-11 v1.23 Previous 控制）**：§5 增 `previousWord` 伪码——组内 `orderInGroup` 降序取最近未掌握前驱、跳过 MASTERED、组首回绕组内最后一个未掌握词、无 PLAYING 位取组内 max、终态幂等只读；纯导航不改 SessionWord 状态；恒组内（`completedGroupIndex` 恒 null）。§11 接口草图 +`previous`。上游：PROJECT_SPEC v1.23；测试：TEST_PLAN v2.25（TC-AE-34） |

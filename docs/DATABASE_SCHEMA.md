@@ -190,7 +190,7 @@ CREATE TABLE AppSetting (
 );
 ```
 
-内置键（与 PROJECT_SPEC FR-15 对应）：`settings.groupSize`(10)、`settings.commandWindowMs`(4000)、`settings.playbackToggles`（六项默认全开）、`settings.ttsRate`(1.0)、`settings.ttsPitch`(1.0)、`settings.masteredAliases`（["会了","记住了","掌握了"]，**预登记未启用**——别名可配置性再延后，PROJECT_SPEC v1.12；v1 别名取 `CommandParser` 代码常量）。
+内置键（与 PROJECT_SPEC FR-15 对应）：`settings.groupSize`(10)、`settings.commandWindowMs`(4000)、`settings.playbackToggles`（六项默认全开）、`settings.ttsRate`(1.0)、`settings.ttsPitch`(1.0)、`settings.ttsAccent`（EN_US，FR-22）、`settings.ttsVoiceEn` / `settings.ttsVoiceZh`（null=跟随系统，FR-19；损坏值防御性降级 null 不抛——设备相关数据可自然失效）、`settings.spellingPauseMs`(400，SCR-SPELLPAUSE / PROJECT_SPEC v1.22，写校验 100–2000ms)、`settings.masteredAliases`（["会了","记住了","掌握了"]，**预登记未启用**——别名可配置性再延后，PROJECT_SPEC v1.12；v1 别名取 `CommandParser` 代码常量）。
 
 > **写路径（Phase 8 启用）**：五键经 `LearningSettingsRepository` 写方法持久化（`upsertSetting` 自 Phase 1 在位，**零迁移**）；写侧范围校验镜像读侧（groupSize ≥1、commandWindowMs >0、ttsRate/ttsPitch >0，越界拒绝写入）。
 
@@ -347,3 +347,4 @@ SELECT startedAt, endedAt FROM LearningSession WHERE endedAt IS NOT NULL;
 | 1.8 | 2026-09-18 | Phase 8 落地注记：§2.11 写路径启用（五设置键经端口写方法 + `upsertSetting`，写侧校验镜像读侧）+ `settings.masteredAliases` 标注预登记未启用（别名可配置性再延后，PROJECT_SPEC v1.12）——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.9 | 2026-09-19 | Phase 8.5 落地注记：§3 新增 **Q7 `deleteEntryDefinitionsForEntry`**（词条选择编辑 FR-17，与既有 `deleteExampleSelectionsForEntry` 配对，`updateWordSelections` 单事务内定向替换）+ §6 需求映射 +FR-17 行——**无 DDL、无索引、无 FK 变更，schema 版本维持 v2，无迁移** |
 | 1.10 | 2026-09-19 | Phase 8.6 落地注记：§3 新增 **Q8 `selectMasteredEvents` + Q9 `selectEndedSessions`**（学习统计 FR-20 事件/时长流，Kotlin 侧注入 TimeZone 分桶）+ 全量词典注记（FR-18 随包只读 SQLite 为 App 库外独立文件，按需导入走既有 insert 查询）+ §6 需求映射 +FR-18/FR-20 行——**无 DDL、无索引、无 FK 变更，schema 维持 v2，无迁移** |
+| 1.11 | 2026-09-26 | **SCR-SPELLPAUSE 落地注记**：§2.11 内置键清单 + `settings.spellingPauseMs`(400，写校验 100–2000ms 镜像读侧，PROJECT_SPEC v1.22)，并回补 FR-22 `settings.ttsAccent` / FR-19 `settings.ttsVoiceEn`·`settings.ttsVoiceZh` 两代 KV 加法键（此前批次漏记，纯文档回补）——**无 DDL、无索引、无 FK 变更，schema 维持 v2，无迁移、无 user_version 递增（KV 加法键免迁移）** |

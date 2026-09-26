@@ -121,7 +121,7 @@ class PlaybackOrchestratorStateTest {
     }
 
     /** 标准词文本（与 [standardContent] 段文本一致）。 */
-    private val alphaTexts = listOf("alpha", "a-l-p-h-a", "meaning en alpha", "中文释义 alpha", "example sentence alpha", "例句 alpha")
+    private val alphaTexts = listOf("alpha", "a, l, p, h, a", "meaning en alpha", "中文释义 alpha", "example sentence alpha", "例句 alpha")
 
     // —— TC-AE-03：末段完成 → 300ms guard → 窗口开启；倒计时归零 → advance（L1 纯倒计时）——
 
@@ -329,6 +329,131 @@ class PlaybackOrchestratorStateTest {
         h.orchestrator.dispose()
     }
 
+    // —— TC-AE-34（SCR-PREVWORD）：Previous 纯跳转 / 跳过已掌握 / 窗口作废 / 暂停位 / 单词自回绕 ——
+
+    @Test
+    fun previousIsPureJumpBackwardWithoutMastery() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta", "gamma"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta", "gamma"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(100)
+        runCurrent()
+
+        h.orchestrator.previous() // 组首（alpha）→ 回绕组内最后一个未掌握（gamma）
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[2], playing.wordRef.wordId)
+        assertEquals(0, playing.segmentIndex)
+        assertEquals("gamma", h.tts.requests.last().text) // 新词 seg0 已起播
+        // FR-11：纯跳转不改掌握——前词回 PENDING、Q3 不减
+        assertEquals(SessionWordStatus.PENDING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status)
+        assertEquals(SessionWordStatus.PLAYING, h.sessionRepo.getSessionWord(1L, wordIds[2])!!.status)
+        assertEquals(3, h.sessionRepo.countUnmasteredEntries(bookId))
+        // position 跟随新词（词级真相源迁移 + 新词段位首写）
+        assertEquals(wordIds[2], h.position.saves.last().wordId)
+        assertEquals(0, h.position.saves.last().segmentIndex)
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun previousSkipsMasteredToNearestUnmasteredBehind() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta", "gamma"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta", "gamma"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(100)
+        runCurrent()
+        assertIs<MasteryResult.Marked>(h.engine.markMastered(1L, wordIds[1], MasterySource.BUTTON))
+
+        h.orchestrator.next() // alpha → gamma（advance 侧跳过已掌握 beta）
+        runCurrent()
+        assertEquals(wordIds[2], assertIs<PlaybackState.Playing>(h.orchestrator.state.value).wordRef.wordId)
+
+        h.orchestrator.previous() // gamma → alpha（previous 侧对称跳过 beta）
+        runCurrent()
+        assertEquals(wordIds[0], assertIs<PlaybackState.Playing>(h.orchestrator.state.value).wordRef.wordId)
+        assertEquals(SessionWordStatus.MASTERED, h.sessionRepo.getSessionWord(1L, wordIds[1])!!.status)
+        assertEquals(SessionWordStatus.PENDING, h.sessionRepo.getSessionWord(1L, wordIds[2])!!.status)
+        assertEquals(SessionWordStatus.PLAYING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status)
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun previousDuringCommandWindowVoidsWindowAndJumpsBackward() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(600 + 300) // 6 段 + guard → 窗口开启
+        runCurrent()
+        assertIs<PlaybackState.CommandWindow>(h.orchestrator.state.value)
+
+        h.orchestrator.previous() // 窗口作废：组首 alpha → 回绕 beta（§6 镜像 Next 的窗口行为）
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[1], playing.wordRef.wordId)
+        assertEquals(0, playing.segmentIndex)
+        assertEquals(SessionWordStatus.PENDING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status) // 留在循环
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun previousFromPausedJumpsToPreviousWordFromSegmentZero() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta", "gamma"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta", "gamma"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(100)
+        runCurrent()
+        h.orchestrator.next() // alpha → beta
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+        h.orchestrator.pause()
+        runCurrent()
+        assertIs<PlaybackState.Paused>(h.orchestrator.state.value)
+
+        h.orchestrator.previous() // Paused → 跳上一词并播放（镜像 Next from Paused）
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[0], playing.wordRef.wordId)
+        assertEquals(0, playing.segmentIndex)
+        assertEquals(SessionWordStatus.PLAYING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status)
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun singleUnmasteredWordPreviousActsLikeReplay() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha"))
+        h.registerWords(bookId, wordIds, listOf("alpha"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(300) // seg0..2 完成、seg3 播放中
+        runCurrent()
+
+        h.orchestrator.previous() // 组内唯一未掌握词 → 回绕自身 = 等效重播
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[0], playing.wordRef.wordId)
+        assertEquals(0, playing.segmentIndex)
+        assertEquals(5, h.tts.requests.size) // seg0..2 完成 + 被打断的 seg3 + 重播 PRON（同 replay 计数）
+        assertEquals(alphaTexts[0], h.tts.requests.last().text)
+        assertEquals(SessionWordStatus.PLAYING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status)
+        assertEquals(1, h.sessionRepo.countUnmasteredEntries(bookId)) // 零掌握
+        h.orchestrator.dispose()
+    }
+
     // —— TC-AE-11：双语逐段切换 + rate/pitch 取设置（SPELLING 0.8×）——
 
     @Test
@@ -353,6 +478,35 @@ class PlaybackOrchestratorStateTest {
         assertEquals("zh-CN", requests[3].lang.tag) // MEANING_CN
         assertEquals(1.5f, requests[3].rate)
         assertTrue(requests.all { it.pitch == 0.9f })
+        // SCR-SPELLPAUSE：仅 SPELLING 段携带字母停顿（缺省 400ms），其余段恒 null
+        assertEquals(400, requests[1].letterPauseMs)
+        assertTrue(requests.filterIndexed { index, _ -> index != 1 }.all { it.letterPauseMs == null })
+        h.orchestrator.dispose()
+    }
+
+    // —— SCR-SPELLPAUSE（TC-AE-33 播放侧）：letterPauseMs 游标懒读（L4 对齐）——
+
+    @Test
+    fun spellingPauseSettingTakesEffectOnNextSpellingSegment() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        h.settings.spellingPauseMs = 250
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(200) // 词 1 前两段（PRON + SPELLING）起播并记录请求
+        runCurrent()
+
+        val alphaSpelling = h.tts.requests.first { it.text == "a, l, p, h, a" }
+        assertEquals(250, alphaSpelling.letterPauseMs)
+
+        // L4：段间改设置 → 下一词 SPELLING 段读到新值（既有词段不重读）
+        h.settings.spellingPauseMs = 800
+        advanceTimeBy(10_000) // 词 1 播完 + 窗口超时 → 词 2 起播
+        runCurrent()
+        val betaSpelling = h.tts.requests.first { it.text == "b, e, t, a" }
+        assertEquals(800, betaSpelling.letterPauseMs)
         h.orchestrator.dispose()
     }
 
@@ -667,6 +821,7 @@ class PlaybackOrchestratorStateTest {
         h.orchestrator.pause()
         h.orchestrator.resume()
         h.orchestrator.next()
+        h.orchestrator.previous()
         h.orchestrator.replay()
         assertIs<PlaybackState.Stopped>(h.orchestrator.state.value)
         assertEquals(endedAt, h.sessionRepo.getSession(1L)!!.endedAt)
