@@ -23,3 +23,6 @@ SELECT * FROM Example WHERE definitionEntryId = ? ORDER BY exampleOrder ASC;
 -- 例句回填（Phase 8.6 Tatoeba 译文补齐）：只补译文，不动其它列
 updateExampleTranslation:
 UPDATE Example SET chineseTranslation = ? WHERE exampleId = ?;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

@@ -1,0 +1,8 @@
+# 工作目录 gitignore
+# 忽略输入输出目录
+input/
+output/
+temp/
+
+# 忽略已处理记录（可保留用于断点续传）
+# processed.json

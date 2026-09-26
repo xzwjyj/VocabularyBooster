@@ -6,6 +6,8 @@ import com.vocabularybooster.app.di.appModule
 import com.vocabularybooster.achievement.AchievementEngine
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
+import com.vocabularybooster.data.videoimport.VideoImportEngine
+import com.vocabularybooster.data.videoimport.VideoImportProvider
 import com.vocabularybooster.di.sharedCoreModule
 import com.vocabularybooster.di.sharedDataModule
 import com.vocabularybooster.di.sharedLearningModule
@@ -24,6 +26,7 @@ class VocabularyBoosterApp : Application() {
 
     private val seedImporter: SeedImporter by inject()
     private val seedProvider: SeedDictionaryProvider by inject()
+    private val videoImportEngine: VideoImportEngine by inject()
 
     override fun onCreate() {
         super.onCreate()
@@ -43,6 +46,28 @@ class VocabularyBoosterApp : Application() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { seedImporter.ensureSeeded(seedProvider) }
                 .onFailure { Log.w(TAG, "seed import failed", it) }
+        }
+        // 视频预置数据导入：检查 assets/video_import/data.json 并导入
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { importVideoData() }
+                .onFailure { Log.w(TAG, "video import failed", it) }
+        }
+    }
+
+    /** 导入预置的视频数据（如果有） */
+    private suspend fun importVideoData() {
+        val jsonFileName = "video_import/data.json"
+        try {
+            val jsonContent = assets.open(jsonFileName).bufferedReader().use { it.readText() }
+            if (jsonContent.isNotBlank()) {
+                val provider = VideoImportProvider(jsonContent)
+                Log.i(TAG, "Found video import data: ${provider.getWordBookName()}, ${provider.getWordCount()} words")
+                val report = videoImportEngine.import(provider.load())
+                Log.i(TAG, "Video import completed: ${report.importedWords} new, ${report.reusedWords} reused")
+            }
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            // 文件不存在或解析失败，静默跳过（可选导入任何失败不崩启动——IO/解析/DB 种类不可穷举）
+            Log.d(TAG, "No video import data found or parse error: ${e.message}")
         }
     }
 

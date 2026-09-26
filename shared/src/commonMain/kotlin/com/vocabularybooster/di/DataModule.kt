@@ -12,6 +12,7 @@ import com.vocabularybooster.data.SqlDelightWordRepository
 import com.vocabularybooster.data.seed.SEED_DICTIONARY_JSON
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
+import com.vocabularybooster.data.videoimport.VideoImportEngine
 import com.vocabularybooster.db.VocabularyDatabase
 import com.vocabularybooster.domain.repository.AchievementRepository
 import com.vocabularybooster.domain.repository.LearningSessionRepository
@@ -76,5 +77,8 @@ public val sharedDataModule: Module = module {
     }
     single {
         SeedImporter(database = get(), clock = get())
+    }
+    single {
+        VideoImportEngine(database = get(), clock = get())
     }
 }

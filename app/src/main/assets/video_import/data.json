@@ -1,0 +1,86 @@
+{
+  "version": 3,
+  "sourceVideo": "part1.mp4",
+  "wordBookName": "巫师三",
+  "exportedAt": "2026-09-25T00:18:12.201805Z",
+  "entries": [
+    {
+      "word": "clutch",
+      "meaningEN": "(transitive) To grip or grasp tightly. ",
+      "meaningCN": "（及物）紧紧抓住；攥住。",
+      "partOfSpeech": "verb",
+      "examples": [
+        {
+          "sentence": "I see you gather before me hungry terrified clutching your babes to your breast.",
+          "chineseTranslation": "我看到你们聚集在我面前，饿得吓坏了，把你们的宝贝抱在胸前。",
+          "audioFile": "clutch_0.mp3"
+        }
+      ]
+    },
+    {
+      "word": "legion",
+      "meaningEN": "(military, Ancient Rome) The major unit or division of the Roman army, usually comprising 3000 to 6000 infantry soldiers and 100 to 200 cavalry troops. ",
+      "meaningCN": "（军事·古罗马）军团：古罗马军队的基本建制单位，通常由 3000 至 6000 名步兵和 100 至 200 名骑兵组成。",
+      "partOfSpeech": "noun",
+      "examples": [
+        {
+          "sentence": "Emperor Emre has marched his legions into our lands, laid siege to every fortress from here to the Blue Mountains, rabid and ravenous he bites and bites away.",
+          "chineseTranslation": "皇帝已把军团开进我们的土地，从这里到蓝山围攻每一座堡垒；他狂暴又贪婪，咬了又咬。",
+          "audioFile": "legion_0.mp3"
+        }
+      ]
+    },
+    {
+      "word": "siege",
+      "meaningEN": "the action of an armed force that surrounds a fortified place and isolates it while continuing to attack",
+      "meaningCN": "围攻；围困（包围要塞、孤立守军并持续攻击）。",
+      "partOfSpeech": "noun",
+      "examples": [
+        {
+          "sentence": "Emperor Emre has marched his legions into our lands, laid siege to every fortress from here to the Blue Mountains, rabid and ravenous he bites and bites away.",
+          "chineseTranslation": "皇帝已把军团开进我们的土地，从这里到蓝山围攻每一座堡垒；他狂暴又贪婪，咬了又咬。",
+          "audioFile": "siege_0.mp3"
+        }
+      ]
+    },
+    {
+      "word": "rabid",
+      "meaningEN": "(by extension) Furious; raging; extremely violent. ",
+      "meaningCN": "（引申）狂怒的；狂暴的；极其激烈的。",
+      "partOfSpeech": "adjective",
+      "examples": [
+        {
+          "sentence": "from here to the blue mountains, rabid and ravenous he bites and bites away.",
+          "chineseTranslation": "从这里到蓝山，狂暴而贪婪的他咬了一口又咬了一口。",
+          "audioFile": "rabid_0.mp3"
+        }
+      ]
+    },
+    {
+      "word": "ravenous",
+      "meaningEN": "Extremely hungry; devouring or craving food in great quantities. ",
+      "meaningCN": "极其饥饿的；狼吞虎咽的。",
+      "partOfSpeech": "adjective",
+      "examples": [
+        {
+          "sentence": "from here to the blue mountains, rabid and ravenous he bites and bites away.",
+          "chineseTranslation": "从这里到蓝山，狂暴而贪婪的他咬了一口又咬了一口。",
+          "audioFile": "ravenous_0.mp3"
+        }
+      ]
+    },
+    {
+      "word": "precipice",
+      "meaningEN": "(figurative) The brink of a dangerous situation. ",
+      "meaningCN": "（比喻）危险处境的边缘。",
+      "partOfSpeech": "noun",
+      "examples": [
+        {
+          "sentence": "Men of the North, you stand at the precipice. Your kings have failed you, so now you turn to the gods.",
+          "chineseTranslation": "北方人，你们站在悬崖边。你的国王辜负了你，所以现在你转向神。",
+          "audioFile": "precipice_0.mp3"
+        }
+      ]
+    }
+  ]
+}

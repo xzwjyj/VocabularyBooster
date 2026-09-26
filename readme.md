@@ -37,6 +37,45 @@ VocabularyBooster/
 └── iosApp/                # iOS 应用（SwiftUI，未来阶段，占位）
 ```
 
+## 视频单词导入工具
+
+从英文视频中提取单词和例句，生成预置数据包打包进 APK。
+
+### 准备工作
+
+1. 安装 Python 依赖：
+   ```bash
+   pip install -r tools/video_importer/requirements.txt
+   ```
+2. 安装 ffmpeg（用于提取视频音频）：从 https://ffmpeg.org 下载并添加到 PATH
+
+### 使用流程
+
+1. 准备英文视频文件（MP4）和单词列表（TXT，每行一个单词）
+2. 运行提取工具：
+   ```bash
+   python tools/video_importer/main.py --video video.mp4 --words words.txt --output ./output
+   ```
+3. 工具输出数据包到 `./output/` 目录：
+   - `data.json` - 元数据
+   - `audio/` - 例句音频片段
+4. 将输出目录内容复制到 APK 的 `app/src/main/assets/video_import/` 目录
+5. 重新构建 APK：`./gradlew :app:assembleDebug`
+6. 安装 APK，数据将在首次启动时自动导入
+
+### 数据格式
+
+详细格式见 [tools/video_importer/](tools/video_importer/) 目录。
+
+### 维护流程
+
+后续维护只需：
+1. 运行 `main.py` 处理新的视频
+2. 替换 `assets/video_import/` 中的文件
+3. 重新构建 APK
+
+---
+
 ## 开发环境（本机 2026-09-01 安装结果，均为用户目录安装、未改系统配置）
 
 | 工具 | 要求 | 本机状态 |

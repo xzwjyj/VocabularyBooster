@@ -1,0 +1,14 @@
+# Video Importer Tool Dependencies
+# Python 3.10+
+
+# Whisper for speech recognition
+# https://github.com/openai/whisper
+openai-whisper>=20231117
+
+# For better audio processing (optional)
+# moviepy>=1.0.3
+# pydub>=0.25.1
+
+# For translation (optional, for Chinese definitions)
+# googletrans>=3.1.0a0
+# deep-translator>=1.11.0

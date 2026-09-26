@@ -29,6 +29,9 @@ SELECT COUNT(*) FROM WordBook WHERE name = ?;
 selectWordBookById:
 SELECT * FROM WordBook WHERE wordBookId = ?;
 
+selectWordBookByName:
+SELECT * FROM WordBook WHERE name = ? LIMIT 1;
+
 selectChildWordBooks:
 SELECT * FROM WordBook WHERE parentWordBookId = ? ORDER BY createdAt DESC;
 
