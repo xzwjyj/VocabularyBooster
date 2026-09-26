@@ -209,8 +209,8 @@ public class Media3AudioPlayer(
     /**
      * audioUri 解析：
      * - `res://<资源名>` → android.resource://<packageName>/raw/<资源名>（RawResourceDataSource）
-     * - `asset://<路径>` → 复制到 cache 目录后以 `file://` 播放（规避 DataSource scheme/资产压缩差异，
-     *   任何 DataSource 都能读；例句音频都是小文件，一次性复制可接受）
+     * - `asset://<路径>` → 每次复制到 cache 目录后以 `file://` 播放（规避 DataSource scheme/资产压缩差异，
+     *   任何 DataSource 都能读；例句音频都是小文件，复制开销可忽略）
      * 其余 scheme（http/file/content…）原样透传。平台专属知识只存在于本 actual。
      */
     private fun resolveUri(audioUri: String): String =
@@ -224,15 +224,20 @@ public class Media3AudioPlayer(
             else -> audioUri
         }
 
-    /** asset 路径 → cache 中的 file:// URI（首次访问复制，之后复用）。 */
+    /**
+     * asset 路径 → cache 中的 file:// URI。
+     *
+     * 每次 prepare 都从 APK 重拷（不做「已存在即复用」缓存）：例句音频随 APK 更新会被替换
+     * （SCR-AUDIOTRIM 重裁 / SCR-SENTMERGE 整句扩剪），旧拷贝若复用会让设备一直播旧音频
+     * （SCR-AUDIOCACHE：legion 例句文字已整句、语音仍停在旧 7.2s 拷贝）。例句音频均为小文件
+     * （≤~200KB），逐次复制开销可忽略——与词典 sqlite 的 user_version 失效机制同理，取最简形态。
+     */
     private fun resolveAssetToFileUri(assetPath: String): String {
         val safeName = assetPath.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val cached = File(File(appContext.cacheDir, "video_audio"), safeName)
-        if (!cached.exists()) {
-            cached.parentFile?.mkdirs()
-            appContext.assets.open(assetPath).use { input ->
-                cached.outputStream().use { output -> input.copyTo(output) }
-            }
+        cached.parentFile?.mkdirs()
+        appContext.assets.open(assetPath).use { input ->
+            cached.outputStream().use { output -> input.copyTo(output) }
         }
         return Uri.fromFile(cached).toString()
     }

@@ -299,3 +299,10 @@
 **决策**（用户 2026-09-26 批准「全部换」）：26 行全量人工重译（视频例句用 SCR 批定稿；Tatoeba 逐句按语境译——疯狗系列/围困系列/救命稻草/多如牛毛/圣经「我名叫群」等）；data.json v3→v4 同步（新装设备直接得新译文）；设备 DB 走 exampleId+原句双匹配定点 UPDATE 手术（掌握/会话/勾选行零触碰）。VideoImportEngine 只 skip 不更新既有行（源码复核 :97-119），手术路径必须。
 **运维教训（装机竞态）**：DB 手术回写（run-as cp）时 app 若被重新拉起，僵尸进程携旧页缓存可存活数小时，造成一次旧值闪现；回写后应立即 force-stop + 冷启验证。另：adb shell cat 拉库会被文本模式 CRLF 注入损坏（131231≠131072 字节），必须 `exec-out` 原始模式；装机门在 PIN 锁屏时必挂（安装命令挂死需 kill 重试）。
 **验收**：设备库 26/26 更新、零机翻残留（SQL 复核）；冷启后 UI 上屏取证（clutch 视频例句新译文 ✓）；v4 APK 装机成功（装机门两击流程）；例句 TTS 按原文键自动失键重合成。译文口味终验交接用户（列表见会话记录）。
+
+### SCR-AUDIOCACHE: 例句音频 asset 拷贝缓存永不失效——文字整句、语音停在旧剪裁（2026-09-26）
+
+**问题**：用户报告 legion 例句文字显示完整（SCR-SENTMERGE 整句），语音却截断在旧边界（"…every fortress"）。
+**根因**：`Media3AudioPlayer.resolveAssetToFileUri` 把 `asset://` 例句音频复制到 `cacheDir/video_audio/` 后**「已存在即复用」永不失效**——SCR-AUDIOTRIM / SCR-SENTMERGE 重裁音频靠「重打包即生效」分发（DB 路径不变），但设备 cache 里躺着旧剪裁拷贝（legion 实证：cache 旧 7.2s vs APK 新 13.27s），Media3 一直播旧件。与 ADR-008 词典 sqlite 旧缓存（user_version 铁律）同类教训，音频路径此前无失效机制。取证：whisper 逐个转写 APK 资产六文件，句尾词全部在（内容完整，问题只在设备缓存）；`audioDurationMs` 恒 null 且播放到自然 EOF，排除 DB 时长截断。
+**决策**（用户 2026-09-26 批准「全部修好」，纯 androidMain actual 内部改动）：废止复用缓存——**每次 prepare 从 APK 重拷**再以 file:// 播放（例句音频 ≤~200KB，逐次复制开销可忽略；与 user_version 失效机制同理取最简形态）。装新包后**全部例句音频自动换新**（六文件同机制，含可能残留旧拷贝的 clutch/precipice/rabid/ravenous），无需清缓存 / 无 DB 手术 / 无资产版本号。
+**验收**：门禁全绿（jvmTest / testDebugUnitTest×2 / detekt×2 / checkPlatformBoundaries / assembleDebug 648MB）。装机机器验证✓（2026-09-26 vivo）：修复前设备 cache 实证 legion/siege 拷贝 = 117230B（旧 7.2s，09-25 21:04 拷入）vs APK 资产 213361B（13.27s）；装新包后 ravenous 例句段缓存 mtime 即时刷新、legion 完整词循环播至例句段时缓存 117230→213361（新剪裁生效，例句原文段高亮播放取证）。人耳终验（整句 ~13.3s 到 bites away）交接用户。**装机走查教训**：① 走查期间用户同时操作设备（书单改名/派生本/暂停）会造成极困惑的假象状态（会话莫名暂停、零 speak 日志、回主页）——走查前先与用户确认设备独占；② 恢复会话从持久化段续播（可能直接落在译文段后直进下一词），验证例句音频段需走完整词循环（上一个回跳 + 全段播放）；③ unzip 通配符在 git-bash 对大 APK 列表会静默返回 0 条，验证 APK 资产完整性须先 `unzip -l > file` 全量列表再 grep。
