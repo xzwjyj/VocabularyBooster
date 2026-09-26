@@ -291,3 +291,11 @@
 - v1 仅按钮，不加语音命令（预留命令表不动）
 **测试**（TC-AE-34，三段）：commonTest `LearningEnginePreviousTest` 11 用例（镜像裁决全表）+ jvmTest StateTest 5 用例（纯跳转/跳过已掌握/窗口作废/Paused 起跳/单词自回绕）+ RestartTest previous 镜像（L3 双匹配钉死）+ app VM J2 转发用例；终态重入风暴补 `previous()`；接口加方法致两处手写 Fake（RecordingEngine / FakeLearningEngine）同批 override。
 **验收**：门禁 jvmTest 348/349 + testDebugUnitTest ×2 + detekt ×2 + checkPlatformBoundaries + assembleDebug（648MB）全绿——唯一失败 ImportPerfTest 机器级故障窗口再现（同日两跑两种形态：JDBC NPE → SQLITE 语法错误，非确定性且本批零 import 代码，按 ADR-007 先例排除）；门禁修复三项 detekt（DefaultLearningEngine TooManyFunctions 12>11 加 @Suppress 标注 + 测试两行超长缩注）；assembleDebug 首跑 mergeDebugResources 再现「not a regular file」Synology 同步损坏（停 daemon + rm -rf app/build 重建即恢复，先例路径）。测试实现修正两处场景构造：previousSelectsNearestUnmastered / newEngineInstanceContinuesPrevious 原构造掌握全部前驱（实际是组首回绕场景，实现行为正确）——改为纯跳转留未掌握前驱形态。装机走查（vivo，2026-09-26）：双行控制条布局上屏 ✓、组首回绕 clutch→precipice 自 seg0 起播 ✓、词卡随换词刷新 ✓（均截图取证）；窗口/暂停态「上一个」行为与回绕体感人耳验收交接用户。
+
+### 例句中文译文全量重构（2026-09-26）
+
+**问题**：用户报告例句中文翻译不自然，要求 app 内全部例句译文按定稿译法重构（含视频例句与 Tatoeba 例句）。
+**根因**：视频批译文 = MyMemory 机翻直译腔；Tatoeba 例句译文同为机翻质量（「她被一只狂犬病追赶」语法错、「那样的故事是军团的」语义错、「我每次担心的时候 都会有食欲」漏译 ravenous 等）。设备库 26 行存量（6 REAL_MOVIE_TV + 20 TATOEBA）。
+**决策**（用户 2026-09-26 批准「全部换」）：26 行全量人工重译（视频例句用 SCR 批定稿；Tatoeba 逐句按语境译——疯狗系列/围困系列/救命稻草/多如牛毛/圣经「我名叫群」等）；data.json v3→v4 同步（新装设备直接得新译文）；设备 DB 走 exampleId+原句双匹配定点 UPDATE 手术（掌握/会话/勾选行零触碰）。VideoImportEngine 只 skip 不更新既有行（源码复核 :97-119），手术路径必须。
+**运维教训（装机竞态）**：DB 手术回写（run-as cp）时 app 若被重新拉起，僵尸进程携旧页缓存可存活数小时，造成一次旧值闪现；回写后应立即 force-stop + 冷启验证。另：adb shell cat 拉库会被文本模式 CRLF 注入损坏（131231≠131072 字节），必须 `exec-out` 原始模式；装机门在 PIN 锁屏时必挂（安装命令挂死需 kill 重试）。
+**验收**：设备库 26/26 更新、零机翻残留（SQL 复核）；冷启后 UI 上屏取证（clutch 视频例句新译文 ✓）；v4 APK 装机成功（装机门两击流程）；例句 TTS 按原文键自动失键重合成。译文口味终验交接用户（列表见会话记录）。
