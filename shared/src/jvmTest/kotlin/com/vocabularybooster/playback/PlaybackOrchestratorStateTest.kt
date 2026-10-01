@@ -454,6 +454,215 @@ class PlaybackOrchestratorStateTest {
         h.orchestrator.dispose()
     }
 
+    // —— TC-AE-35（SCR-SEGMENTSEEK）：点卡跳段——纯导航双向 / 词头 / 窗口作废 / 暂停位迁移 / 开关禁用 no-op / 幂等 ——
+
+    @Test
+    fun seekWhilePlayingJumpsToCardFirstEnabledSegmentBothDirections() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(400) // seg0..3 完成、seg4（例句）播放中
+        runCurrent()
+
+        h.orchestrator.seekTo(SegmentOwner.Definition(wordIds[0] * 10 + 1)) // 向后跳：例句卡 → 释义卡首启用段
+        runCurrent()
+        var playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[0], playing.wordRef.wordId) // 不换词（纯导航）
+        assertEquals(2, playing.segmentIndex) // 释义卡首段 = MEANING_EN
+        assertEquals(alphaTexts[2], h.tts.requests.last().text) // 目标段头起播
+        assertEquals(2, h.position.saves.last().segmentIndex) // 位置随迁移（NFR-3 既有路径）
+
+        h.orchestrator.seekTo(SegmentOwner.Example(wordIds[0] * 100 + 1)) // 向前跳：释义卡 → 例句卡首启用段
+        runCurrent()
+        playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(4, playing.segmentIndex)
+        assertEquals(alphaTexts[4], h.tts.requests.last().text)
+
+        // Replay 级纯导航：零掌握、SessionWord 不动
+        assertEquals(SessionWordStatus.PLAYING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status)
+        assertEquals(2, h.sessionRepo.countUnmasteredEntries(bookId))
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekToWordOwnerRestartsFromPronunciationSegment() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(300) // seg0..2 完成、seg3 播放中
+        runCurrent()
+
+        h.orchestrator.seekTo(SegmentOwner.Word) // D2 裁决：词头可点 = 跳回发音段
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[0], playing.wordRef.wordId)
+        assertEquals(0, playing.segmentIndex)
+        assertEquals(alphaTexts[0], h.tts.requests.last().text)
+        assertEquals(2, h.sessionRepo.countUnmasteredEntries(bookId)) // 零掌握
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekDuringCommandWindowVoidsWindowAndReplaysFromTargetSegment() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(600 + 300) // 6 段 + guard → 窗口开启
+        runCurrent()
+        assertIs<PlaybackState.CommandWindow>(h.orchestrator.state.value)
+
+        h.orchestrator.seekTo(SegmentOwner.Definition(wordIds[0] * 10 + 1)) // 窗口作废（镜像 Previous，非命令消费）
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(wordIds[0], playing.wordRef.wordId) // 当前词保持 PLAYING 不动
+        assertEquals(2, playing.segmentIndex)
+        assertEquals(alphaTexts[2], h.tts.requests.last().text)
+        assertEquals(SessionWordStatus.PLAYING, h.sessionRepo.getSessionWord(1L, wordIds[0])!!.status)
+        assertEquals(2, h.sessionRepo.countUnmasteredEntries(bookId))
+
+        advanceTimeBy(100) // 段序自目标段继续推进
+        runCurrent()
+        assertEquals(3, assertIs<PlaybackState.Playing>(h.orchestrator.state.value).segmentIndex)
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekFromPausedMovesPausePositionWithoutResuming() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(200) // seg2（MEANING_EN）播放中
+        runCurrent()
+        h.orchestrator.pause()
+        runCurrent()
+        assertEquals(2, assertIs<PlaybackState.Paused>(h.orchestrator.state.value).segmentIndex)
+
+        h.orchestrator.seekTo(SegmentOwner.Example(wordIds[0] * 100 + 1)) // D1 裁决：只迁移暂停位，不自动恢复
+        runCurrent()
+        val paused = assertIs<PlaybackState.Paused>(h.orchestrator.state.value)
+        assertEquals(4, paused.segmentIndex) // 新暂停位 = 例句卡首段头
+        assertEquals(0L, paused.offsetMs)
+        assertEquals(false, paused.atCommandWindow)
+        assertNull(paused.error)
+        assertEquals(alphaTexts[2], h.tts.requests.last().text) // 无新朗读 = 确未自动恢复
+        assertEquals(4, h.position.saves.last().segmentIndex) // 暂停位已持久化迁移
+
+        h.orchestrator.resume() // 既有 Resume 语义零改动：自目标段起播
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(4, playing.segmentIndex)
+        assertEquals(alphaTexts[4], h.tts.requests.last().text)
+        assertEquals(2, h.sessionRepo.countUnmasteredEntries(bookId))
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekFromErrorPauseClearsErrorAndKeepsPausedAtTargetSegment() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        h.tts.failTexts += alphaTexts[2] // 注入 MEANING_EN 段 TTS 失败 → error 暂停
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+        val errPaused = assertIs<PlaybackState.Paused>(h.orchestrator.state.value)
+        assertTrue(errPaused.error != null) // §9：TTS 失败 → Paused(error)
+
+        h.orchestrator.seekTo(SegmentOwner.Example(wordIds[0] * 100 + 1)) // 错误属于旧段，随跳转清除
+        runCurrent()
+        val paused = assertIs<PlaybackState.Paused>(h.orchestrator.state.value)
+        assertEquals(4, paused.segmentIndex)
+        assertNull(paused.error) // D1：保持 Paused 且 error 位清除——Resume 从目标段重试
+
+        h.orchestrator.resume()
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(4, playing.segmentIndex)
+        assertEquals(alphaTexts[4], h.tts.requests.last().text) // 目标段正常朗读（failTexts 不含该段）
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekToCardWithAllSegmentsDisabledIsNoOpWithoutDisturbingPlayback() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.registerWords(bookId, wordIds, listOf("alpha", "beta"))
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        advanceTimeBy(200) // seg2（释义卡 MEANING_EN）播放中
+        runCurrent()
+        h.settings.toggles = PlaybackToggles(
+            pronunciation = true, spelling = true, meaningEn = false,
+            meaningCn = false, example = true, exampleCn = true,
+        ) // 释义卡两段（EN/CN）全被 FR-10 开关禁用
+
+        h.orchestrator.seekTo(SegmentOwner.Definition(wordIds[0] * 10 + 1)) // 无启用段 → no-op
+        runCurrent()
+        assertEquals(2, assertIs<PlaybackState.Playing>(h.orchestrator.state.value).segmentIndex) // 在播段未被切断
+
+        advanceTimeBy(100) // seg2 完成 → 段评估跳过禁用的 seg3 → seg4 起播（rank 语义：启用段序）
+        runCurrent()
+        val playing = assertIs<PlaybackState.Playing>(h.orchestrator.state.value)
+        assertEquals(3, playing.segmentIndex)
+        assertEquals(alphaTexts[4], h.tts.requests.last().text)
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekOnEmptySegmentWordAndTerminalStatesIsIdempotent() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha", "beta"))
+        h.content.contents[bookId to wordIds[1]] = standardContent(wordIds[1], "beta")
+        // 词 1 无内容 → 空词（零 specs，L2）：seek 解析无命中 → no-op，窗口照常
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        val window = assertIs<PlaybackState.CommandWindow>(h.orchestrator.state.value)
+        assertEquals(wordIds[0], window.wordRef.wordId)
+
+        h.orchestrator.seekTo(SegmentOwner.Word) // 空词 seek = 幂等 no-op
+        runCurrent()
+        assertEquals(wordIds[0], assertIs<PlaybackState.CommandWindow>(h.orchestrator.state.value).wordRef.wordId)
+        advanceTimeBy(4_000) // 窗口超时 advance → 词 2 正常播放
+        runCurrent()
+        assertEquals(wordIds[1], assertIs<PlaybackState.Playing>(h.orchestrator.state.value).wordRef.wordId)
+
+        h.orchestrator.exit() // → Stopped（终态）
+        runCurrent()
+        assertIs<PlaybackState.Stopped>(h.orchestrator.state.value)
+        h.orchestrator.seekTo(SegmentOwner.Definition(1L)) // 终态 seek = 幂等 no-op
+        runCurrent()
+        assertIs<PlaybackState.Stopped>(h.orchestrator.state.value)
+        h.orchestrator.dispose()
+    }
+
+    @Test
+    fun seekOnIdleStateIsIdempotent() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        db.seedBook(listOf("alpha"))
+
+        h.orchestrator.seekTo(SegmentOwner.Word) // 未接入会话 → no-op
+        runCurrent()
+        assertIs<PlaybackState.Idle>(h.orchestrator.state.value)
+        h.orchestrator.dispose()
+    }
+
     // —— TC-AE-11：双语逐段切换 + rate/pitch 取设置（SPELLING 0.8×）——
 
     @Test

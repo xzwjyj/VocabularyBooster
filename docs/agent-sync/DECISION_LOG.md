@@ -377,3 +377,15 @@
 **决策**：单空格级改为**逐位置扫描**，跳过「译文以英文字母开头」的位置——英文尾巴（`roll out` 的 out）是短语成分不是译文。效果：`roll out` → 短语整词（词典按短语 lookup 富化）；`roll out 推出` → 首个非英文开头空格处分割短语+译文；`hello world,你好` → 单空格级全跳过后下探逗号级分割短语+译文；全英文行 → 整行短语。显式分隔级（Tab/2+ 空格/逗号/分号/冒号）不做扫描、右侧英文照常作译文；**译文以英文开头须用显式分隔符**（ImportScreen 说明补「多词短语整行书写；短语+译文用 Tab 或逗号」）。既有 2 个锁定旧口径的用例期望反转（`take off`→WordOnly、`hello world,你好`→逗号级）。
 **测试**（TC-IMP-16，TEST_PLAN v2.31）：commonTest `LineParserTest` 短语组 3 + jvmTest `ImportEngineTest.multiWordPhraseLineImportsAndEnrichesAsSingleWord`。
 **文档**：PROJECT_SPEC v1.29（FR-14 行格式①）/ IMPORT_SPEC v1.5（§3 单词行口径 + v1.5 注记 + 边界 #10 + §10 矩阵）/ SCR §7.6。零 schema 迁移。
+
+### SCR-SEGMENTSEEK: 学习会话点卡跳段（2026-10-01）
+
+**问题**：学习会话词内容面板（FR-21）纯只读展示——想重听某条释义/例句只能等组内循环绕回，或「重播」整词从头开始，无法直接跳到想听的段落。
+**决策**（用户批准 SCR；裁决 D1 = Paused 只跳位置不自动恢复（防误触后突然出声）/ D2 = 词头可点）：
+- 编排器新控制 `seekTo(owner: SegmentOwner)`：当前词 specs 全范围解析 owner **首个启用段**（允许向后跳；FR-10 开关懒读过滤，与 L4 同口径）；纯导航零掌握零换词（Replay 级，SessionWord / 引擎零接触）。
+- Playing / CommandWindow（窗口作废，镜像 previous 的非命令消费语义）→ 从该段头重播；Paused（含 error 暂停）→ 只迁移暂停位到该段头、保持 Paused 不自动恢复；error 位随跳转清除（错误属于旧段，Resume 从目标段重试）。
+- 无启用段（该卡片全部段类型被开关禁用）/ 空词（零 specs）/ Idle / 终态 → 幂等 no-op **不打断在播段**（owner 解析先于 cancelStep 返回）。
+- 游标迁移与 `applyPlayingRestore` 同口径：specCursor = 目标 spec 下标、playedCount = 启用段序 rank、resumeOffsetMs = 0、currentSpec = null。
+- UI：释义卡/例句卡/词头 clickable → VM `seekToSegment(owner)` 走既有命令转发路径；testTag 沿用卡片既有键（`learning_def_{id}` / `learning_example_{id}` / `learning_word`）。
+**测试**（TC-AE-35，TEST_PLAN v2.32）：jvmTest `PlaybackOrchestratorStateTest` seek 组 8（双向纯导航 / 词头起播 / 窗口作废续播 / Paused 迁移不恢复 / error 清除 / 开关禁用 no-op / 空词与终态与 Idle 幂等）+ app 单测 `LearningSessionViewModelTest` J3 点卡转发。零引擎接口变更（手写 Fake 零破坏）、零 schema 迁移。
+**文档**：PROJECT_SPEC v1.30（FR-11 控制表 +Seek、FR-21 注记卡片可点）/ AUDIO_ENGINE_SPEC v2.12（§3/§6）/ DOMAIN_MODEL v1.8（§10）。

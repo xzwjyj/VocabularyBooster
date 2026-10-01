@@ -6,11 +6,18 @@ import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.model.Achievement
 import com.vocabularybooster.domain.model.AchievementType
 import com.vocabularybooster.domain.model.BookCompletedPayload
+import com.vocabularybooster.domain.model.DefinitionEntry
+import com.vocabularybooster.domain.model.Example
+import com.vocabularybooster.domain.model.ExampleSourceType
 import com.vocabularybooster.domain.model.Lang
+import com.vocabularybooster.domain.model.PlaybackContent
+import com.vocabularybooster.domain.model.PlaybackToggles
+import com.vocabularybooster.domain.model.Word
 import com.vocabularybooster.learning.MasterySource
 import com.vocabularybooster.learning.ResumeResult
 import com.vocabularybooster.learning.StartResult
 import com.vocabularybooster.playback.PlaybackOrchestrator
+import com.vocabularybooster.playback.SegmentOwner
 import com.vocabularybooster.speech.CommandParser
 import com.vocabularybooster.speech.RecognitionResult
 import kotlinx.coroutines.CoroutineScope
@@ -230,6 +237,47 @@ class LearningSessionViewModelTest {
         assertEquals(1, playing.segmentIndex) // 新词 seg0（用户可见 1 起）
         assertEquals(listOf(LearningSessionFixtures.SESSION_ID), engine.previousCalls) // 恰转发一次
         assertTrue(engine.markMasteredCalls.isEmpty()) // FR-11：previous 不触碰掌握
+    }
+
+    // —— J3. Seek 点卡跳段转发（SCR-SEGMENTSEEK，TC-AE-35）——
+
+    @Test
+    fun seekToSegmentForwardsToOrchestratorWithoutMastery() = runTest {
+        // boost 注入完整词条（1 释义 + 1 例句 = 6 段）：点例句卡可观测到段位跳转
+        val definition = DefinitionEntry(
+            definitionEntryId = LearningSessionFixtures.WORD_BOOST * 10 + 1,
+            wordId = LearningSessionFixtures.WORD_BOOST,
+            partOfSpeech = "v", partOfSpeechOrder = 0, definitionOrder = 0,
+            meaningEN = "meaning en boost", meaningCN = "中文释义 boost",
+        )
+        val example = Example(
+            exampleId = LearningSessionFixtures.WORD_BOOST * 100 + 1,
+            definitionEntryId = definition.definitionEntryId,
+            sentence = "example sentence boost", chineseTranslation = "例句 boost",
+            sourceType = ExampleSourceType.TTS, audioUri = null, exampleOrder = 0,
+        )
+        content.contentsByWordId = mapOf(
+            LearningSessionFixtures.WORD_BOOST to PlaybackContent(
+                word = Word(LearningSessionFixtures.WORD_BOOST, "boost", "boost"),
+                selectedDefinitions = listOf(definition),
+                examplesByDefinitionEntryId = mapOf(definition.definitionEntryId to listOf(example)),
+            ),
+        )
+        settings.toggles = PlaybackToggles.DEFAULT // Fake 默认仅 PRON 开（每词单段时序）——J3 需全 6 段可跳
+        val vm = assembleWithStore()
+        vm.start(LearningSessionFixtures.BOOK_ID)
+        advanceUntilIdle() // boost seg0（发音段）在播（Fake TTS 挂在 gate 上冻结段位）
+
+        vm.seekToSegment(SegmentOwner.Example(example.exampleId)) // J3：点例句卡 → 跳该卡首启用段
+        advanceUntilIdle()
+
+        val playing = vm.ui as LearningUiState.Playing
+        assertEquals("boost", playing.wordText) // 不换词（纯导航）
+        assertEquals(5, playing.segmentIndex) // 第 5 段 = 例句（用户可见 1 起）
+        assertEquals("example sentence boost", synthesizer.requests.last().text) // 目标段头已起播
+        assertEquals(listOf(LearningSessionFixtures.SESSION_ID), engine.advanceCalls) // 仅起始 advance
+        assertTrue(engine.markMasteredCalls.isEmpty()) // 纯导航零掌握
+        assertTrue(engine.previousCalls.isEmpty()) // 不触发词级回退
     }
 
     // —— N. 音标旁朗读转发（FR-22 扩展，TC-IPAPRON-05）——

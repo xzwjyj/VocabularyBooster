@@ -75,6 +75,7 @@ buildSegments(word, selectedDefinitions, toggles) -> List<Segment>:
 | Playing / Paused / CommandWindow | next | Playing(下一词, seg 0) | **不**标记掌握（FR-11） |
 | Playing / Paused / CommandWindow | previous（v2.9，SCR-PREVWORD） | Playing(上一词, seg 0) | **不**标记掌握（FR-11）；组内取上一个未掌握词，组首回绕到组内最后一个未掌握词（引擎裁决）；窗口开着则作废该窗口（当前词回 PENDING 留在循环） |
 | 同上 | replay | Playing(当前词, seg 0) | 词级重置 |
+| 同上 | seek(owner)（v2.12，SCR-SEGMENTSEEK） | Playing / CommandWindow → Playing(目标段头)；Paused → Paused(目标段头) | **不**标记掌握（FR-11）；当前词 specs 全范围解析 owner **首个启用段**（允许向后跳，FR-10 开关懒读过滤）；窗口开着则作废该窗口（镜像 previous，非命令消费）；Paused 只迁移暂停位**不自动恢复**（error 位随跳转清除——错误属于旧段）；无启用段 / 空词 / Idle / 终态 → 幂等 no-op 不打断在播段 |
 | 同上 | exit | Stopped | `exitSession()` → 派生 / 完成（LEARNING §8/§7） |
 | CommandWindow（该词触发了书完成） | — | Completed | **先停播放**再展示勋章（FR-8） |
 
@@ -115,6 +116,7 @@ buildSegments(word, selectedDefinitions, toggles) -> List<Segment>:
 | Next | ✅ | 纯跳转，不改掌握状态；若当前在命令窗口则跳过该词 |
 | Previous（v2.9，SCR-PREVWORD） | ✅ | 纯跳转，不改掌握状态；当前组内上一个未掌握词，组首回绕到组内最后一个未掌握词（引擎裁决）；若当前在命令窗口则作废窗口跳上一词 |
 | Replay | ✅ | 当前词从 seg0 重播；命令窗口若开着则作废 |
+| Seek（v2.12，SCR-SEGMENTSEEK） | ✅ | 点卡跳段：纯导航不改掌握不换词；跳到卡片（SegmentOwner）首个启用段，卡片段全被开关禁用则 no-op 不打断在播段；Paused 只迁移暂停位不自动恢复；命令窗口若开着则作废后自目标段重播 |
 | Exit | 需确认弹窗 | 二次确认后执行（防误触中断整场学习） |
 
 ## 7. CommandParser（纯 Kotlin，`shared/speech/`）
@@ -221,3 +223,4 @@ fun parse(rawText: String, aliases: Set<String>, enabled: Set<VoiceCommand>): Vo
 
 | 2.10 | 2026-09-26 | **例句音频 asset 拷贝缓存失效修复（SCR-AUDIOCACHE，用户批准，FR-13 例句原声缺陷修复）**：§8 `Media3AudioPlayer` 行补 `asset://` 契约——每次 prepare 从 APK 重拷至 cacheDir/video_audio 再以 file:// 播放，废止「首次访问复制，之后复用」。根因：SCR-AUDIOTRIM / SCR-SENTMERGE 重裁音频后装新包，设备 cacheDir 旧拷贝永不失效 → 文字已整句、语音仍停在旧剪裁（legion 实证 7.2s 旧件 vs APK 内 13.27s 新件；whisper 转写取证 APK 资产六文件内容均完整）。纯 androidMain actual 内部改动，端口/编排器/DB 零变化（video 例句 audioDurationMs 恒 null，播放到自然 EOF 不涉 DB 时长）；装新包后全部例句音频自动换新，无需清缓存。上游：本批无 PROJECT_SPEC 行为变更 |
 | 2.11 | 2026-09-26 | **音标旁口音试听（SCR-IPAPRONOUNCE，用户提出，FR-22 v1.24 加法扩展）**：§8 新增试听契约段——app 层 `WordPronouncer` 一次性 speak 通道（三屏音标旁 US/UK 小按钮 → ViewModel 委托 → SpeechSynthesizer 端口按点击口音路由；不读不改 `settings.ttsAccent`、语速/音调沿用设置、重听取消上一次、取消重抛红线、失败仅记日志；会话 TTS 段 speakMutex 排队 / Media3 例句段可叠加 = v1 已知边界）。纯 app 层实现，端口/编排器/引擎/actual 零改动，零 schema 变更。上游：PROJECT_SPEC v1.24；测试：TEST_PLAN v2.26（TC-IPAPRON） |
+| 2.12 | 2026-10-01 | **新增 Seek 点卡跳段控制（SCR-SEGMENTSEEK，用户批准，FR-11 v1.30 加法扩展）**：§3 状态机 +seek 行（Playing / CommandWindow → Playing(目标段头) 重播；Paused → Paused(目标段头) 不自动恢复，error 位清除）；§6 控制表 +Seek 行（幂等纯导航）。解析 = 当前词 specs 全范围找 owner 首个**启用**段（允许向后跳；无命中先于 cancelStep 返回 → 不打断在播段）；游标迁移与 applyPlayingRestore 同口径（specCursor = 目标下标，playedCount = 启用段序 rank，resumeOffsetMs = 0）；窗口作废镜像 previous。零引擎/端口/DB 变更。上游：PROJECT_SPEC v1.30；测试：TEST_PLAN v2.32（TC-AE-35） |

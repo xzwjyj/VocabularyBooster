@@ -204,9 +204,10 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | **Next** | 立即跳到队列下一个未掌握 Word（**不**标记 MASTERED） |
 | **Previous**（v1.23，SCR-PREVWORD） | 立即跳到**当前组内**上一个未掌握 Word（**不**标记 MASTERED；跳过已掌握词；组首回绕到组内最后一个未掌握词——与 Next 的组内循环对称） |
 | **Replay** | 重播当前 Word（从该 Word 的第一个 Segment 开始） |
+| **Seek**（v1.30，SCR-SEGMENTSEEK） | 学习面板点释义卡/例句卡/词头 → 跳到该卡**首个启用段**（当前词内双向跳转；**不**标记 MASTERED、不换词；卡片段全被 FR-10 开关禁用则幂等 no-op 不打断在播段；Paused 态只迁移暂停位**不自动恢复**，词头点击 = 跳回发音段） |
 | **Exit** | 退出会话，触发 FR-9 流程（若整本未完成） |
 
-- **验收**：Pause→Resume 恢复到同一 Segment 的同一进度（文件音频恢复到 offsetMs；TTS Segment 允许整段重读——系统 TTS 无 seek 能力，属已确认的平台限制，但**不得**回到 Word 开头）；Next/Previous/Replay 不改变任何词的掌握状态。
+- **验收**：Pause→Resume 恢复到同一 Segment 的同一进度（文件音频恢复到 offsetMs；TTS Segment 允许整段重读——系统 TTS 无 seek 能力，属已确认的平台限制，但**不得**回到 Word 开头）；Next/Previous/Replay/Seek 不改变任何词的掌握状态。
 
 ### FR-12 语音识别交互协议
 
@@ -317,6 +318,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 
 - 词头（词文本 + 组号）下方展示**音标**（美音/英音双音标，FR-22 有则双显、无则单显、全缺不渲染空行）与滚动卡片列表：**释义卡**（词性 + MeaningEN + MeaningCN 同卡不可拆分，FR-2）+ **例句卡**（句 + 中文译文原子单元，FR-3，缩进挂属释义下方，空译文不渲染）；卡片数据 = 该词本次会话播放内容（PlaybackContent 选中项——与 FR-10「只播被选中的」同源，面板与播放所见即所听）；
 - **高亮联动**：当前播放段（Segment.owner）命中的卡片高亮（主题容器色 + 边框），段内正在朗读的行（英文释义/中文释义/例句/例句译文，按段类型）加粗；发音/拼写段（owner=Word）高亮词头；命令窗口期无高亮（卡片平铺）；
+- **点卡跳段（v1.30，SCR-SEGMENTSEEK）**：释义卡/例句卡/词头可点 → FR-11 **Seek** 控制（跳到该卡首个启用段，纯导航零掌握；高亮随段切换自然联动，卡 → 段归属键与高亮同用 Segment.owner）；
 - 暂停态保持冻结段高亮（Paused 携带最近 Playing 段快照——暂停位 = 该段，ADR-09 同口径）；换词异步重载卡片（按 wordId 去重，加载间隙收起不闪旧词）；
 - 展示纯只读：不引入第二播放状态源（编排器 PlaybackState 唯一事实），卡片数据不参与任何播放/掌握裁决；
 - **验收**（2026-09-20 vivo 实测）：播放推进时高亮卡片随段实时切换（释义段→释义卡、例句段→例句卡、词头段→词头变色）；暂停高亮保持；换词卡片重载；音标回填（FR-18）后面板显示音标；卡片列表可滚动、控制条恒在底部。
@@ -403,7 +405,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | "会了" → MASTERED → 移出队列 → 下一个；组完成 → 下一组 | FR-7 / FR-8 |
 | 退出：剔除已 MASTERED，另存"原名称+日期时间"新本，复用不复制 | FR-9 |
 | 播放配置六项独立开关 | FR-10 |
-| Play / Pause / Resume / Next / Previous / Replay / Exit；Pause/Resume 保持状态 | FR-11 |
+| Play / Pause / Resume / Next / Previous / Replay / Seek（点卡跳段）/ Exit；Pause/Resume 保持状态 | FR-11 |
 | 语音控制 v1 仅"会了"，预留暂停/继续/下一个/再来一次/退出；TTS 期间不识别 | FR-12 |
 | 完成勋章：停止播放 / 永久保存 / 未来扩展 | FR-13 |
 | TXT 导入：编码 / 格式 / 去重 / 大文件 / 目标生词本 | FR-14 |
@@ -450,3 +452,4 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.27 | 2026-10-01 | **TXT 导入词性标记过滤（SCR-TXTDICTENRICH v2）**：用户提出「单词同一行写词性（n./v./vt./vi./adj./adv./int.）→ 只导入对应词性的中英文释义和例句」+ 导入 UI 说明补「裸词→全量释义例句」。FR-14 行格式 ③ 词性标记行 + 富化规则勾选池按词性收窄（vt./vi./v→verb 规范名映射；词性零命中兜底全释义、池内译文零命中兜底词性池；母数据导入不受词性影响）；ImportScreen 选文件页说明文案扩三行。零 schema 迁移。下游：IMPORT_SPEC v1.3 / TEST_PLAN v2.29（TC-IMP-15）；决策：SCR-TXTDICTENRICH v2（DECISION_LOG） |
 | 1.28 | 2026-10-01 | **TXT 导入词性标记追补（SCR-TXTDICTENRICH v2 追补）**：用户指示「vt.和vi.映射对应动词（措辞）+ 补充 prep. 映射和 UI 说明」——词性标记集补 `prep.`（→preposition）；vt./vi./v 映射表述改为「对应动词 verb」（功能不变：词库粒度按 FR-18 已合并及物/不及物为单一动词类）；ImportScreen 说明标记列表更新。零 schema 迁移。下游：IMPORT_SPEC v1.4 / TEST_PLAN v2.30；决策：SCR-TXTDICTENRICH v2 追补（DECISION_LOG） |
 | 1.29 | 2026-10-01 | **TXT 导入多词短语修正（用户实录缺陷：`roll out` 被导入为 roll）**：FR-14 行格式 ①——多词短语整行书写，单空格分隔改为逐位置扫描并跳过「译文以英文字母开头」的位置（`roll out` 整词、`roll out 推出` 短语+译文、`hello world,你好` 逗号级分割）；译文以英文开头须用显式分隔符；UI 说明补短语行。下游：IMPORT_SPEC v1.5 / TEST_PLAN v2.31（TC-IMP-16）；决策：SCR-TXTDICTENRICH v2 追补 2（DECISION_LOG） |
+| 1.30 | 2026-10-01 | **FR-11 加法扩展：新增 Seek 点卡跳段控制**（用户提出并批准 SPEC_CHANGE_REQUEST_SEGMENT_SEEK——面板纯展示，想重听指定释义/例句只能等组内循环绕回或整词重播）：学习面板点释义卡/例句卡/词头 → 跳到该卡**首个启用段**（当前词内双向；卡 → 段归属键 = SegmentOwner，与 FR-21 高亮同键）；纯导航零掌握零换词（Replay 级，SessionWord 零接触）；卡片段全被 FR-10 开关禁用 → 幂等 no-op 不打断在播段；CommandWindow 开着则作废窗口（镜像 Previous，非命令消费）；Paused 只迁移暂停位**不自动恢复**（用户裁决 D1）且 error 暂停位随跳转清除；词头可点（裁决 D2）。实现 = 编排器 `seekTo(owner)`（游标迁移与 applyPlayingRestore 同口径，playedCount = 启用段序 rank）+ VM `seekToSegment` + 卡片 clickable。零引擎接口变更、零 schema 迁移。FR-21 面板注记卡片可点。下游同步：AUDIO_ENGINE_SPEC v2.12 / TEST_PLAN v2.32（TC-AE-35）/ DOMAIN_MODEL v1.8；决策记录：SCR-SEGMENTSEEK（DECISION_LOG） |

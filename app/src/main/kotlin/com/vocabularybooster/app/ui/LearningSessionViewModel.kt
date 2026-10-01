@@ -16,6 +16,7 @@ import com.vocabularybooster.learning.StartResult
 import com.vocabularybooster.playback.PlaybackOrchestrator
 import com.vocabularybooster.playback.PlaybackState
 import com.vocabularybooster.playback.Segment
+import com.vocabularybooster.playback.SegmentOwner
 import com.vocabularybooster.playback.SegmentType
 import kotlinx.coroutines.launch
 
@@ -184,7 +185,7 @@ class LearningSessionViewModel(
         pendingBookId = null
     }
 
-    // —— 传输控制（AUDIO §6 六控制（v2.9 +Previous），全部经编排器；不触碰 AudioPlayer/SpeechSynthesizer）——
+    // —— 传输控制（AUDIO §6 七控制（v2.12 +Seek），全部经编排器；不触碰 AudioPlayer/SpeechSynthesizer）——
 
     fun pause() = launchCommand { orchestrator.pause() }
 
@@ -195,6 +196,9 @@ class LearningSessionViewModel(
     fun next() = launchCommand { orchestrator.next() }
 
     fun replay() = launchCommand { orchestrator.replay() }
+
+    /** 点卡跳段（SCR-SEGMENTSEEK，FR-11 v1.30）：面板卡片/词头点击 → 跳到该卡首个启用段（编排器纯导航）。 */
+    fun seekToSegment(owner: SegmentOwner) = launchCommand { orchestrator.seekTo(owner) }
 
     /**
      * 音标旁朗读（FR-22 扩展）：以对应口音一次性试听当前词——纯预览，不经编排器、

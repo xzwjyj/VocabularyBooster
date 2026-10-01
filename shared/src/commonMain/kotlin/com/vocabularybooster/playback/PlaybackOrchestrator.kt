@@ -3,6 +3,7 @@ package com.vocabularybooster.playback
 import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.event.DomainEventBus
 import com.vocabularybooster.domain.model.PlaybackContent
+import com.vocabularybooster.domain.model.PlaybackToggles
 import com.vocabularybooster.domain.model.SessionSnapshot
 import com.vocabularybooster.domain.model.SessionWord
 import com.vocabularybooster.domain.model.SessionWordStatus
@@ -63,7 +64,7 @@ import kotlin.math.min
  * 控制类操作先 cancelAndJoin 再改状态——不存在两个 PLAYING 驱动流。advance+换词装载包在
  * [NonCancellable] 中：暂停/取消不会观察到「库已换 PLAYING 词而内存仍是旧词」的半迁移态。
  */
-@Suppress("TooManyFunctions", "LongParameterList") // §3 逐事件一个入口 + §6 六控制（v2.9 +Previous）+ §5 依赖 = 规格装配全量
+@Suppress("TooManyFunctions", "LongParameterList") // §3 逐事件一个入口 + §6 七控制（v2.12 +Seek）+ §5 依赖 = 规格装配全量
 public class PlaybackOrchestrator(
     private val engine: LearningEngine,
     private val contentRepository: PlaybackContentRepository,
@@ -205,6 +206,39 @@ public class PlaybackOrchestrator(
         resumeOffsetMs = 0L
         currentSpec = null
         launchDriveLoop()
+    }
+
+    /**
+     * Seek 点卡跳段（FR-11 v1.30，SCR-SEGMENTSEEK）：播放位置跳到 [owner] 卡片的**首个启用段**（当前词
+     * spec 全范围解析，允许向后跳）。纯导航：不标记掌握、不换词、SessionWord 零接触（同 Replay 级）。
+     * 卡片全部段类型被 FR-10 开关禁用 / 空词 / Idle / 终态 → 幂等 no-op（不打断在播段）。
+     * Playing / CommandWindow（窗口作废，镜像 Previous 的窗口语义——非命令消费）→ 从该段头重播；
+     * Paused（含 error 暂停，D1 用户裁决 2026-10-01）→ 只迁移暂停位到该段头、**保持 Paused 不自动恢复**
+     * （error 位随跳转清除——错误属于旧段，Resume 从目标段重试）。
+     */
+    public suspend fun seekTo(owner: SegmentOwner): Unit = controlMutex.withLock {
+        if (!_state.value.isTransportActive()) return@withLock
+        val toggles = settingsRepository.getPlaybackToggles()
+        val targetIndex = specs.indexOfFirst { it.owner == owner && toggles.enables(it.type) }
+        if (targetIndex < 0) return@withLock
+        cancelStep()
+        stopPorts()
+        adoptSeekCursor(targetIndex, toggles)
+        when (_state.value) {
+            is PlaybackState.Paused -> {
+                savePosition(positionAt(playedCount, 0L, PlaybackPhase.PLAYING))
+                _state.value = pausedState(offsetMs = 0L, atCommandWindow = false, error = null)
+            }
+            else -> launchDriveLoop() // Playing / CommandWindow：从目标段头重播
+        }
+    }
+
+    /** Seek 游标迁移（[applyPlayingRestore] 同口径）：specCursor = 目标段下标，playedCount = 启用段序 rank。 */
+    private fun adoptSeekCursor(specIndex: Int, toggles: PlaybackToggles) {
+        specCursor = specIndex
+        playedCount = specs.take(specIndex).count { toggles.enables(it.type) }
+        resumeOffsetMs = 0L
+        currentSpec = null
     }
 
     /**

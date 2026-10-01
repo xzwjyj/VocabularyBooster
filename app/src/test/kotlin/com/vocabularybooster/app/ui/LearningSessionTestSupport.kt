@@ -274,8 +274,11 @@ class FakeLearningSettingsRepository(
 class FakePlaybackContentRepository : PlaybackContentRepository {
     var textsByWordId: Map<Long, String> = emptyMap()
 
+    /** 完整词条内容优先（J3 点卡跳段：多段词注入）；未命中回退 [textsByWordId] 极简形态。 */
+    var contentsByWordId: Map<Long, PlaybackContent> = emptyMap()
+
     override suspend fun getPlaybackContent(wordBookId: Long, wordId: Long): PlaybackContent? =
-        textsByWordId[wordId]?.let { text ->
+        contentsByWordId[wordId] ?: textsByWordId[wordId]?.let { text ->
             PlaybackContent(
                 word = Word(wordId = wordId, text = text, normalizedText = text.lowercase()),
                 selectedDefinitions = emptyList(),

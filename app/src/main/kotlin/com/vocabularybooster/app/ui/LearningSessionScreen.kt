@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -52,7 +53,8 @@ import org.koin.androidx.compose.koinViewModel
  * 纯渲染 + 意图转发——播放状态全部来自 [LearningSessionViewModel.ui]（编排器唯一状态源），
  * 控制按钮全部转发 ViewModel（→ PlaybackOrchestrator）；本屏零播放逻辑、零计时器。
  *
- * - Pause/Resume/Next/Replay/Exit 五控制（FR-11）；Exit 需二次确认（AUDIO §6）。
+ * - Pause/Resume/Next/Previous/Replay/Exit 六控制（FR-11）+ 点卡跳段（SCR-SEGMENTSEEK，v1.30）；
+ *   Exit 需二次确认（AUDIO §6）。
  * - CommandWindow：渲染编排器倒计时（remainingMs/totalMs），不自建定时器（裁决 L1：P4 纯倒计时）。
  *   Phase 5 Step 1：窗口内按 [LearningUiState.CommandWindow.listening] 显示「请说：会了」或降级提示
  *   （诚实呈现，不伪造录音状态），「会了」按钮**仅窗口态出现**——与语音命令同一执行路径（裁决 D2）。
@@ -104,6 +106,7 @@ fun LearningSessionScreen(
             onExit = onExit,
             onMasterWord = viewModel::masterCurrentWord,
             onPronounce = viewModel::pronounceWord,
+            onSeek = viewModel::seekToSegment,
         )
 
         // 麦克风权限：非阻断提示条（仅会话中显示；点击才发起系统授权，无自动请求）
@@ -217,6 +220,7 @@ private fun ColumnScope.SessionContent(
     onExit: () -> Unit,
     onMasterWord: () -> Unit,
     onPronounce: (String, Lang) -> Unit,
+    onSeek: (SegmentOwner) -> Unit,
 ) {
     when (state) {
         is LearningUiState.Loading -> {
@@ -229,6 +233,7 @@ private fun ColumnScope.SessionContent(
                 wordText = state.wordText,
                 groupIndex = state.groupIndex,
                 wordPlaying = state.currentSegment?.owner == SegmentOwner.Word,
+                onWordSeek = { onSeek(SegmentOwner.Word) },
             )
             Text(
                 "正在播放 · ${state.segmentLabel}（第 ${state.segmentIndex} 段）",
@@ -252,6 +257,7 @@ private fun ColumnScope.SessionContent(
                 detail = detail,
                 currentSegment = state.currentSegment,
                 onPronounce = onPronounce,
+                onSeek = onSeek,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -259,7 +265,7 @@ private fun ColumnScope.SessionContent(
         }
 
         is LearningUiState.Paused -> {
-            WordHeader(state.wordText, state.groupIndex)
+            WordHeader(state.wordText, state.groupIndex, onWordSeek = { onSeek(SegmentOwner.Word) })
             Text(
                 "已暂停（第 ${state.segmentIndex} 段）",
                 style = MaterialTheme.typography.bodyLarge,
@@ -272,6 +278,7 @@ private fun ColumnScope.SessionContent(
                 detail = detail,
                 currentSegment = state.currentSegment,
                 onPronounce = onPronounce,
+                onSeek = onSeek,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -279,7 +286,7 @@ private fun ColumnScope.SessionContent(
         }
 
         is LearningUiState.CommandWindow -> {
-            WordHeader(state.wordText, state.groupIndex)
+            WordHeader(state.wordText, state.groupIndex, onWordSeek = { onSeek(SegmentOwner.Word) })
             Text(
                 "命令窗口",
                 style = MaterialTheme.typography.titleMedium,
@@ -326,6 +333,7 @@ private fun ColumnScope.SessionContent(
                 detail = detail,
                 currentSegment = null, // 窗口期无播放内容——卡片平铺不高亮
                 onPronounce = onPronounce,
+                onSeek = onSeek,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -333,7 +341,7 @@ private fun ColumnScope.SessionContent(
         }
 
         is LearningUiState.Error -> {
-            WordHeader(state.wordText, state.groupIndex)
+            WordHeader(state.wordText, state.groupIndex, onWordSeek = { onSeek(SegmentOwner.Word) })
             Text(
                 "语音合成失败，播放已暂停",
                 color = MaterialTheme.colorScheme.error,
@@ -347,6 +355,7 @@ private fun ColumnScope.SessionContent(
                 detail = detail,
                 currentSegment = state.currentSegment,
                 onPronounce = onPronounce,
+                onSeek = onSeek,
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 8.dp),
@@ -408,13 +417,21 @@ private fun ColumnScope.SessionContent(
 }
 
 @Composable
-private fun WordHeader(wordText: String, groupIndex: Int, wordPlaying: Boolean = false) {
+private fun WordHeader(
+    wordText: String,
+    groupIndex: Int,
+    wordPlaying: Boolean = false,
+    onWordSeek: () -> Unit = {},
+) {
     Text(
         wordText,
         style = MaterialTheme.typography.displaySmall,
-        // 发音/拼写段归属词本身——播放中主词高亮（SegmentOwner.Word）
+        // 发音/拼写段归属词本身——播放中主词高亮（SegmentOwner.Word）；
+        // 点击 = 跳回发音段（SCR-SEGMENTSEEK D2 裁决，等效重听发音）
         color = if (wordPlaying) MaterialTheme.colorScheme.primary else Color.Unspecified,
-        modifier = Modifier.testTag("learning_word"),
+        modifier = Modifier
+            .clickable(onClick = onWordSeek)
+            .testTag("learning_word"),
     )
     Text(
         "第 $groupIndex 组",
@@ -427,7 +444,8 @@ private fun WordHeader(wordText: String, groupIndex: Int, wordPlaying: Boolean =
 /**
  * 词内容卡片面板（bug list「学习会话显示完整词信息」）：音标（+口音试听按钮，FR-22 扩展）
  * + 释义卡 + 例句卡滚动列表。高亮 = 当前段 owner 命中的卡片（primaryContainer 底 + primary 边框），
- * 段内 EN/CN 行加粗。detail 为 null（换词加载间隙）时收起，不渲染旧词内容。
+ * 段内 EN/CN 行加粗。卡片可点 = 跳到该卡首个启用段（SCR-SEGMENTSEEK，FR-11 v1.30——播放中跳段
+ * 重播、窗口态作废窗口、暂停态只迁移暂停位）。detail 为 null（换词加载间隙）时收起，不渲染旧词内容。
  */
 @Composable
 private fun WordDetailPanel(
@@ -435,6 +453,7 @@ private fun WordDetailPanel(
     detail: LearningWordDetail?,
     currentSegment: Segment?,
     onPronounce: (String, Lang) -> Unit,
+    onSeek: (SegmentOwner) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (detail == null) return
@@ -461,6 +480,7 @@ private fun WordDetailPanel(
                 highlighted = (currentSegment?.owner as? SegmentOwner.Definition)
                     ?.definitionEntryId == definition.definitionEntryId,
                 activeType = currentSegment?.type,
+                onSeek = { onSeek(SegmentOwner.Definition(definition.definitionEntryId)) },
             )
             definition.examples.forEach { example ->
                 ExampleCard(
@@ -468,21 +488,24 @@ private fun WordDetailPanel(
                     highlighted = (currentSegment?.owner as? SegmentOwner.Example)
                         ?.exampleId == example.exampleId,
                     activeType = currentSegment?.type,
+                    onSeek = { onSeek(SegmentOwner.Example(example.exampleId)) },
                 )
             }
         }
     }
 }
 
-/** 释义卡：词性 + EN 释义 + CN 释义（不可拆分，FR-2）；播放命中的行加粗。 */
+/** 释义卡：词性 + EN 释义 + CN 释义（不可拆分，FR-2）；播放命中的行加粗；点击 = 跳到该释义段（SCR-SEGMENTSEEK）。 */
 @Composable
 private fun DefinitionCard(
     definition: LearningDefinitionCard,
     highlighted: Boolean,
     activeType: SegmentType?,
+    onSeek: () -> Unit,
 ) {
     HighlightCard(
         highlighted = highlighted,
+        onClick = onSeek,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
@@ -518,15 +541,17 @@ private fun DefinitionCard(
     }
 }
 
-/** 例句卡：句 + 译文（原子单元，FR-3），缩进挂属释义下方；播放命中的行加粗。 */
+/** 例句卡：句 + 译文（原子单元，FR-3），缩进挂属释义下方；播放命中的行加粗；点击 = 跳到该例句段（SCR-SEGMENTSEEK）。 */
 @Composable
 private fun ExampleCard(
     example: LearningExampleCard,
     highlighted: Boolean,
     activeType: SegmentType?,
+    onSeek: () -> Unit,
 ) {
     HighlightCard(
         highlighted = highlighted,
+        onClick = onSeek,
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, top = 6.dp)
@@ -547,11 +572,12 @@ private fun ExampleCard(
     }
 }
 
-/** 高亮容器：命中段 = primaryContainer 底 + primary 边框；常态 = surfaceVariant 弱底。 */
+/** 高亮容器：命中段 = primaryContainer 底 + primary 边框；常态 = surfaceVariant 弱底；整体可点 = 跳段。 */
 @Composable
 private fun HighlightCard(
     highlighted: Boolean,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -562,7 +588,7 @@ private fun HighlightCard(
             MaterialTheme.colorScheme.surfaceVariant
         },
         border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { content() }
     }
