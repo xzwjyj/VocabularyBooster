@@ -31,11 +31,14 @@ class LineParserTest {
     }
 
     @Test
-    fun singleSpaceBeatsComma() {
+    fun spaceThenCommaSplitsPhraseAndTranslation() {
+        // v1.5 短语修正：首个空格右侧以英文开头（world,你好）→ 跳过该空格，
+        // 下探逗号级分割出多词短语 + 译文
         val parsed = LineParser.parse("hello world,你好")
         val withTranslation = assertIs<ParsedLine.WordWithTranslation>(parsed)
-        assertEquals("hello", withTranslation.text)
-        assertEquals("world,你好", withTranslation.translation)
+        assertEquals("hello world", withTranslation.text)
+        assertEquals("hello world", withTranslation.normalizedText)
+        assertEquals("你好", withTranslation.translation)
     }
 
     @Test
@@ -90,10 +93,10 @@ class LineParserTest {
     @Test
     fun wordOnlyLineAcceptsHyphenAndApostrophes() {
         assertEquals(ParsedLine.WordOnly("hello", "hello"), LineParser.parse("hello"))
-        // 单空格是分隔符级（§3）：双词行按「词+译文」解析——take | off；
-        // 多词短语仅在无有效分割时以整词存活（连字符是词法字符）
+        // v1.5 短语修正：单空格右侧是英文（off）→ 词内空格，整行按多词短语存活；
+        // 连字符与撇号仍是词法字符
         assertEquals(
-            ParsedLine.WordWithTranslation("take", "take", "off"),
+            ParsedLine.WordOnly("take off", "take off"),
             LineParser.parse("take off"),
         )
         assertEquals(ParsedLine.WordOnly("take-off", "take-off"), LineParser.parse("take-off"))
@@ -102,6 +105,38 @@ class LineParserTest {
         assertEquals(
             ParsedLine.WordOnly("it’s", "it’s"),
             LineParser.parse("it’s"),
+        )
+    }
+
+    @Test // TC-IMP-16：多词短语行整词存活（用户实录 2026-10-01：`roll out` 曾被切成 roll + 译文 out）
+    fun multiWordPhraseLineSurvivesAsSingleWord() {
+        assertEquals(
+            ParsedLine.WordOnly("roll out", "roll out"),
+            LineParser.parse("roll out"),
+        )
+        assertEquals(
+            ParsedLine.WordOnly("New York Times", "new york times"),
+            LineParser.parse("New York Times"),
+        )
+    }
+
+    @Test // TC-IMP-16：短语 + 单空格译文 → 在首个非英文开头的空格处分割
+    fun phraseWithSpaceSeparatedTranslationSplitsBeforeChinese() {
+        assertEquals(
+            ParsedLine.WordWithTranslation("roll out", "roll out", "推出"),
+            LineParser.parse("roll out 推出"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("apple pie", "apple pie", "苹果派"),
+            LineParser.parse("apple pie 苹果派"),
+        )
+    }
+
+    @Test // TC-IMP-16：全英文行 → 整行短语（英文译文请用 Tab/逗号显式分隔）
+    fun allEnglishLineWithNoTranslationCandidateBecomesPhrase() {
+        assertEquals(
+            ParsedLine.WordOnly("apple red apple", "apple red apple"),
+            LineParser.parse("apple red apple"),
         )
     }
 
@@ -145,5 +180,74 @@ class LineParserTest {
         assertEquals(ParsedLine.WordOnly("apple", "apple"), LineParser.parse("apple\t"))
         // 行尾逗号不被 trim：分割右侧空 → 词行校验含逗号 → Invalid
         assertIs<ParsedLine.Invalid>(LineParser.parse("apple,   "))
+    }
+
+    @Test
+    fun posMarkerIsStrippedAndCanonicalized() {
+        // vt./vi. 均映射 verb（长词形优先，v. 不吞 vt.）；n./adj./adv./int. 各归规范名
+        assertEquals(
+            ParsedLine.WordWithTranslation("hamper", "hamper", "妨碍", "verb"),
+            LineParser.parse("hamper\tvt. 妨碍"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("adapt", "adapt", "适应", "verb"),
+            LineParser.parse("adapt\tvi.适应"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("run", "run", "跑", "verb"),
+            LineParser.parse("run\tv. 跑"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("hamper", "hamper", "（带盖的）大篮子", "noun"),
+            LineParser.parse("hamper\tn.（带盖的）大篮子"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("calm", "calm", "平静的", "adjective"),
+            LineParser.parse("calm\tadj. 平静的"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("quickly", "quickly", "迅速地", "adverb"),
+            LineParser.parse("quickly\tadv. 迅速地"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("wow", "wow", "哇", "interjection"),
+            LineParser.parse("wow\tint. 哇"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("about", "about", "关于", "preposition"),
+            LineParser.parse("about\tprep. 关于"),
+        )
+    }
+
+    @Test
+    fun posMarkerOnlyLineYieldsNullTranslation() {
+        // 标记独占行：等效裸词 + 词性过滤（无译文供 SenseMatcher）
+        assertEquals(
+            ParsedLine.WordWithTranslation("hamper", "hamper", null, "noun"),
+            LineParser.parse("hamper\tn."),
+        )
+        // 大小写不敏感
+        assertEquals(
+            ParsedLine.WordWithTranslation("hamper", "hamper", null, "noun"),
+            LineParser.parse("hamper\tN."),
+        )
+    }
+
+    @Test
+    fun unrecognizedOrDotlessMarkerStaysPlainTranslation() {
+        // 词表未收纳的标记（conj. 等）与无点号前缀：整段原样保留、不误判词性
+        assertEquals(
+            ParsedLine.WordWithTranslation("and", "and", "conj. 并且", null),
+            LineParser.parse("and\tconj. 并且"),
+        )
+        assertEquals(
+            ParsedLine.WordWithTranslation("apple", "apple", "adj 是", null),
+            LineParser.parse("apple\tadj 是"),
+        )
+        // 译文以「非标记词 + 点」开头不受影响（n 后必须是点才算标记）
+        assertEquals(
+            ParsedLine.WordWithTranslation("apple", "apple", "no. 5 之类", null),
+            LineParser.parse("apple\tno. 5 之类"),
+        )
     }
 }

@@ -36,5 +36,9 @@ UPDATE Word SET ipaAm = ?, updatedAt = ? WHERE wordId = ?;
 updateWordIpaBr:
 UPDATE Word SET ipaBr = ?, updatedAt = ? WHERE wordId = ?;
 
+-- SCR-TXTDICTENRICH 导入富化：双侧音标一次只补空缺（COALESCE——已有值绝不覆盖，同回填守卫口径）
+fillBlankPronunciation:
+UPDATE Word SET ipaAm = COALESCE(ipaAm, ?), ipaBr = COALESCE(ipaBr, ?), updatedAt = ? WHERE wordId = ?;
+
 selectLastInsertRowId:
 SELECT last_insert_rowid();

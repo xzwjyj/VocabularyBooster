@@ -36,6 +36,9 @@ public enum class ExampleSourceType {
     TTS,
     /** Tatoeba 语料库例句（CC-BY 2.0 FR，Phase 8.6 全量词典例句增强）。 */
     TATOEBA,
+
+    /** 离线工具链 LLM 生成的释义例句（SCR-SENSEATTR 完整覆盖兜底；如实标注，FR-3）。 */
+    AI_GENERATED,
 }
 
 /** 例句原子单元：句 + 译文 + 音频元数据 + 来源合规信息（FR-3）。 */

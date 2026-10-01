@@ -55,3 +55,9 @@ hs_err_pid*.log
 
 # video_importer bytecode cache
 tools/video_importer/__pycache__/
+
+# ===== Release artifacts (APK dist copies, gitignored; shipped via GitHub Releases) =====
+dist/
+
+# Node deps for dictionary tooling
+tools/dict/node_modules/

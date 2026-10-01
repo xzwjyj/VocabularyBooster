@@ -120,7 +120,7 @@
 
 > **TC-AE 编号裁决（L5，2026-09-05）**：沿用 TEST_PLAN/ROADMAP 既有 `TC-<模块>-<序号>` 体系，新增自 TC-AE-13 顺序递增（后续新增从 TC-AE-20 起）；**不设 Phase 专属第二编号体系**。
 
-### 4.5 TC-IMP 导入（IMPORT_SPEC §9 九条边界，Phase 7 已落地 ✅）
+### 4.5 TC-IMP 导入（IMPORT_SPEC §9 九条边界，Phase 7 已落地；v1.26 起含词典富化 ✅）
 
 | ID | 用例 |
 |---|---|
@@ -131,7 +131,15 @@
 | TC-IMP-05 ✅ | 去重三层：文件内/本内/全局复用（词行数不变）——jvmTest `ImportEngineTest.dedupLayersSplitAcrossFileGlobalAndBookScopes`（四层分桶 + entryOrder 续接 + updated 计数） |
 | TC-IMP-06 ✅ | 非法行（数字/中文开头/超长）→ invalid + 样例收集——`LineParserTest` 非法分类组 + `ImportEngineTest` 守恒用例（invalid=3 计入恒等式；样例封顶 20 条由报告携带） |
 | TC-IMP-07 ✅ | 事务：中途异常 → 目标本零变化——jvmTest `ImportEngineTest.midStreamExceptionRollsBackEverythingAndPublishesNothing` + `cancellationMidImportRollsBackInPlace`（取消路径 + `ImportPerfTest` ≤1s 计时断言） |
-| TC-IMP-08 ✅ | pendingTranslation 落库与回填清除后的状态——jvmTest `ImportEngineTest.pendingTranslationBackfillsOnceAndNeverOverwrites`（缺位补写恰一次 / 已有译文永不覆盖 / 纯重复轮零事件）；「正式释义回填清除」= DictionaryProvider 未来 Phase，v1 以「补写后不再覆盖」等价锁定 |
+| TC-IMP-08 ✅ | pendingTranslation 落库与回填清除后的状态——jvmTest `ImportEngineTest.pendingTranslationBackfillsOnceAndNeverOverwrites`（缺位补写恰一次 / 已有译文永不覆盖 / 纯重复轮零事件）；富化词条 re-import 不回流临时译文见 TC-IMP-14 段 |
+| TC-IMP-09 ✅ | 词典富化·裸词行：母数据全量 + 全释义/全例句勾选 + 双侧音标补齐 + 守恒式不变 + `pendingTranslation=null`——jvmTest `ImportEngineTest.bareWordEnrichesAllSensesAndSelectsEverything`（Fake DictionaryProvider，v1.26 SCR-TXTDICTENRICH） |
+| TC-IMP-10 ✅ | 词典富化·带译文行：母数据仍全量、勾选 = SenseMatcher 匹配子集（词 + 译文中英 token 相等或互含）+ `enrichedMatched` 计数——jvmTest `translatedLineSelectsMatchedSenseSubsetOnly` + commonTest `SenseMatcherTest`（6 用例：大小写归一 / 互含双向 / 无共享 token miss / 分隔符族双侧 / 空输入永不命中 / 多命中取并集） |
+| TC-IMP-11 ✅ | 词典富化·零匹配兜底（用户裁决 D1）：带译文行 0 释义命中 → 全量勾选、`enrichedMatched` 不计、临时译文位仍空——jvmTest `zeroMatchTranslationFallsBackToAllSenses` |
+| TC-IMP-12 ✅ | 词典富化·退化路径：provider 未装配 / 未收录 / 命中零释义 → 精确退化 Phase 7 原行为（零释义 + 临时译文落库、`enriched=0`）——jvmTest `dictionaryMissKeepsLegacyPendingTranslationBehavior`（provider=null 的既有 6 用例组天然覆盖未装配分支） |
+| TC-IMP-13 ✅ | 词典富化·词已存在有释义：绝不重建（既有行数不变、词典侧缺失释义不补入）+ 只在既有行上勾选——jvmTest `existingWordWithDefinitionsOnlySelectsNeverRebuilds`（FR-5 复用原则镜像） |
+| TC-IMP-14 ✅ | 词典富化·词已存在无释义（TXT 旧行）+ re-import 幂等：母数据补齐 + 音标只补空缺（已有值绝不覆盖）——jvmTest `existingWordWithoutDefinitionsBackfillsOnlyBlankPronunciation`；富化词条 re-import（duplicatesInBook）勾选零变化 + 临时译文不回流（「无释义勾选」守卫）——jvmTest `enrichedEntryReimportDoesNotTouchSelectionsNorBackfillTranslation`；富化性能：万行全命中冒烟 ≤ 12s（120s 预算 1/10 比例）——jvmTest `ImportPerfTest.tenThousandEnrichedLinesWithinTwelveSeconds`（AOR-007 先例不入门禁） |
+| TC-IMP-15 ✅ | 词性标记过滤（v1.27，SCR-TXTDICTENRICH v2；v1.28 补 prep.）：解析剥离与规范名映射（vt./vi./v→对应动词 verb、prep.→preposition、大小写不敏感、标记独占行无译文、未收录标记（conj.）/无点号前缀原样保留）——commonTest `LineParserTest` 词性组 3；引擎两级过滤（词性独占行只入该词性且母数据全量 / 词性+译文池内匹配 / 池内译文零命中兜底**词性池**非全释义 / 词性零命中兜底全释义 / 既有释义行上按词性勾选不重建）——jvmTest `ImportEngineTest` 词性组 5 |
+| TC-IMP-16 ✅ | 多词短语行（v1.29 短语修正，用户实录 `roll out` 曾被切成 roll + 译文 out）：commonTest `LineParserTest` 短语组 3（`roll out`/`New York Times` 整词存活 / `roll out 推出` 首个非英文开头空格分割 / 全英文行成短语）+ 既有用例期望反转（`take off`→WordOnly 短语、`hello world,你好`→逗号级短语+译文）+ jvmTest `ImportEngineTest.multiWordPhraseLineImportsAndEnrichesAsSingleWord`（整词入库 + 词典按短语富化 + 勾选） |
 
 ### 4.6 TC-AC 勋章（ACHIEVEMENT_SPEC §6，Phase 6 已落地 ✅）
 
@@ -171,9 +179,9 @@
 
 **学习统计（FR-20，Phase 8.6 已登记）**：jvmTest `LearningStatsRepositoryTest`（真实 JDBC：首次掌握去重=学习 / 今日前已掌握再掌握=复习 / 会话时长按结束日归集 / endedAt NULL 不计 / 空库零值 / 跨午夜按本地时区注入）；androidTest `StatsCardUiSmokeTest`（学一词 → 统计卡今日学习 +1）。
 
-**全量词典（FR-18，Phase 8.6 已登记）**：jvmTest `WordRepositoryOnDemandImportTest`（Fake provider：DB miss → 导入 → 命中且幂等 / DB 已有不覆盖 / provider null → 未收录；词条例句与音标齐备时 DB 命中不打扰词典源——v2.17 口径：例句或音标缺失时回填咨询属预期行为，回填路径由下组覆盖）；androidTest `BundledDictionarySmokeTest`（真实 asset：查种子外单词命中 + 未收录词 null）；`SeedDictionaryCoverageTest` 不变（例句契约仅精选种子——PROJECT_SPEC v1.14 FR-3 注记）。
+**全量词典（FR-18，Phase 8.6 已登记）**：jvmTest `WordRepositoryOnDemandImportTest`（Fake provider：DB miss → 导入 → 命中且幂等 / DB 已有不覆盖 / provider null → 未收录；非词典例句词（视频/TTS 形态）音标齐备时 DB 命中不打扰词典源——v2.17 口径例句或音标缺失时回填咨询属预期；**v2.27 口径（SCR-SENSEATTR v6）：词典例句词（TATOEBA/AI_GENERATED）每次 lookup 幂等重归位 diff，词典源咨询属预期但不重复导入**）；androidTest `BundledDictionarySmokeTest`（真实 asset：查种子外单词命中 + 未收录词 null）；`SeedDictionaryCoverageTest` 不变（例句契约仅精选种子——PROJECT_SPEC v1.14 FR-3 注记）。
 
-**增强回填（FR-18 v1.15 例句/译文，v1.17 扩音标，v1.18 扩英音）**：jvmTest `SeedImporterTest` 回填组 9——`backfillEnhancements`（v1.17 自 `importExamplesOnly` 改名，例句/译文/音标四合一）零例句旧词补齐到首释义且幂等（二次调用零变更）/ Tatoeba 例句译文空 → 只补译文不重复建行 / 未导入词返回 0 绝不建词 / `lookup` 端到端：DB 旧词 + Fake 词典源 → 查看详情自动回填（含译文）重读返回 / 音标空 → 只补空缺（已有音标绝不覆盖，幂等零变更）/ 零释义 TXT 导入词（FR-14 形态）音标仍可回填 / `lookup` 端到端：例句完整但音标缺失 → 自动补音标 / **英音空 → 只补 ipaBr 不覆盖（已有英音优先，幂等，v1.18）** / **lookup 端到端：例句/美音完整但英音缺失 → 自动补英音（FR-22 闸门，v1.18）**；种子导入端到端断言 59 词 ipaBr 全带（v1.18 种子契约）。
+**增强回填（FR-18 v1.15 例句/译文，v1.17 扩音标，v1.18 扩英音，v2.27 扩逐释义重归位）**：jvmTest `SeedImporterTest` 回填组 16（重归位 7 例见 SCR-SENSEATTR 组，释义→行映射按 Q1 位序——构建序无关）——`backfillEnhancements`（v1.17 自 `importExamplesOnly` 改名，例句/译文/音标四合一）零例句旧词补齐到首释义且幂等（二次调用零变更）/ Tatoeba 例句译文空 → 只补译文不重复建行 / 未导入词返回 0 绝不建词 / `lookup` 端到端：DB 旧词 + Fake 词典源 → 查看详情自动回填（含译文）重读返回 / 音标空 → 只补空缺（已有音标绝不覆盖，幂等零变更）/ 零释义 TXT 导入词（FR-14 形态）音标仍可回填 / `lookup` 端到端：例句完整但音标缺失 → 自动补音标 / **英音空 → 只补 ipaBr 不覆盖（已有英音优先，幂等，v1.18）** / **lookup 端到端：例句/美音完整但英音缺失 → 自动补英音（FR-22 闸门，v1.18）**；种子导入端到端断言 59 词 ipaBr 全带（v1.18 种子契约）。
 
 **学习会话词内容面板（FR-21，v1.17 已登记）**：UI 纯渲染投影（PlaybackState 段信息 + 编排器 `getCurrentContent()` 读模型），无引擎行为变更不设引擎用例；装机走查 2026-09-20 vivo 实测通过（高亮随段切换释义卡/例句卡/词头、Paused 冻结段高亮保持、换词异步重载、音标回填后面板显示、卡片列表滚动）。
 
@@ -191,6 +199,8 @@
 
 **音标旁口音试听（SCR-IPAPRONOUNCE，v2.26 已登记，TC-IPAPRON-01…05）**：FR-22 v1.24 加法扩展——纯 app 层一次性 speak（`WordPronouncer`，端口/引擎零改动不设引擎用例）。app 单测 `WordPronouncerTest` 4 用例（01 请求形态：词文本 / 点击口音 / 语速音调沿用设置 / utteranceId 唯一；02 空白词防误触；03 重听取消上一次——取消传播进 speak 内锁**取消重抛红线**；04 speak 失败仅记日志协程正常结束）+ `LearningSessionViewModelTest` N 组 1 用例（05 会话 VM 转发：试听追加请求、会话零推进零掌握、UI 状态不扰动）。装机走查：vivo 三屏（查词结果 / 查词详情 / 会话面板）点 US/UK 按钮出对应口音语音、试听后设置页口音不变、重复点击即时换听、无英音音标词只显 US 侧按钮。
 
+**词典例句逐释义归属与完整覆盖（SCR-SENSEATTR，v2.27 已登记，TC-DICTATTR-01…08）**：词典资产 v6（例句行 `[en,zh,defIdx(,"g")]` 逐释义归属 + user_version=6）——build 期三级归属（最长短语改挂 / 词性限定 / EN token + CN bigram 重叠打分）+ 缺口释义离线 Qwen 生成兜底 + 23.8 万句全量重译（NLLB 抽样止损停批：截断 + 半角标点，Qwen 单引擎全包）。jvmTest `SeedImporterTest` 重归位组 7（01 对齐词条例句挂自身释义非首释义 / 02 归属不同 → `moveExampleToEntry` 移动且 exampleId 稳定——勾选行天然保留 / 03 译文覆盖限 TATOEBA·AI_GENERATED，视频句绝不覆盖 / 04 陈旧词典句无勾选引用才删、非词典来源永不删 / 05 删除守卫：被 `WordBookEntryExampleSelection` 引用 → 保留零写入 / 06 生成句如实标注 AI_GENERATED（FR-3）/ 07 非对齐词条（TXT/视频形态）保持旧语义不移动不删除）；androidTest `BundledDictionarySmokeTest` v6 完整覆盖不变量（08 take 每条释义至少 1 例句且分布 ≥2 释义）。装机走查：vivo 覆盖安装后查 take/gloss 等多释义词——例句逐释义分布、AI 例句标注可见、勾选过的旧例句不消失、译文为重译新版。
+
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
@@ -199,7 +209,7 @@
 |---|---|
 | FR-1/FR-16 | TC-DB-01、TC-UI（词条页） |
 | FR-2 | TC-DM-01…03、TC-UI 词条渲染 |
-| FR-3 | TC-DM-04、TC-AE-12 |
+| FR-3 | TC-DM-04、TC-AE-12、TC-DICTATTR-06（AI 例句如实标注，v2.27） |
 | FR-4/FR-5 | TC-DB-01/02、TC-DM-04/05、TC-UI 生词本流 |
 | FR-6 | TC-LE-01…03、TC-DB-03 |
 | FR-7 | TC-LE-04、TC-AE-04/05/10/25/26 |
@@ -212,7 +222,7 @@
 | FR-14 | TC-IMP 全组 |
 | FR-15 | TC-UI 设置、TC-LE-02 + 设置 VM 拼读停顿滑杆（TC-AE-33 app 组） |
 | FR-17 | TC-UI 词条编辑组（jvmTest 仓储 + VM 单测 + 冒烟） |
-| FR-18 | TC-UI 词典组（jvmTest 按需导入 + androidTest 真实 asset 冒烟） |
+| FR-18 | TC-UI 词典组（jvmTest 按需导入 + androidTest 真实 asset 冒烟）+ TC-DICTATTR-01…08（v6 逐释义归属，v2.27） |
 | FR-19 | TC-UI 音色组（VM 单测 + 冒烟 + jvmTest 设置键往返） |
 | FR-20 | TC-UI 统计组（jvmTest 聚合 + 统计卡冒烟） |
 | FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
@@ -307,3 +317,8 @@
 | 2.24 | 2026-09-26 | **拼读字母停顿用例登记（SCR-SPELLPAUSE / FR-10 缺陷修复 + FR-15 新设置）**：新增 **TC-AE-33**（commonTest `SpellingAudioAssemblerTest` 拼接数学组 6 + jvmTest 编排器 letterPauseMs 携带/游标懒读（L4）+ 设置仓储新键 round-trip/越界/损坏 + app 设置 VM 缺省与即时持久化；`SegmentBuilderTest`/`PlaybackOrchestratorRestartTest` 期望更新为逗号格式）+ 测试组段 + FR 矩阵 FR-10/FR-15 行注记；装机走查项（人耳一字母一顿 / 0.2s·1.0s 设置变化可感 / 旧缓存不复发）。上游：PROJECT_SPEC v1.22、`SPEC_CHANGE_REQUEST_SPELLING_PAUSE.md`、AUDIO_ENGINE_SPEC v2.8 |
 | 2.25 | 2026-09-26 | **Previous 组内回退控制用例登记（SCR-PREVWORD / FR-11 v1.23 加法扩展）**：新增 **TC-AE-34**（commonTest `LearningEnginePreviousTest` 11 用例 + jvmTest `PlaybackOrchestratorStateTest` TC-AE-34 组 5 用例与终态风暴补 previous + `PlaybackOrchestratorRestartTest` 陈旧 position 镜像 + app `LearningSessionViewModelTest` J2 转发）+ 测试组段 + FR 矩阵 FR-11 行注记；装机走查项（双行控制条 / 组首回绕体感 / 窗口与暂停态 / 词卡面板刷新）。上游：PROJECT_SPEC v1.23、`SPEC_CHANGE_REQUEST_PREV_WORD.md`、AUDIO_ENGINE_SPEC v2.9、LEARNING_ENGINE_SPEC v1.6 |
 | 2.26 | 2026-09-26 | **音标旁口音试听用例登记（SCR-IPAPRONOUNCE / FR-22 v1.24 加法扩展）**：新增 **TC-IPAPRON-01…05**（app 单测 `WordPronouncerTest` 4：请求形态（词文本/口音/语速音调沿用设置/utteranceId 唯一）/ 空白词防误触 / 重听取消上一次（取消重抛红线锁定）/ 失败仅记日志；`LearningSessionViewModelTest` N 组 1：会话 VM 转发零推进零掌握 UI 不扰动——纯 app 层无引擎用例）+ 测试组段 + FR 矩阵 FR-22 行注记；装机走查项（三屏按钮出对应口音 / 试听不改设置口音 / 重复点击即时换听 / 无英音词只显 US 侧按钮）。上游：PROJECT_SPEC v1.24、AUDIO_ENGINE_SPEC v2.11、DECISION_LOG SCR-IPAPRONOUNCE |
+| 2.27 | 2026-09-27 | **词典例句逐释义归属用例登记（SCR-SENSEATTR / FR-3·FR-18，资产 v6）**：新增 **TC-DICTATTR-01…08**（jvmTest `SeedImporterTest` 重归位组 7：挂自身释义 / 移动 exampleId 稳定 / 译文覆盖限词典来源 / 陈旧句删除守卫（无引用删·有勾选保留·非词典永不删）/ AI_GENERATED 如实标注 / 非对齐旧语义 + androidTest `BundledDictionarySmokeTest` v6 完整覆盖不变量）；§4.8 词典组口径更新（词典例句词每次 lookup 幂等重 diff 咨询属预期）+ 回填组 9→16；重归位释义→行映射按 Q1 位序（构建序无关——provider 之外构造者无排序契约，测试桩实证）；FR 矩阵 FR-3/FR-18 行注记。装机走查项（多释义词例句分布 / AI 例句标注 / 勾选行保留 / 新译文）。上游：`SPEC_CHANGE_REQUEST_SENSE_ATTRIBUTION.md`、资产 user_version=6 |
+| 2.28 | 2026-10-01 | **TXT 导入词典富化用例登记（SCR-TXTDICTENRICH / FR-14 v1.26）**：新增 **TC-IMP-09…14**（commonTest `SenseMatcherTest` 6：大小写归一 / 互含双向 / 无共享 token miss / 分隔符族双侧 / 空输入永不命中 / 多命中并集 + jvmTest `ImportEngineTest` 富化组 7：裸词全量 / 译文子集 / 零匹配 D1 兜底 / 词典 miss 退化（未收录 + 零释义）/ 词存在有释义仅勾选 / 词存在无释义先补后勾 + 音标只补空缺 / re-import 勾选不动且译文不回流 + `ImportPerfTest` 万行富化冒烟 ≤12s）；§4.5 标题注记富化；FR 矩阵 FR-14 行注记。装机走查项（裸词 hamper 详情释义例句齐 / 带译文行只入匹配释义 / 报告富化计数）。上游：PROJECT_SPEC v1.26、IMPORT_SPEC v1.2、`SPEC_CHANGE_REQUEST_TXT_DICT_ENRICH.md` |
+| 2.29 | 2026-10-01 | **TXT 导入词性标记过滤用例登记（SCR-TXTDICTENRICH v2 / FR-14 v1.27）**：新增 **TC-IMP-15**（commonTest `LineParserTest` 词性组 3：标记剥离与规范名映射（vt./vi.→verb 长词形优先）/ 标记独占行无译文 + 大小写不敏感 / 未收录标记与无点号前缀原样保留 + jvmTest `ImportEngineTest` 词性组 5：词性独占行只入该词性且母数据全量 / 词性+译文池内两级过滤 / 池内译文零命中兜底词性池 / 词性零命中兜底全释义 / 既有释义行按词性勾选不重建）；FR 矩阵 FR-14 行注记更新。装机走查项（`hamper n.` 只入名词释义例句 / UI 说明两行新文案可见）。上游：PROJECT_SPEC v1.27、IMPORT_SPEC v1.3、`SPEC_CHANGE_REQUEST_TXT_DICT_ENRICH.md`（v2 节） |
+| 2.30 | 2026-10-01 | **TXT 导入词性标记追补用例登记（SCR-TXTDICTENRICH v2 追补 / FR-14 v1.28）**：TC-IMP-15 更新——`LineParserTest` 词性组补 prep.→preposition 剥离用例、未收录标记用例改 conj.（`and conj. 并且` 整段原样保留）。上游：PROJECT_SPEC v1.28、IMPORT_SPEC v1.4 |
+| 2.31 | 2026-10-01 | **TXT 导入多词短语修正用例登记（用户实录缺陷 / FR-14 v1.29）**：新增 **TC-IMP-16**（commonTest `LineParserTest` 短语组 3 + 既有 2 用例期望反转（`take off`→短语、`hello world,你好`→逗号级短语+译文）+ jvmTest `ImportEngineTest` 短语富化 1）；FR 矩阵 FR-14 行注记。装机走查项（`roll out` 导入为短语整词 / 短语+译文两形态）。上游：PROJECT_SPEC v1.29、IMPORT_SPEC v1.5 |

@@ -102,7 +102,8 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - **约束（Phase 0）**：不接入任何真实第三方音频；数据模型与字段先建好。
 - **注记（v1.14）**：「每条释义至少 1 例句」为**精选种子内容契约**（Phase 2 DoD）；全量词典词条（FR-18）例句可为空——无例句可勾选，释义照常保存/播放。
 - **注记（v1.15）**：全量词典词条的例句（如有）来自 Tatoeba 对齐（FR-18），挂首释义、中文译文可空（无译文时只显示英文原句）；例句仍为原子单元，勾选/播放语义与其它来源一致。
-- **验收**：例句单元整体保存/播放（Sentence 与 ChineseTranslation 不可分开选择）；无音频文件时 TTS 兜底不报错；来源类型显示给用户。
+- **注记（v1.25，SCR-SENSEATTR）**：词典资产 v6 起——① sourceType 扩 `AI_GENERATED`（离线工具链 LLM 生成例句，如实标注，licenseNote 记 AI generated）；② v1.15「挂首释义」口径**废止**：例句 build 期三级归属（最长短语改挂 / 词性限定 / EN token + CN bigram 重叠打分）逐释义挂载，缺口释义离线生成兜底——**有例句词条的每条释义至少 1 例句**（完整覆盖，用户裁决 2026-09-26；分两批达全量：第一批 10.7 万有例句词条 + 23.8 万句重译（Qwen，人译保留），资产 user_version=6；第二批 72.9 万零例句词条按词频递补，=7）；③ 已导入词条在 lookup 时幂等 diff 重归位（移动保 exampleId、译文覆盖仅限词典来源行、删除经勾选守卫——宁留不错删）。
+- **验收**：例句单元整体保存/播放（Sentence 与 ChineseTranslation 不可分开选择）；无音频文件时 TTS 兜底不报错；来源类型显示给用户；多释义词例句逐释义分布（生成句显示「AI 例句」）。
 
 ### FR-4 生词本管理
 
@@ -234,12 +235,12 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 
 - 用户选择 TXT 单词表文件 + **目标生词本**（可选已有本，或借此新建）；
 - 编码支持：**UTF-8、UTF-8 BOM、GBK/GB18030**（自动检测：BOM → UTF-8 严格校验 → GB18030 兜底）；
-- 行格式：① 每行一个 Word；② `Word + 分隔符 + 译文`（分隔符：Tab / 空格 / 逗号 / 分号）；忽略空行与首尾空白；
+- 行格式：① 每行一个 Word（**多词短语整行书写**——词内空格是词法字符，单空格仅在译文不以英文字母开头处分割，v1.29）；② `Word + 分隔符 + 译文`（分隔符：Tab / 空格 / 逗号 / 分号）；③ `Word + 分隔符 + 词性标记`（`n./v./vt./vi./adj./adv./prep./int.`，可再接译文，v1.27；v1.28 补 prep.）；忽略空行与首尾空白；
 - 去重：文件内大小写不敏感、首见保留；与目标生词本已有词去重；与全局词库同词**复用已有 Word 行**（不重复建词）；
 - 大文件：**流式**处理（逐行读，不整文件载入内存），进度回调，**可随时取消**；导入原子性：取消/失败不残留半成品；
-- 结果报告：`新增 / 复用已有词 / 文件内重复 / 生词本内已存在 / 无效行` 计数；
-- 导入的词 v1 尚无释义（等待 DictionaryProvider 填充），播放时仅发单词音 + 拼写，不影响学习流程。
-- **验收**：10 万行 GBK 文件导入不 OOM、可取消；各编码样例解析正确；报告计数与实际一致。
+- 结果报告：`新增 / 复用已有词 / 文件内重复 / 生词本内已存在 / 无效行` 计数 + 富化计数（`富化成功 / 其中按译文匹配子集`，v1.26）；
+- **词典富化（v1.26，SCR-TXTDICTENRICH）**：通过去重、将新建本条目的行经 `DictionaryProvider` 查词典——单词行 → 该词全部中英文释义 + 全部例句入本（全勾选）；带译文行 → 译文与词典释义 token 匹配（归一后相等或互含，中英双侧参与）→ 仅匹配释义及其例句入本，零匹配兜底全量（用户裁决 D1）；词性标记行（v1.27）→ 勾选池先收窄到该词性（vt./vi./v→对应动词 verb、prep.→preposition 等规范名映射——词库粒度按 FR-18 已合并及物/不及物；母数据仍全量导入），词性零命中兜底全释义、译文在词性池内零命中兜底到词性池全量；词缺释义则母数据（Word/释义/例句）全量补齐 + 音标只补空缺，词已有释义只勾选绝不重建；富化成功 → `pendingTranslation` 置 null（富化词条 re-import 不回流临时译文）；词典未收录 → 保持仅临时译文（学习时仅发单词音 + 拼写）。细节：IMPORT_SPEC v1.3 §8；
+- **验收**：10 万行 GBK 文件导入不 OOM、可取消；各编码样例解析正确；报告计数与实际一致；裸词 hamper 导入后详情/学习释义例句全链路即刻可用（TC-IMP-09…14）；`hamper n.` 只入名词释义例句（TC-IMP-15）。
 
 ### FR-15 设置
 
@@ -364,7 +365,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | # | 需求 | 指标 / 说明 |
 |---|---|---|
 | NFR-1 | **离线优先** | 学习主流程（查本地词、学习、播放、掌握、勋章、导入）100% 离线可用 |
-| NFR-2 | **性能** | 冷启动 ≤ 3s；Segment 间切换间隙 ≤ 500ms（目标 300ms）；命令窗口在 Segment 结束后 ≤ 300ms 打开；10 万行导入 ≤ 60s 且可取消 |
+| NFR-2 | **性能** | 冷启动 ≤ 3s；Segment 间切换间隙 ≤ 500ms（目标 300ms）；命令窗口在 Segment 结束后 ≤ 300ms 打开；10 万行导入 ≤ 60s（词典富化路径 ≤ 120s，v1.26）且可取消 |
 | NFR-3 | **可靠性** | 会话状态持久化，进程被杀后可恢复到词/段粒度；DB 写入事务化；导入原子；DB 迁移有回归测试 |
 | NFR-4 | **隐私** | 语音仅在命令窗口内采集，命令文本本地解析、不上传；若平台识别引擎存在云端链路（Android SpeechRecognizer 可能走 Google 云），须在隐私声明中披露，并优先尝试离线识别（`EXTRA_PREFER_OFFLINE`）；**内置离线引擎路径（E1，2026-09-14）纯本地识别，无任何云端链路** |
 | NFR-5 | **内容合规** | 音频素材仅限 TTS 或**合法授权来源**；`sourceType / sourceRef / licenseNote` 强制留存；无授权素材不得上线 |
@@ -444,3 +445,8 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.22 | 2026-09-26 | **FR-10 拼写段逐字母精确停顿 + FR-15 新设置「拼读字母停顿」**（用户批准 SPEC_CHANGE_REQUEST_SPELLING_PAUSE；缺陷：拼写段字母连读——piper 前端连字符不产生停顿 token，逗号停顿为模型韵律不可控）：拼写段文本 `-` 连接改 `", "` 逗号分隔（`booster` → `b, o, o, s, t, e, r`；未实现逐字母拼接的渲染路径靠逗号获得自然停顿 = 优雅降级，iOS 初版直接受益）；`SpeakRequest` 加法扩展 `letterPauseMs`（编排器仅 SPELLING 段下发、逐段游标懒读——生效粒度 = 下一拼写段，L4 对齐）；神经 actual 逐字母合成 + commonMain 纯函数 `SpellingAudioAssembler` 字母间显式静音拼接（毫秒精确、仅字母间无首尾静音），整段进 WAV 缓存且键增 `sp{pauseMs}` 维度（旧连读缓存天然失键）；系统降级路径同步精确停顿（多 utterance 队列 + `playSilentUtterance`，用户裁决）；新键 `settings.spellingPauseMs` 缺省 400ms、写校验 100–2000ms、设置页滑杆即时持久化。零 schema 变更（KV 加法键）。下游同步：AUDIO_ENGINE_SPEC v2.8 / DATABASE_SCHEMA v1.11 / TEST_PLAN v2.24（TC-AE-33）；决策记录：SCR-SPELLPAUSE（DECISION_LOG） |
 | 1.23 | 2026-09-26 | **FR-11 加法扩展：新增 Previous 控制**（用户批准 SPEC_CHANGE_REQUEST_PREV_WORD——学习会话缺「上一个」导航，Next 单向，错过刚播的词只能等组内循环绕回）：跳到**当前组内**上一个未掌握 Word，跳过已掌握词；**组首回绕**到组内最后一个未掌握词（与 Next 组内循环对称，按钮永远有效）；纯导航零掌握写入（当前词回 PENDING 留在循环）；CommandWindow 开着则作废窗口跳上一词、Paused 可用（均镜像 Next）；组内唯一未掌握词回绕自身 = 等效重播；v1 仅按钮入口（预留语音命令表不动）。实现 = 引擎 `previous()`（advance 的镜像裁决，`completedGroupIndex` 恒 null）+ 编排器 `previous()`（next 镜像，adopt 参数化共享体）。零 schema 变更（纯推导）。UI 底栏改双行（上行 上一个/下一个/重播，下行 暂停+退出）。下游同步：AUDIO_ENGINE_SPEC v2.9 / LEARNING_ENGINE_SPEC v1.6 / DOMAIN_MODEL v1.7 / TEST_PLAN v2.25（TC-AE-34）；决策记录：SCR-PREVWORD（DECISION_LOG） |
 | 1.24 | 2026-09-26 | **FR-22 加法扩展：音标旁口音试听按钮**（用户 2026-09-26 提出「在US和UK音标旁边各增加一个语音朗读小按钮」）：查词结果 / 查词详情 / 学习会话面板三处双音标行的 US、UK 侧各加朗读小按钮——以对应口音一次性 speak 该词（app 层 `WordPronouncer` 经各 ViewModel 委托，LangRouted → piper 神经口音路由）；**不读也不改 `settings.ttsAccent`**，语速/音调沿用用户设置；重复点击取消上一次试听；某侧音标缺失该侧按钮不渲染；命令窗口占位词按钮禁用。纯 app 层实现（端口/编排器/引擎零改动），零 schema 变更。下游同步：AUDIO_ENGINE_SPEC v2.11 / TEST_PLAN v2.26（TC-IPAPRON）；决策记录：SCR-IPAPRONOUNCE（DECISION_LOG） |
+| 1.25 | 2026-09-27 | **词典例句逐释义归属 + 完整覆盖（SCR-SENSEATTR，资产 v6→v7 两批）**：用户裁决「找不到对应例句的释义不能零例句」（2026-09-26）+「分两批达全量」+「本地 Qwen 7B 级引擎」。FR-3 扩 sourceType `AI_GENERATED`（离线 Qwen 生成句如实标注）；v1.15「挂首释义」口径废止——词典例句 build 期三级归属（最长短语改挂/词性限定/重叠打分）逐释义挂载，缺口释义离线生成兜底，有例句词条每条释义至少 1 例句（第一批 10.7 万词条 + 23.8 万句 Qwen 重译（NLLB 抽样止损停批），资产 user_version=6；第二批 72.9 万零例句词条按词频，=7）；已导入词条 lookup 幂等 diff 重归位（Q1 位序映射/exampleId 稳定/译文覆盖限词典来源/删除勾选守卫）。下游：TEST_PLAN v2.27（TC-DICTATTR-01…08）；决策：SCR-SENSEATTR（DECISION_LOG） |
+| 1.26 | 2026-10-01 | **TXT 导入词典富化（SCR-TXTDICTENRICH）**：用户提出「txt 导入只有单词本身，改为单词行→全部释义例句入本；带译文行→匹配释义入本」。FR-14 富化规则 + 报告富化计数；`pendingTranslation` 富化后置 null（正式释义在位，re-import 不回流）；NFR-2 富化路径预算 120s。零 schema 迁移（query-only 新查询 2 条）。下游：IMPORT_SPEC v1.2（§8 重写）/ TEST_PLAN v2.28（TC-IMP-09…14）；决策：SCR-TXTDICTENRICH（DECISION_LOG） |
+| 1.27 | 2026-10-01 | **TXT 导入词性标记过滤（SCR-TXTDICTENRICH v2）**：用户提出「单词同一行写词性（n./v./vt./vi./adj./adv./int.）→ 只导入对应词性的中英文释义和例句」+ 导入 UI 说明补「裸词→全量释义例句」。FR-14 行格式 ③ 词性标记行 + 富化规则勾选池按词性收窄（vt./vi./v→verb 规范名映射；词性零命中兜底全释义、池内译文零命中兜底词性池；母数据导入不受词性影响）；ImportScreen 选文件页说明文案扩三行。零 schema 迁移。下游：IMPORT_SPEC v1.3 / TEST_PLAN v2.29（TC-IMP-15）；决策：SCR-TXTDICTENRICH v2（DECISION_LOG） |
+| 1.28 | 2026-10-01 | **TXT 导入词性标记追补（SCR-TXTDICTENRICH v2 追补）**：用户指示「vt.和vi.映射对应动词（措辞）+ 补充 prep. 映射和 UI 说明」——词性标记集补 `prep.`（→preposition）；vt./vi./v 映射表述改为「对应动词 verb」（功能不变：词库粒度按 FR-18 已合并及物/不及物为单一动词类）；ImportScreen 说明标记列表更新。零 schema 迁移。下游：IMPORT_SPEC v1.4 / TEST_PLAN v2.30；决策：SCR-TXTDICTENRICH v2 追补（DECISION_LOG） |
+| 1.29 | 2026-10-01 | **TXT 导入多词短语修正（用户实录缺陷：`roll out` 被导入为 roll）**：FR-14 行格式 ①——多词短语整行书写，单空格分隔改为逐位置扫描并跳过「译文以英文字母开头」的位置（`roll out` 整词、`roll out 推出` 短语+译文、`hello world,你好` 逗号级分割）；译文以英文开头须用显式分隔符；UI 说明补短语行。下游：IMPORT_SPEC v1.5 / TEST_PLAN v2.31（TC-IMP-16）；决策：SCR-TXTDICTENRICH v2 追补 2（DECISION_LOG） |

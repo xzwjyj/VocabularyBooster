@@ -79,8 +79,11 @@ fun ImportScreen(
 @Composable
 private fun PickFileContent(onPickFile: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(top = 24.dp)) {
-        Text("每行一个词，可选译文（Tab / 空格 / 逗号等分隔），支持 UTF-8 与 GB18030。")
-        Text("重复词会自动去重；已有译文的词不会被覆盖。", modifier = Modifier.padding(top = 8.dp))
+        Text("每行一个词或短语，可补充词性或释义（Tab 或逗号分隔），支持 UTF-8 与 GB18030。")
+        Text("多词短语（如 roll out）整行书写即可；短语 + 释义请用 Tab 或逗号分隔。", modifier = Modifier.padding(top = 8.dp))
+        Text("只写单词：导入词典中该词的全部中英文释义和例句。")
+        Text("写词性（n./v./vt./vi./adj./adv./prep./int.）：只导入该词性的释义和例句，后面还可再写释义进一步筛选。")
+        Text("重复词会自动去重；已有释义的词不会被覆盖。", modifier = Modifier.padding(top = 8.dp))
         Button(
             onClick = onPickFile,
             modifier = Modifier.padding(top = 24.dp).testTag("import_pick_file"),
@@ -198,15 +201,19 @@ private fun ImportingContent(state: ImportUiState.Importing, onCancel: () -> Uni
 private fun ReportContent(report: ImportReport, onDone: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
         Text("导入完成", style = MaterialTheme.typography.titleLarge)
-        val rows = listOf(
-            "有效行" to report.totalLines,
-            "新增词条" to report.imported,
-            "复用已有词" to report.reusedWords,
-            "文件内重复" to report.duplicatesInFile,
-            "本内已存在" to report.duplicatesInBook,
-            "补写译文" to report.updated,
-            "非法行" to report.invalid,
-        )
+        val rows = buildList {
+            add("有效行" to report.totalLines)
+            add("新增词条" to report.imported)
+            add("复用已有词" to report.reusedWords)
+            add("文件内重复" to report.duplicatesInFile)
+            add("本内已存在" to report.duplicatesInBook)
+            add("补写释义" to report.updated)
+            add("非法行" to report.invalid)
+            if (report.enriched > 0) { // SCR-TXTDICTENRICH：富化成功才展示（退化路径零噪音）
+                add("词典富化" to report.enriched)
+                add("其中按释义匹配" to report.enrichedMatched)
+            }
+        }
         rows.forEach { (label, count) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(label, modifier = Modifier.weight(1f))

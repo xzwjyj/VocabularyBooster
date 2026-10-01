@@ -15,6 +15,10 @@ VALUES (?, ?);
 selectEntryDefinitions:
 SELECT * FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;
 
+-- SCR-TXTDICTENRICH：entry 是否已有释义勾选（富化词条正式释义在位，re-import 不补写临时译文；query-only）
+countEntryDefinitions:
+SELECT COUNT(*) FROM WordBookEntryDefinition WHERE wordBookEntryId = ?;
+
 -- Q7 词条选择编辑（FR-17，Phase 8.5）：定向替换释义选择（与 WordBookEntryExampleSelection.sq 的
 -- deleteExampleSelectionsForEntry 配对，均在 updateWordSelections 单事务内）。
 -- query-only——无 DDL/索引/FK 变更，schema 维持 v2，无迁移

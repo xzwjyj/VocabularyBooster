@@ -149,4 +149,5 @@ private fun sourceTypeLabel(type: ExampleSourceType): String = when (type) {
     ExampleSourceType.LICENSED_OTHER -> "授权/公版"
     ExampleSourceType.TTS -> "TTS"
     ExampleSourceType.TATOEBA -> "Tatoeba"
+    ExampleSourceType.AI_GENERATED -> "AI 例句"
 }

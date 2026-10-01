@@ -21,17 +21,19 @@ CREATE TABLE DictEntry(
   text         TEXT NOT NULL,     -- 原始大小写
   ipa          TEXT NOT NULL,     -- ECDICT phonetic（可空串；ipa-dict en_US 补过空缺，见 merge_ipa.py）
   definitions  TEXT NOT NULL,     -- 紧凑 JSON [["partOfSpeech","meaningEN","meaningCN"],…] 已按词性序排
-  examples     TEXT NOT NULL,     -- 紧凑 JSON [["英文原句","中文译文"],…]（Tatoeba，译文可空串）
+  examples     TEXT NOT NULL,     -- 紧凑 JSON [["英文原句","中文译文",defIdx(,"g")],…]（v6 起逐释义归属；"g"=AI 生成兜底）
   ipaBr        TEXT               -- 英音音标（ipa-dict en_UK；可空——短语/长尾无英音属预期）
 ) WITHOUT ROWID;
--- PRAGMA user_version = 5：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 / v5 ipa-dict 英音+美音补缺）。
+-- PRAGMA user_version = 6：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 /
+--   v5 ipa-dict 英音+美音补缺 / v6 例句逐释义归属 + 全量重译 + 生成兜底；v7 = 第二批零例句词条按词频递补）。
 -- 版本 = 修订号：数据重建也必须递增，否则设备端同 user_version 的旧缓存不会重拷（BundledDictionaryProvider）
 ```
 
 App 侧消费：`shared/src/androidMain/.../platform/BundledDictionaryProvider.kt`
-（首次 assets → filesDir 复制后只读打开；例句挂首释义——句子级数据无词性归属）；接线 `app/di/AppModule.kt`
+（首次 assets → filesDir 复制后只读打开；v6 起 defIdx = definitions 数组下标逐释义挂载，"g" →
+AI_GENERATED 如实标注）；接线 `app/di/AppModule.kt`
 （种子优先 → 全量兜底的复合 DictionaryProvider，DB miss 按需导入走 SeedImporter；
-增强前已导入词条 lookup 时幂等回填例句）。
+已导入词条 lookup 时幂等回填 + 例句 diff 重归位——移动保 exampleId、译文覆盖限词典来源行、删除经勾选守卫）。
 
 ## 再生步骤（Windows，Python 3.10+）
 
@@ -58,6 +60,19 @@ PYTHONIOENCODING=utf-8 python enrich_with_examples.py build   # 重建 sqlite（
 #    en_UK → ipaBr（取首个候选、剥斜杠）；en_US 只补 ipa 空缺（绝不覆盖）
 #    实绩（2026-09-20）：ipaBr 64,307 / 美音 217,591→250,616 / 双音标同显 59,387 / 资产 159MB
 PYTHONIOENCODING=utf-8 python merge_ipa.py
+# 6. 例句逐释义归属 + 完整覆盖（SCR-SENSEATTR，PROJECT_SPEC FR-3 v1.25）→ user_version=6
+#    三级归属（最长短语改挂 / wink-nlp 词性限定 / EN token + CN bigram 重叠打分）
+#    + 缺口释义离线生成兜底 + 无译文句全量重译（本地 ollama qwen3:8b，think:false）
+#    实绩（2026-09-27）：归属 267,071 词条 / 短语改挂 35,420 / 缺口 48,767 生成 / 重译 238,382
+#    （NLLB-200-distilled-1.3B ct2 抽样止损停批：~10% 截断 + 全量半角标点——nllb_translate.py 留档不投产）
+node attribute_senses.js prep        # 资产 → %TEMP%/enrich_work/ec_words.json + defs.json
+node attribute_senses.js cmn         # sentences.csv 单遍 → cmn.json（喂 enrich_node.js links 复用）
+node attribute_senses.js attribute   # 三级归属 → attributed.json（含缺口清单）
+# ollama serve（OLLAMA_NUM_PARALLEL=16）后双队列（resume-safe，键去重 llm_out.jsonl）：
+node llm_tasks.js generate           # 缺口释义生成（"g:" 键）
+node llm_tasks.js translate          # 无译文句重译（"t:" 键；失败重试一次后 parked llm_failed.jsonl，
+                                     #  收尾重跑同命令即自动重试 parked）
+node build_v6.js                     # 合并 v5×attributed×llm_out → v6 资产（缺译/缺生成 FATAL；崩溃安全换盘）
 ```
 
 运行时分工注记：本机 CPython 在语料扫描上确定性段错误（机器级故障）——
@@ -67,4 +82,6 @@ PYTHONIOENCODING=utf-8 python merge_ipa.py
 Tatoeba 数据（sentences/links，~1.2GB 解压）不入 git、不随包，仅离线工具用。
 
 `stardict.db`、`*.zip`、`app/src/main/assets/dict/` 均已 gitignore；
-`convert.py` 与本 README 入 git。
+`convert.py`、`enrich_node.js`、`attribute_senses.js`、`llm_tasks.js`、`build_v6.js`、
+`nllb_translate.py`（留档）与本 README 入 git；`node_modules/`（wink-nlp）与
+`%TEMP%/enrich_work/` 中间产物不入 git。

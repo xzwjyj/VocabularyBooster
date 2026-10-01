@@ -1,6 +1,10 @@
 package com.vocabularybooster
 
 import com.vocabularybooster.data.SqlDelightImportRepository
+import com.vocabularybooster.domain.dictionary.DictionaryDefinitionEntry
+import com.vocabularybooster.domain.dictionary.DictionaryExample
+import com.vocabularybooster.domain.dictionary.DictionaryProvider
+import com.vocabularybooster.domain.dictionary.DictionaryWord
 import com.vocabularybooster.domain.event.DefaultDomainEventBus
 import com.vocabularybooster.importing.DetectedEncoding
 import com.vocabularybooster.importing.ImportEngine
@@ -24,11 +28,15 @@ import kotlin.test.assertTrue
 
 /**
  * TC-IMP-04 性能基准（IMPORT_SPEC §7，NFR-2，JVM 口径）：
- * - 10 万行 GB18030 内存 Fake 源全量导入 ≤ 60s（流式逐行，内存与文件大小无关）；
+ * - 10 万行 GB18030 内存 Fake 源全量导入 ≤ 60s（provider 未装配的退化路径；流式逐行，
+ *   内存与文件大小无关）；
+ * - SCR-TXTDICTENRICH：词典富化路径（每行 lookup 命中 + 释义/例句/勾选落库）10 万行
+ *   预算放宽为 ≤ 120s（NFR-2 修订，IMPORT_SPEC v1.2 §7）——万行富化冒烟按 1/10 比例锁 12s；
  * - 导入中途取消 ≤ 1s 生效：整体回滚、目标本零变化（含已写入的 5 万行）。
  * GB18030 实际解码在平台 actual；JVM 基准以 GB18030 决策标签 + 等规模行载荷
  * 度量引擎吞吐（引擎只消费解码后的行，编码对引擎透明）。
  * 行为矩阵（守恒/回滚/事件）见 ImportEngineTest；本文件只锁预算。
+ * （本文件按 AOR-007 先例不入门禁——机器级故障窗口。）
  */
 class ImportPerfTest {
 
@@ -71,6 +79,63 @@ class ImportPerfTest {
         } finally {
             db.close()
         }
+    }
+
+    @Test // SCR-TXTDICTENRICH：富化路径万行冒烟（每行 lookup 命中 + 母数据 + 勾选落库；1/10 比例预算）
+    fun tenThousandEnrichedLinesWithinTwelveSeconds() {
+        val db = TestDb.inMemory()
+        try {
+            val engine = ImportEngine(
+                bytesSource = emptyBytesSource,
+                lineSource = GeneratedLineSource(count = 10_000) { "${alphaWord(it)}\t苹果" },
+                repository = SqlDelightImportRepository(db.database, DispatchersForTest),
+                eventBus = DefaultDomainEventBus(),
+                clock = FixedClock(),
+                dictionaryProvider = AllHitDictionaryProvider,
+            )
+
+            val startNanos = System.nanoTime()
+            val report = runBlocking {
+                engine.import(DetectedEncoding.Gb18030, ImportTarget.NewBook("富化基准"))
+            }
+            val elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0
+
+            assertEquals(10_000L, report.imported)
+            assertEquals(10_000L, report.enriched)
+            assertEquals(0L, report.invalid)
+            assertTrue(elapsedSeconds <= 12.0, "1 万行富化导入 ${"%.1f".format(elapsedSeconds)}s 超出 12s 预算（NFR-2 修订）")
+        } finally {
+            db.close()
+        }
+    }
+
+    /** 全命中词典源：每行同构词条（2 释义 × 各 1 例句）——度量富化增量成本，不建大 Map。 */
+    private object AllHitDictionaryProvider : DictionaryProvider {
+        private val dict = DictionaryWord(
+            text = "perf",
+            ipaAm = "pɜːrf",
+            ipaBr = "pɜːf",
+            definitions = listOf(
+                DictionaryDefinitionEntry(
+                    partOfSpeech = "noun",
+                    partOfSpeechOrder = 0,
+                    definitionOrder = 0,
+                    meaningEN = "a benchmark run",
+                    meaningCN = "基准运行",
+                    examples = listOf(DictionaryExample("The perf run passed.", "基准跑完了。")),
+                ),
+                DictionaryDefinitionEntry(
+                    partOfSpeech = "verb",
+                    partOfSpeechOrder = 1,
+                    definitionOrder = 0,
+                    meaningEN = "to measure speed",
+                    meaningCN = "测速",
+                    examples = listOf(DictionaryExample("We perf the engine.", "我们给引擎测速。")),
+                ),
+            ),
+        )
+
+        override suspend fun lookup(text: String): DictionaryWord = dict
     }
 
     @Test

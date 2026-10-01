@@ -1,6 +1,6 @@
 # IMPORT_SPEC — TXT 导入规格
 
-> 状态：Phase 7 已落地 ｜ 版本 1.1 ｜ 日期：2026-09-18
+> 状态：Phase 7 已落地（v1.2 起含词典富化，v1.3 起含词性标记过滤，v1.5 短语修正）｜ 版本 1.5 ｜ 日期：2026-10-01
 > 上游：PROJECT_SPEC FR-14 ｜ 存储：DATABASE_SCHEMA §2.1 `Word`、§2.5 `WordBookEntry.pendingTranslation`
 > 位置：`shared/commonMain/…/importing/`，解析/去重/流程控制为纯 Kotlin；文件字节读取为平台端口。
 > 落地注记：Kotlin 包名取 `importing`（`import` 是关键字，不可作包名）。
@@ -46,18 +46,30 @@ detect(head: ByteArray):
 | 规则 | 定义 |
 |---|---|
 | 空行 | trim 后为空 → 跳过（计数 ignored） |
-| 单词行 | `word`（仅一个 token）→ 无译文：`pendingTranslation = null` |
+| 单词行 | `word`（含**多词短语**——词内空格是词法字符，v1.5 短语修正后 `roll out` 整词存活）→ 无译文：`pendingTranslation = null` |
 | 词 + 译文行 | `word<sep>translation`，`<sep>` = Tab ‖ 2+ 空格 ‖ 单空格 ‖ 逗号（半/全角）‖ 分号 ‖ 冒号 —— **按优先级尝试**（Tab > 多空格 > 单空格 > 逗号 > 分号 > 冒号），取**首次成功分割** |
+| 词性标记（v1.3；v1.4 补 prep.） | 译文段**首部**的 `n./v./vt./vi./adj./adv./prep./int.`（大小写不敏感，点号必须有）在解析期剥离并映射规范名（vt./vi./v→**对应动词** verb、n→noun、adj→adjective、adv→adverb、prep.→preposition、int.→interjection，DOMAIN_MODEL §3.1；及物/不及物已按 FR-18 合并为单一动词类）；标记后余文（若有）为译文；**标记独占**（`word n.`）→ 无译文；未收录标记（如 `conj.`）与无点号前缀**原样保留为译文**、不判词性；译文长度 ≤256 按剥离后余文计 |
 | 词合法字符 | `^[A-Za-z][A-Za-z''\- ]{0,63}$`（允许连字符词 / 撇号 / 多词短语）；超限或含数字/其他字符 → invalid 行（计数 + 保留原文供报告） |
 | 译文 | sep 之后整段作为译文（可含任意中文/标点），长度 ≤ 256 |
 | 大小写 | 保存原文 `text`；`normalizedText = lower(trim)` 用于查询与去重 |
+
+> **行形态决定富化层级（v1.2，SCR-TXTDICTENRICH）**：单词行 → 词典命中时全量释义例句入本；
+> 词 + 译文行 → 译文经 `SenseMatcher`（§8.2）匹配出释义子集入本，零匹配兜底全量（用户裁决 D1）；
+> 词性标记行（v1.3）→ 勾选池先收窄到该词性（§8.1），可再叠译文在池内匹配。
+> 行解析规则本身不变——富化发生在解析之后的引擎行循环内。
+
+> **单空格分隔与多词短语（v1.5，用户实录缺陷修复：`roll out` 曾被切成 roll + 译文 out）**：
+> 单空格级自 v1.5 起**逐位置扫描**，跳过「译文以英文字母开头」的位置（英文尾巴是短语成分，
+> 不是译文）——`roll out` 按短语整词存活；`roll out 推出` 在首个非英文开头的空格处分割；
+> `hello world,你好` 单空格级全跳过后下探逗号级分割；译文确以英文开头时须用 Tab / 逗号等
+> **显式分隔符**（Tab / 2+ 空格 / 逗号等显式级不做此扫描，右侧英文照常作译文）。
 
 ## 4. 去重与复用（顺序执行）
 
 1. **文件内去重**：按 `normalizedText` 首见保留，后续 → `duplicatesInFile++`；
 2. **全局复用**：`Word.normalizedText` 已存在 → 复用已有 `wordId`（不插新行），`reusedWords++`；
-3. **目标本去重**：`(wordBookId, wordId)` 已存在 → 跳过（`duplicatesInBook++`）；已存在但**本行带译文而库里 pendingTranslation 为空** → 补写译文（同时 `duplicatesInBook++` 与 `updated++`——`updated ⊆ duplicatesInBook`，v1.1 落地口径，守恒式见 §6）；
-4. 通过 → 插入 `WordBookEntry(entryOrder = 本内当前最大值+1, pendingTranslation = 译文)`，`imported++`。
+3. **目标本去重**：`(wordBookId, wordId)` 已存在 → 跳过（`duplicatesInBook++`）；已存在但**本行带译文而库里 pendingTranslation 为空、且无释义勾选** → 补写译文（同时 `duplicatesInBook++` 与 `updated++`——`updated ⊆ duplicatesInBook`，v1.1 落地口径，守恒式见 §6；v1.2 追加「无释义勾选」守卫——富化词条正式释义在位，临时译文不得回流）；
+4. 通过 → 插入 `WordBookEntry(entryOrder = 本内当前最大值+1, pendingTranslation = 译文)`，`imported++`；随后按 §8 词典富化（富化成功 → `pendingTranslation` 置 null 落库）。
 
 ## 5. 导入流程（ImportEngine）
 
@@ -78,7 +90,7 @@ chooseFile → chooseTargetBook(已有 | 新建名称)
 - **新建本延迟创建**（空本防线）：目标本 id 在首条 entry 插入时才创建——全空 / 全非法 / 全重复文件**不建空本**（边界 #1/#2）；
 - 零有效写入（imported = reused = updated = 0）→ 不发布 `ImportFinished`。
 
-## 6. ImportReport（结果报告，五项计数 + 样例）
+## 6. ImportReport（结果报告，五项计数 + 样例 + 富化计数）
 
 ```kotlin
 data class ImportReport(
@@ -91,6 +103,8 @@ data class ImportReport(
     val updated: Long,          // 补写了临时译文
     val invalid: Long,
     val invalidSamples: List<String>,   // 最多 20 条原文，供 UI 呈现
+    val enriched: Long,          // 词典富化成功行（⊆ imported + reusedWords，v1.2）
+    val enrichedMatched: Long,   // 其中按译文匹配出释义子集的行（其余为裸词/零匹配兜底全量）
 )
 ```
 
@@ -99,14 +113,38 @@ data class ImportReport(
 ## 7. 大文件与性能预算（NFR-2）
 
 - 逐行流式：内存占用与文件大小**无关**（只保留去重 Set——10 万词 normalizedText ≈ 数 MB，可接受；> 50 万行时 UI 预警）；
-- 10 万行 ≤ 60s（中端 Android 设备基准，TEST_PLAN TC-IMP-04）；
+- 10 万行 ≤ 60s（provider 未装配的退化路径，TEST_PLAN TC-IMP-04）；**富化路径 ≤ 120s**（v1.2：每行 +1 次词典索引查询 ~0.5–2ms + 释义/例句/勾选落库——NFR-2 预算修订，万行富化冒烟按 1/10 比例锁 12s）；
 - 进度必须可感知（行数百分比），取消 ≤ 1s 内生效并回滚完毕。
 
-## 8. 与词典回填的关系
+## 8. 词典富化（v1.2，SCR-TXTDICTENRICH）
 
-- 导入词此时**没有 DefinitionEntry**：学习时仅播 PRONUNCIATION + SPELLING（LEARNING 边界表 #3）；详情页展示 `pendingTranslation` 作为临时中文释义；
-- 未来 DictionaryProvider 接入后：**回填任务**为导入词拉取正式词条 → 清除 `pendingTranslation`（ROADMAP 对应 Phase）；
-- 回填前后均不破坏学习/掌握记录（Word 行 id 不变）。
+导入执行期，对**每条通过去重、将新建本条目**的行查词典（`DictionaryProvider.lookup`——只读随包词典资产库，与 vocabulary.db 事务无锁交互；provider 未装配 / 未收录 / 释义为空 → 精确退化 Phase 7 原行为，仅 `pendingTranslation` 落库）。
+
+### 8.1 两级富化规则
+
+| 行形态 | 规则 |
+|---|---|
+| 单词行（无译文） | 词典命中 → 该词**全部**中英文释义 + 全部例句入本（全部勾选）；`pendingTranslation = null` |
+| 词 + 译文行 | 词典命中 → 译文经 §8.2 匹配 → 仅匹配释义 + 其全部例句入本（勾选）；`pendingTranslation = null`；零匹配 → 兜底全量（与单词行同，用户裁决 D1） |
+| 词性标记行（v1.3） | 词典命中 → 勾选池先收窄到该词性的释义（母数据导入不受影响，仍全量）；**词性零命中 → 兜底全释义**（同 D1 理由——词表作者意图无法精确满足时保全数据）；标记独占行无译文，就此定勾选；标记 + 译文 → 译文在词性池内再匹配，**池内零命中兜底到词性池全量**（不是全释义）；`enrichedMatched` 只计译文匹配子集，词性独占行不计 |
+
+### 8.2 释义匹配（SenseMatcher，shared 纯函数，确定性）
+
+- 双方归一：trim + lowercase；分隔符切分 `，, 、;；/ 空白`——用户译文串、词典 `meaningCN` 与 `meaningEN` 都切 token；
+- 命中 = 任一用户 token 与任一词典 token **相等或互含**（「妨碍」↔「妨碍, 阻碍」切分 token）；中英两侧都参与；
+- ≥1 释义命中 → 取命中集合；0 命中 → 兜底全量（D1）。
+
+### 8.3 母数据与勾选两层分离（镜像 FR-5 复用原则）
+
+- **母数据**（Word / DefinitionEntry / Example 全局共享）：词**缺释义**（新建词 / TXT 时代旧行）→ 词典释义例句**全量**导入（与种子 / 按需导入同构，母数据永不残缺），同时音标**只补空缺**（COALESCE——已有值绝不覆盖，同回填守卫口径）；
+- 词**已有释义**（查词 / 视频 / 种子导入过）→ 绝不重建、不补词典侧缺失释义（宁少错建），只在既有行上勾选；
+- **勾选**（WordBookEntryDefinition + WordBookEntryExampleSelection）：= §8.1 规则选出的释义子集（或全量）及其例句——富化词条学习/播放/掌握全链路即刻可用（同视频导入词条）；
+- 本内已存在（`duplicatesInBook`）：**不动勾选**，仅维持 v1.1 补译文行为且受「无释义勾选」守卫（§4 规则 3）。
+
+### 8.4 与查询侧回填的协作
+
+- 富化导入的释义例句与词典资产同构 → 后续查词触发的 `backfillEnhancements`（SCR-SENSEATTR diff 重归位）对此类词幂等零写；
+- 词典仍未收录的导入词保持原边界：学习时仅播 PRONUNCIATION + SPELLING（LEARNING 边界表 #3），详情页展示 `pendingTranslation`。
 
 ## 9. 边界情形表
 
@@ -121,12 +159,16 @@ data class ImportReport(
 | 7 | 导入进行中 App 被杀 | 整体事务回滚语义：下次打开目标本无半成品 |
 | 8 | 行内多个分隔符（`word, trans1, trans2`） | 首次分割成功为准：译文 = `trans1, trans2` 整段 |
 | 9 | 同一行 10 列（含逗号译文） | 同上——译文保留逗号原样 |
+| 10 | 多词短语行（`roll out` / `roll out 推出` / `hello world,你好`） | v1.5：单空格右侧英文 → 跳过该空格；整行纯英文 → 短语整词；短语 + 译文在首个非英文开头空格或显式分隔符处分割 |
 
-## 10. 测试要点（详见 TEST_PLAN TC-IMP-01…08）
+## 10. 测试要点（详见 TEST_PLAN TC-IMP-01…16）
 
 - 各编码样例文件（UTF-8 / BOM / GB18030 / 混错字节）逐字节断言；
-- 守恒断言（§6）+ 事务回滚（取消/异常）+ 10 万行性能基准；
-- Fake `FileBytesSource`（内存字节）驱动全部 JVM 测试，无需真文件系统。
+- 守恒断言（§6）+ 事务回滚（取消/异常）+ 10 万行性能基准（退化路径 60s / 富化路径 120s 预算）；
+- 词典富化矩阵（TC-IMP-09…14）：裸词全量 / 译文子集 / 零匹配兜底 / 词典 miss 退化 / 词存在有释义仅勾选 / 词存在无释义先补后勾 + re-import 幂等；
+- 词性标记矩阵（TC-IMP-15）：标记剥离与规范名映射（vt./vi./v→对应动词 verb、prep.→preposition，大小写不敏感）/ 标记独占行无译文 / 未收录标记（conj. 等）与无点号前缀原样保留 / 词性 + 译文两级过滤 / 池内零命中兜底词性池 / 词性零命中兜底全量 / 既有释义行上按词性勾选；
+- 短语修正矩阵（TC-IMP-16）：`roll out` 整词存活 / `roll out 推出` 空格分割短语+译文 / `hello world,你好` 逗号级分割 / 全英文行成短语 / 引擎侧短语整词入库 + 词典按短语富化；
+- Fake `FileBytesSource`（内存字节）+ Fake `DictionaryProvider` 驱动全部 JVM 测试，无需真文件系统。
 
 ---
 
@@ -134,3 +176,7 @@ data class ImportReport(
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
 | 1.1 | 2026-09-18 | Phase 7 落地回写：包名 `importing`（`import` 为关键字）；§2 落地口径（无置信度字段 / GB18030 零容忍阈值=0 / head 末尾截断容忍）；§4 `updated ⊆ duplicatesInBook` 口径；§5 流程图对齐实现（单一大事务 + 协程取消 ensureActive 每 256 行 + 进度三字段 + 延迟建本空本防线 + 零有效写入不发布事件）+ `withImportTransaction` 事务载体（runBlocking 父 Job 桥接） |
+| 1.2 | 2026-10-01 | SCR-TXTDICTENRICH 词典富化：§3 行形态注记；§4 规则 3「无释义勾选」守卫（富化词条临时译文不得回流）+ 规则 4 富化钩子；§6 +`enriched`/`enrichedMatched`；§7 富化路径预算 120s；§8 重写为词典富化两级规则 + SenseMatcher + 母数据/勾选两层分离 + 与查询侧回填协作 |
+| 1.3 | 2026-10-01 | SCR-TXTDICTENRICH v2 词性标记过滤（用户 2026-10-01 提出）：§3 新增词性标记行（n./v./vt./vi./adj./adv./int. 剥离 + 规范名映射，未收录标记原样保留）；§8.1 新增词性标记行规则（勾选池收窄，词性/池内译文各自零命中兜底上一级）；§10 测试矩阵补 TC-IMP-15 |
+| 1.4 | 2026-10-01 | SCR-TXTDICTENRICH v2 追补（用户 2026-10-01）：词性标记集补 `prep.`（→preposition）；vt./vi./v 映射措辞改为「对应动词 verb」（词库粒度按 FR-18 合并，功能不变）；未收录标记载改以 conj. 为例 |
+| 1.5 | 2026-10-01 | **单空格短语修正（用户实录缺陷：`roll out` 被导入为 roll）**：§3 单空格级改逐位置扫描并跳过「译文以英文字母开头」的位置（多词短语整词存活 / 短语+译文在首个非英文开头空格分割 / 全跳过后下探显式分隔级）；单词行口径扩多词短语；边界表 #10；§10 短语矩阵（TC-IMP-16） |

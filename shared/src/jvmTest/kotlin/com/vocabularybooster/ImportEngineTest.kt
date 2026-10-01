@@ -4,6 +4,10 @@ import com.vocabularybooster.data.SqlDelightImportRepository
 import com.vocabularybooster.data.SqlDelightLearningSessionRepository
 import com.vocabularybooster.data.SqlDelightPlaybackContentRepository
 import com.vocabularybooster.data.SqlDelightWordBookRepository
+import com.vocabularybooster.domain.dictionary.DictionaryDefinitionEntry
+import com.vocabularybooster.domain.dictionary.DictionaryExample
+import com.vocabularybooster.domain.dictionary.DictionaryProvider
+import com.vocabularybooster.domain.dictionary.DictionaryWord
 import com.vocabularybooster.domain.event.DefaultDomainEventBus
 import com.vocabularybooster.domain.event.DomainEvent
 import com.vocabularybooster.domain.model.PlaybackToggles
@@ -75,12 +79,16 @@ class ImportEngineTest {
 
     // —— 装配/种子 ——
 
-    private fun newEngine(lines: List<String>): ImportEngine = ImportEngine(
+    private fun newEngine(
+        lines: List<String>,
+        dictionaryProvider: DictionaryProvider? = null,
+    ): ImportEngine = ImportEngine(
         bytesSource = FakeBytesSource("apple\t苹果\n".encodeToByteArray()),
         lineSource = FakeLineSource(lines),
         repository = repo,
         eventBus = bus,
         clock = clock,
+        dictionaryProvider = dictionaryProvider,
     )
 
     private fun newLearningEngine(): DefaultLearningEngine {
@@ -312,6 +320,352 @@ class ImportEngineTest {
         assertTrue(content.examplesByDefinitionEntryId.isEmpty())
         val segments = SegmentBuilder.buildSegments(content, PlaybackToggles())
         assertEquals(listOf(SegmentType.PRONUNCIATION, SegmentType.SPELLING), segments.map { it.type })
+    }
+
+    // —— SCR-TXTDICTENRICH 词典富化（TC-IMP-09…14；SenseMatcher 纯函数口径见 commonTest）——
+
+    /** hamper 词典词条：verb「妨碍」+ noun「篮子」各 1 例句，双侧音标齐。 */
+    private fun hamperDict() = DictionaryWord(
+        text = "hamper",
+        ipaAm = "ˈhæmpər",
+        ipaBr = "ˈhæmpə(r)",
+        definitions = listOf(
+            DictionaryDefinitionEntry(
+                partOfSpeech = "verb",
+                partOfSpeechOrder = 0,
+                definitionOrder = 0,
+                meaningEN = "hamper, hinder",
+                meaningCN = "妨碍，阻碍",
+                examples = listOf(
+                    DictionaryExample(
+                        sentence = "Rain hampered the rescue.",
+                        chineseTranslation = "大雨妨碍了救援。",
+                        exampleOrder = 0,
+                    ),
+                ),
+            ),
+            DictionaryDefinitionEntry(
+                partOfSpeech = "noun",
+                partOfSpeechOrder = 1,
+                definitionOrder = 0,
+                meaningEN = "a large basket",
+                meaningCN = "（带盖的）大篮子",
+                examples = listOf(
+                    DictionaryExample(
+                        sentence = "A picnic hamper sat on the grass.",
+                        chineseTranslation = "草地上放着一只野餐篮。",
+                        exampleOrder = 0,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    private fun hamperProvider() = FakeDictionaryProvider(mapOf("hamper" to hamperDict()))
+
+    @Test // TC-IMP-09：裸词行 → 母数据全量 + 全释义/全例句勾选 + IPA 补齐 + 守恒式不变
+    fun bareWordEnrichesAllSensesAndSelectsEverything() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("富化本"))
+
+        assertEquals(1L, report.imported)
+        assertEquals(1L, report.enriched)
+        assertEquals(0L, report.enrichedMatched)
+        assertEquals(
+            report.totalLines,
+            report.imported + report.reusedWords + report.duplicatesInFile +
+                report.duplicatesInBook + report.invalid,
+        )
+        val wordId = wordIdOf("hamper")
+        val wordRow = db.database.wordQueries.selectByNormalizedText("hamper").executeAsOne()
+        assertEquals("ˈhæmpər", wordRow.ipaAm)
+        assertEquals("ˈhæmpə(r)", wordRow.ipaBr)
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(listOf("verb", "noun"), defs.map { it.partOfSpeech }) // 母数据全量
+        val entryId = entryIdOf(report.targetWordBookId, wordId)
+        assertNull(pendingOf(report.targetWordBookId, wordId)) // 正式释义在位 → 临时译文位空
+        assertEquals(defs.map { it.definitionEntryId }, defSelections(entryId)) // 全释义勾选
+        assertEquals(exampleIdsOf(defs), exampleSelections(entryId)) // 全例句勾选
+    }
+
+    @Test // TC-IMP-10：带译文行 → 母数据仍全量，勾选 = 匹配子集（verb「妨碍」）
+    fun translatedLineSelectsMatchedSenseSubsetOnly() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper\t妨碍"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("富化本"))
+
+        assertEquals(1L, report.imported)
+        assertEquals(1L, report.enriched)
+        assertEquals(1L, report.enrichedMatched)
+        val wordId = wordIdOf("hamper")
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(2, defs.size) // 母数据不受勾选子集影响
+        val verbDef = defs.first { it.partOfSpeech == "verb" }
+        val entryId = entryIdOf(report.targetWordBookId, wordId)
+        assertEquals(listOf(verbDef.definitionEntryId), defSelections(entryId)) // 只勾动词
+        assertEquals(exampleIdsOf(listOf(verbDef)), exampleSelections(entryId)) // 只勾其例句
+        assertNull(pendingOf(report.targetWordBookId, wordId)) // 正式释义在位，临时译文不落库
+    }
+
+    @Test // TC-IMP-11：带译文零匹配 → D1 兜底全量（enrichedMatched 不计）
+    fun zeroMatchTranslationFallsBackToAllSenses() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper\t完全不相关的语义"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("富化本"))
+
+        assertEquals(1L, report.enriched)
+        assertEquals(0L, report.enrichedMatched)
+        val entryId = entryIdOf(report.targetWordBookId, wordIdOf("hamper"))
+        assertEquals(2, defSelections(entryId).size)
+        assertNull(pendingOf(report.targetWordBookId, wordIdOf("hamper")))
+    }
+
+    @Test // TC-IMP-12：词典 miss（未收录 / 命中但零释义）→ 精确退化 Phase 7 原行为
+    fun dictionaryMissKeepsLegacyPendingTranslationBehavior() = runTest(dispatcher.scheduler) {
+        val provider = FakeDictionaryProvider(
+            mapOf(
+                "zzzvoid" to DictionaryWord(text = "zzzvoid", definitions = emptyList()), // 命中但零释义
+            ),
+        )
+        val report = newEngine(listOf("zzzvoid\t某释义", "qqqmiss\t另一释义"), dictionaryProvider = provider)
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("退化本"))
+
+        assertEquals(2L, report.imported)
+        assertEquals(0L, report.enriched)
+        val zzz = wordIdOf("zzzvoid")
+        val qqq = wordIdOf("qqqmiss")
+        assertEquals(0, db.database.definitionEntryQueries.selectDefinitionsForWord(zzz).executeAsList().size)
+        assertEquals(0, db.database.definitionEntryQueries.selectDefinitionsForWord(qqq).executeAsList().size)
+        assertEquals("某释义", pendingOf(report.targetWordBookId, zzz))
+        assertEquals("另一释义", pendingOf(report.targetWordBookId, qqq))
+    }
+
+    @Test // TC-IMP-13：词已存在且有释义 → 绝不重建，只在既有行上勾选（FR-5 复用原则）
+    fun existingWordWithDefinitionsOnlySelectsNeverRebuilds() = runTest(dispatcher.scheduler) {
+        val wordId = seedWord("hamper", "hamper")
+        val existingDefId = seedDefinition(wordId, meaningEN = "to hinder progress", meaningCN = "妨碍，阻碍")
+
+        val report = newEngine(listOf("hamper\t妨碍"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("复用本"))
+
+        assertEquals(1L, report.reusedWords)
+        assertEquals(1L, report.enriched)
+        assertEquals(1L, report.enrichedMatched)
+        // 词典第 2 条 noun 不补入（既有释义即全部候选——宁少错建，SCR §3.3）
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(listOf(existingDefId), defs.map { it.definitionEntryId })
+        assertEquals(listOf(existingDefId), defSelections(entryIdOf(report.targetWordBookId, wordId)))
+        assertEquals(exampleIdsOf(defs), exampleSelections(entryIdOf(report.targetWordBookId, wordId)))
+    }
+
+    @Test // TC-IMP-14：词已存在且无释义（TXT 旧行）→ 母数据补齐 + 音标只补空缺（已有值绝不覆盖）
+    fun existingWordWithoutDefinitionsBackfillsOnlyBlankPronunciation() = runTest(dispatcher.scheduler) {
+        val now = clock.now().toEpochMilliseconds()
+        db.database.wordQueries.insertWord("hamper", "hamper", "旧美音", null, null, now, now)
+        val wordId = db.database.wordQueries.selectLastInsertRowId().executeAsOne()
+
+        val report = newEngine(listOf("hamper"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("补齐本"))
+
+        assertEquals(1L, report.reusedWords)
+        assertEquals(1L, report.enriched)
+        val wordRow = db.database.wordQueries.selectByNormalizedText("hamper").executeAsOne()
+        assertEquals("旧美音", wordRow.ipaAm) // 已有值绝不覆盖
+        assertEquals("ˈhæmpə(r)", wordRow.ipaBr) // 空缺侧补上
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(2, defs.size)
+        assertEquals(defs.map { it.definitionEntryId }, defSelections(entryIdOf(report.targetWordBookId, wordId)))
+    }
+
+    @Test // 富化词条 re-import（duplicatesInBook）：勾选不动 + 临时译文不得回流（正式释义优先）
+    fun enrichedEntryReimportDoesNotTouchSelectionsNorBackfillTranslation() = runTest(dispatcher.scheduler) {
+        val bookId = newEngine(listOf("hamper"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("幂等本"))
+            .targetWordBookId
+        val wordId = wordIdOf("hamper")
+        val entryId = entryIdOf(bookId, wordId)
+        val defsBefore = defSelections(entryId)
+        val examplesBefore = exampleSelections(entryId)
+
+        val second = newEngine(listOf("hamper\t篮子"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.ExistingBook(bookId))
+
+        assertEquals(1L, second.duplicatesInBook)
+        assertEquals(0L, second.updated) // 释义勾选在位 → 不补写临时译文
+        assertEquals(0L, second.enriched) // 富化只发生在新建 entry
+        assertEquals(defsBefore, defSelections(entryId)) // 勾选零变化
+        assertEquals(examplesBefore, exampleSelections(entryId))
+        assertNull(pendingOf(bookId, wordId))
+    }
+
+    // —— SCR-TXTDICTENRICH v2 词性标记（TC-IMP-15；LineParser 剥离口径见 commonTest）——
+
+    @Test // 词性独占行：母数据仍全量，勾选只入该词性（无译文 → enrichedMatched 不计）
+    fun posMarkerOnlyLineSelectsThatPartOfSpeech() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper\tn."), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("词性本"))
+
+        assertEquals(1L, report.imported)
+        assertEquals(1L, report.enriched)
+        assertEquals(0L, report.enrichedMatched) // 词性过滤不占「按译文匹配」口径
+        val wordId = wordIdOf("hamper")
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(listOf("verb", "noun"), defs.map { it.partOfSpeech }) // 母数据不受词性影响
+        val nounDef = defs.single { it.partOfSpeech == "noun" }
+        val entryId = entryIdOf(report.targetWordBookId, wordId)
+        assertEquals(listOf(nounDef.definitionEntryId), defSelections(entryId)) // 只勾名词
+        assertEquals(exampleIdsOf(listOf(nounDef)), exampleSelections(entryId)) // 只勾其例句
+        assertNull(pendingOf(report.targetWordBookId, wordId))
+    }
+
+    @Test // 词性 + 译文两级过滤：词性先收窄池，译文在池内匹配（vt. 归 verb）
+    fun posMarkerWithTranslationMatchesWithinPosPool() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper\tvt. 妨碍"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("词性本"))
+
+        assertEquals(1L, report.enriched)
+        assertEquals(1L, report.enrichedMatched)
+        val wordId = wordIdOf("hamper")
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(2, defs.size) // 母数据全量
+        val verbDef = defs.single { it.partOfSpeech == "verb" }
+        val entryId = entryIdOf(report.targetWordBookId, wordId)
+        assertEquals(listOf(verbDef.definitionEntryId), defSelections(entryId))
+        assertEquals(exampleIdsOf(listOf(verbDef)), exampleSelections(entryId))
+    }
+
+    @Test // 译文在词性池内零命中 → 兜底到**词性池**全量（不是全释义——「篮子」只与 noun 互含，但词性已锁定 verb）
+    fun translationMissWithinPosPoolFallsBackToPosPool() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper\tv. 篮子"), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("词性本"))
+
+        assertEquals(1L, report.enriched)
+        assertEquals(0L, report.enrichedMatched)
+        val wordId = wordIdOf("hamper")
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        val verbDef = defs.single { it.partOfSpeech == "verb" }
+        val entryId = entryIdOf(report.targetWordBookId, wordId)
+        assertEquals(listOf(verbDef.definitionEntryId), defSelections(entryId)) // 池内兜底 = 只剩动词
+        assertEquals(exampleIdsOf(listOf(verbDef)), exampleSelections(entryId))
+    }
+
+    @Test // 词性零命中（词典无该词性行）→ 兜底全释义（同 D1 理由：词表作者意图无法精确满足时保全数据）
+    fun zeroHitPartOfSpeechFallsBackToAllSenses() = runTest(dispatcher.scheduler) {
+        val report = newEngine(listOf("hamper\tint."), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("词性本"))
+
+        assertEquals(1L, report.enriched)
+        assertEquals(0L, report.enrichedMatched)
+        val entryId = entryIdOf(report.targetWordBookId, wordIdOf("hamper"))
+        assertEquals(2, defSelections(entryId).size)
+        assertNull(pendingOf(report.targetWordBookId, wordIdOf("hamper")))
+    }
+
+    @Test // 词已有释义 + 词性标记 → 既有行上按词性勾选（不重建母数据、词典释义不补入）
+    fun posMarkerFiltersExistingDefinitionRows() = runTest(dispatcher.scheduler) {
+        val wordId = seedWord("hamper", "hamper")
+        seedDefinition(wordId, "to hinder progress", "妨碍，阻碍", partOfSpeech = "verb")
+        val nounDefId = seedDefinition(wordId, "a basket", "篮子", partOfSpeech = "noun", partOfSpeechOrder = 1L)
+
+        val report = newEngine(listOf("hamper\tn."), dictionaryProvider = hamperProvider())
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("既有词性本"))
+
+        assertEquals(1L, report.reusedWords)
+        assertEquals(1L, report.enriched)
+        // 既有 2 行即全部候选（复用原则：词典 verb/noun 行不补入不改写）
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(2, defs.size)
+        assertEquals(listOf(nounDefId), defSelections(entryIdOf(report.targetWordBookId, wordId)))
+        assertEquals(exampleIdsOf(listOf(defs.single { it.definitionEntryId == nounDefId })),
+            exampleSelections(entryIdOf(report.targetWordBookId, wordId)))
+    }
+
+    @Test // TC-IMP-16：多词短语行整词入库 + 词典按短语整体富化（v1.5 短语修正，用户实录 roll out）
+    fun multiWordPhraseLineImportsAndEnrichesAsSingleWord() = runTest(dispatcher.scheduler) {
+        val provider = FakeDictionaryProvider(
+            mapOf(
+                "roll out" to DictionaryWord(
+                    text = "roll out",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            partOfSpeech = "verb",
+                            partOfSpeechOrder = 0,
+                            definitionOrder = 0,
+                            meaningEN = "launch, introduce",
+                            meaningCN = "推出，开展",
+                            examples = listOf(
+                                DictionaryExample(
+                                    sentence = "They rolled out the new plan.",
+                                    chineseTranslation = "他们推出了新计划。",
+                                    exampleOrder = 0,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val report = newEngine(listOf("roll out"), dictionaryProvider = provider)
+            .import(DetectedEncoding.Utf8(hasBom = false), ImportTarget.NewBook("短语本"))
+
+        assertEquals(1L, report.imported) // 整词一条——不是 roll + 译文 out
+        assertEquals(1L, report.enriched)
+        val wordId = wordIdOf("roll out") // normalizedText = 短语整体小写
+        val defs = db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList()
+        assertEquals(1, defs.size)
+        assertEquals(defs.map { it.definitionEntryId }, defSelections(entryIdOf(report.targetWordBookId, wordId)))
+        assertEquals(exampleIdsOf(defs), exampleSelections(entryIdOf(report.targetWordBookId, wordId)))
+    }
+
+    /** 预置一条既有释义 + 1 例句（模拟查词/种子导入词），返回 definitionEntryId。 */
+    private fun seedDefinition(
+        wordId: Long,
+        meaningEN: String,
+        meaningCN: String,
+        partOfSpeech: String = "verb",
+        partOfSpeechOrder: Long = 0L,
+    ): Long {
+        db.database.definitionEntryQueries.insertDefinitionEntry(
+            wordId = wordId,
+            partOfSpeech = partOfSpeech,
+            partOfSpeechOrder = partOfSpeechOrder,
+            definitionOrder = 0,
+            meaningEN = meaningEN,
+            meaningCN = meaningCN,
+        )
+        val defId = db.database.definitionEntryQueries.selectLastInsertRowId().executeAsOne()
+        db.database.exampleQueries.insertExample(
+            definitionEntryId = defId,
+            sentence = "Bad weather hinders travel.",
+            chineseTranslation = "恶劣天气妨碍出行。",
+            sourceType = "TTS",
+            sourceRef = null,
+            licenseNote = null,
+            audioUri = null,
+            audioDurationMs = null,
+            exampleOrder = 0,
+        )
+        return defId
+    }
+
+    private fun entryIdOf(bookId: Long, wordId: Long): Long =
+        db.database.wordBookEntryQueries.selectEntryByWord(bookId, wordId).executeAsOne().wordBookEntryId
+
+    private fun defSelections(entryId: Long): List<Long> =
+        db.database.wordBookEntryDefinitionQueries.selectEntryDefinitions(entryId).executeAsList()
+            .map { it.definitionEntryId }
+
+    private fun exampleSelections(entryId: Long): List<Long> =
+        db.database.wordBookEntryExampleSelectionQueries.selectExampleSelections(entryId).executeAsList()
+            .map { it.exampleId }
+
+    private fun exampleIdsOf(defs: List<com.vocabularybooster.db.DefinitionEntry>): List<Long> =
+        defs.flatMap { def ->
+            db.database.exampleQueries.selectExamplesForEntry(def.definitionEntryId).executeAsList()
+                .map { it.exampleId }
+        }
+
+    /** 内存词典源：小写键查找（provider 契约——大小写不敏感由实现负责）。 */
+    private class FakeDictionaryProvider(private val words: Map<String, DictionaryWord>) : DictionaryProvider {
+        override suspend fun lookup(text: String): DictionaryWord? = words[text.trim().lowercase()]
     }
 
     // —— 内存 Fake 源（真实仓储 + 虚假平台端口）——

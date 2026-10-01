@@ -1,5 +1,7 @@
 package com.vocabularybooster.importing
 
+import com.vocabularybooster.domain.dictionary.DictionaryDefinitionEntry
+
 /**
  * 导入领域模型（IMPORT_SPEC §5/§6，FR-14，Phase 7）。
  */
@@ -28,6 +30,8 @@ public data class ImportReport(
     val updated: Long,            // 补写了临时译文（⊆ duplicatesInBook）
     val invalid: Long,
     val invalidSamples: List<String>, // ≤ 20 条原文，供 UI 呈现
+    val enriched: Long = 0L,       // SCR-TXTDICTENRICH：词典富化成功行（⊆ imported + reusedWords）
+    val enrichedMatched: Long = 0L, // 其中按译文匹配出释义子集的行（其余为裸词/零匹配兜底全量）
 )
 
 /** 进度回调载荷（IMPORT_SPEC §5：节流 100ms；行数计数即进度呈现——总量流式未知，v1 不做百分比）。 */
@@ -58,10 +62,30 @@ public interface ImportRepository {
 }
 
 /** 事务作用域内的原子操作面（全部同步小查询/小写入，去重决策在引擎）。 */
+@Suppress("TooManyFunctions") // 导入原子操作面：Phase 7 基础 8 + SCR-TXTDICTENRICH 富化 4（加法扩展，职责内聚不拆分）
 public interface ImportSession {
 
-    /** 目标本词条的当前 pendingTranslation（null = 无译文；[findEntry] 返回 null = 词条不存在）。 */
-    public data class ExistingEntry(val pendingTranslation: String?)
+    /**
+     * 目标本词条当前态（[findEntry] 返回 null = 词条不存在）：临时译文 + 是否已有释义勾选。
+     * SCR-TXTDICTENRICH：富化词条正式释义在位（勾选行非空）→ re-import 不再补写临时译文。
+     */
+    public data class ExistingEntry(
+        val pendingTranslation: String?,
+        val hasDefinitionSelections: Boolean = false,
+    )
+
+    /**
+     * 释义 + 例句 id 视图（SCR-TXTDICTENRICH 富化）：既有行只读查询与词典导入
+     * 新增行共用——meaningEN/CN 供 [SenseMatcher] 匹配，partOfSpeech 供 v2 词性
+     * 过滤（行内标记 n./v./vt./vi./adj./adv./int. → 规范名），exampleIds 供勾选行写入。
+     */
+    public data class DefinitionWithExamples(
+        val definitionEntryId: Long,
+        val partOfSpeech: String,
+        val meaningEN: String,
+        val meaningCN: String,
+        val exampleIds: List<Long>,
+    )
 
     public fun createWordBook(name: String, nowMs: Long): Long
 
@@ -74,14 +98,32 @@ public interface ImportSession {
     /** 本内当前最大 entryOrder（空本返回 null；引擎缓存自增，避免逐行 MAX 扫描）。 */
     public fun maxEntryOrder(wordBookId: Long): Long?
 
+    /** 返回新建 entryId（SCR-TXTDICTENRICH 起富化需据此写勾选行）。 */
     public fun insertEntry(
         wordBookId: Long,
         wordId: Long,
         entryOrder: Long,
         pendingTranslation: String?,
         nowMs: Long,
-    )
+    ): Long
 
     /** 补写译文（IMPORT_SPEC §4 规则 3；仅引擎在「本行带译文且库内为空」时调用）。 */
     public fun updateEntryPendingTranslation(wordBookId: Long, wordId: Long, pendingTranslation: String)
+
+    /** 词的既有释义 + 例句（Q1 排序契约，同 DefinitionEntry.sq selectDefinitionsForWord）。 */
+    public fun findDefinitionsForWord(wordId: Long): List<DefinitionWithExamples>
+
+    /** 从词典释义建行（含例句）；返回新行视图（富化的「词缺释义」母数据补齐分支）。 */
+    public fun importDefinitionWithExamples(
+        wordId: Long,
+        definition: DictionaryDefinitionEntry,
+    ): DefinitionWithExamples
+
+    /** 只补空缺音标（COALESCE 语义：已有值绝不覆盖，同 backfill 规则）。 */
+    public fun fillBlankPronunciation(wordId: Long, ipaAm: String?, ipaBr: String?, nowMs: Long)
+
+    /** 勾选行（FR-5 选择粒度）：释义勾选 + 例句勾选（视频导入全选同款写入）。 */
+    public fun insertEntryDefinitionSelection(wordBookEntryId: Long, definitionEntryId: Long)
+
+    public fun insertExampleSelection(wordBookEntryId: Long, exampleId: Long)
 }

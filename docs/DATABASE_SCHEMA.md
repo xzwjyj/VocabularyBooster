@@ -63,7 +63,7 @@ CREATE TABLE Example (
   definitionEntryId  INTEGER NOT NULL REFERENCES DefinitionEntry(definitionEntryId) ON DELETE CASCADE,
   sentence           TEXT NOT NULL,
   chineseTranslation TEXT NOT NULL,
-  sourceType         TEXT NOT NULL,      -- REAL_MOVIE_TV|CELEBRITY_SPEECH|TED|AUDIOBOOK|LICENSED_OTHER|TTS
+  sourceType         TEXT NOT NULL,      -- REAL_MOVIE_TV|CELEBRITY_SPEECH|TED|AUDIOBOOK|LICENSED_OTHER|TTS|TATOEBA|AI_GENERATED
   sourceRef          TEXT,
   licenseNote        TEXT,                -- 合规留存（NFR-5）
   audioUri           TEXT,                -- 原声；空则 TTS 朗读 sentence
@@ -72,6 +72,12 @@ CREATE TABLE Example (
 );
 CREATE INDEX Example_byEntry ON Example(definitionEntryId, exampleOrder);
 ```
+
+> **SCR-SENSEATTR v6 重归位查询（query-only，零迁移——铁律 9 只约束 DDL）**：
+> `moveExampleToEntry`（改挂释义，exampleId 不变 → 用户勾选行天然保留）、
+> `countExampleSelections`（删除守卫：被 `WordBookEntryExampleSelection` 引用绝不删）、
+> `deleteExampleById`（仅词典重归位路径剔除词典已移除的 TATOEBA/AI_GENERATED 例句，先经守卫）。
+> `AI_GENERATED` = 离线工具链 LLM 生成例句（PROJECT_SPEC FR-3 v1.25，licenseNote 留存 AI generated）。
 
 ### 2.4 WordBook
 

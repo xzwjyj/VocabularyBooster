@@ -10,6 +10,8 @@ import com.vocabularybooster.domain.model.toNormalizedWordText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.io.FileOutputStream
 
@@ -23,9 +25,11 @@ import java.io.FileOutputStream
  * （tools/dict/convert.py 产出，已按 partOfSpeechOrder 排序）；
  * partOfSpeechOrder/definitionOrder 由本 provider 分配（DOMAIN_MODEL §3.1 职责），
  * 映射表镜像规范序。
- * examples 列 = 紧凑 JSON 数组 [["en","zh"], ["en",""], …]（Tatoeba CC-BY 2.0 FR，
- * 由 tools/dict/enrich_with_examples.py 注入并配对中文译文；无译文的句子 zh 为空串）。
- * 资产 PRAGMA user_version（v1 = 无例句列，v2 = 例句对格式，v3 = 例句数据修订：粗口过滤 + zh 优先重选）。
+ * examples 列 = 紧凑 JSON 数组 [["en","zh",defIdx(,"g")], …]（v6 起逐释义归属：
+ * defIdx = definitions 数组下标；"g" = 离线工具 LLM 生成句 → AI_GENERATED；
+ * 其余为 Tatoeba CC-BY 2.0 FR，译文人译优先、NLLB/Qwen 机翻兜底）。
+ * 资产 PRAGMA user_version（v1 = 无例句列，v2 = 例句对格式，v3 = 例句数据修订：粗口过滤 + zh 优先重选，
+ * v4 = 全量机翻，v5 = ipa-dict 双音标，v6 = 逐释义归属 + 全量重译 + 生成兜底）。
  * 版本号 = 资产修订号（不只格式）：数据重建也必须递增，否则设备缓存（同 user_version 的旧数据）不会重拷。
  */
 public class BundledDictionaryProvider(
@@ -61,17 +65,29 @@ public class BundledDictionaryProvider(
         } ?: return@withContext null
         val senses = runCatching { json.decodeFromString<List<List<String>>>(row.definitions) }
             .getOrDefault(emptyList())
-        val examplePairs = runCatching { json.decodeFromString<List<List<String>>>(row.examples) }
+        // v6 例句逐释义归属：[en, zh, defIdx(, "g")]——defIdx = definitions 数组下标
+        // （build 期三级归属确定）；"g" = 离线工具 LLM 生成句（如实标注 AI_GENERATED，FR-3）。
+        // defIdx 是数字基元——按 JsonElement 宽松取值，严格 List<List<String>> 解码会整列失败
+        val exampleRows = runCatching { json.decodeFromString<List<List<JsonElement>>>(row.examples) }
             .getOrDefault(emptyList())
-        // Tatoeba 例句无释义归属（句子级数据无 sense 标注）——挂到首释义，
-        // 经既有 definition.examples 通道导入（SeedImporter 零改动）
-        val tatoebaExamples = examplePairs.mapIndexed { index, pair ->
-            DictionaryExample(
-                sentence = pair.getOrElse(0) { "" },
-                chineseTranslation = pair.getOrElse(1) { "" },
-                sourceType = "TATOEBA",
-                licenseNote = "CC-BY 2.0 FR",
-                exampleOrder = index,
+        val examplesBySense = mutableMapOf<Int, MutableList<DictionaryExample>>()
+        for (row0 in exampleRows) {
+            val en = row0.getOrNull(0)?.jsonPrimitive?.content ?: continue
+            val zh = row0.getOrNull(1)?.jsonPrimitive?.content ?: continue
+            val defIdx = row0.getOrNull(2)?.jsonPrimitive?.content?.toIntOrNull()
+                ?.coerceIn(0, (senses.size - 1).coerceAtLeast(0)) ?: 0
+            val generated = row0.getOrNull(3)?.jsonPrimitive?.content == "g"
+            val list = examplesBySense.getOrPut(defIdx) { mutableListOf() }
+            list += DictionaryExample(
+                sentence = en,
+                chineseTranslation = zh,
+                sourceType = if (generated) "AI_GENERATED" else "TATOEBA",
+                licenseNote = if (generated) {
+                    "AI generated (Qwen, offline tooling)"
+                } else {
+                    "CC-BY 2.0 FR"
+                },
+                exampleOrder = list.size,
             )
         }
         val orderCounter = mutableMapOf<String, Int>() // 每词局部：definitionOrder 同词性组内从 0 起
@@ -82,7 +98,7 @@ public class BundledDictionaryProvider(
             definitions = senses.mapIndexed { senseIndex, sense ->
                 sense.toDefinitionEntry(
                     orderCounter = orderCounter,
-                    examples = if (senseIndex == 0) tatoebaExamples else emptyList(),
+                    examples = examplesBySense[senseIndex].orEmpty(),
                 )
             },
         )
@@ -151,8 +167,8 @@ public class BundledDictionaryProvider(
         const val DICT_DIR = "dict"
         const val DICT_FILE = "ecdict.sqlite"
 
-        /** 词典资产版本（tools/dict 管线写入 user_version）：v2 = 例句对格式，v3 = 例句数据修订（粗口过滤 + zh 优先重选），v4 = 全部例句中文翻译（opus-mt-en-zh），v5 = ipa-dict 英音音标 + 美音补缺。数据重建也必须递增本号。 */
-        const val DICT_ASSET_VERSION = 5
+        /** 词典资产版本（tools/dict 管线写入 user_version）：v2 = 例句对格式，v3 = 例句数据修订（粗口过滤 + zh 优先重选），v4 = 全部例句中文翻译（opus-mt-en-zh），v5 = ipa-dict 英音音标 + 美音补缺，v6 = 例句逐释义归属 + 全量重译 + 生成兜底。数据重建也必须递增本号。 */
+        const val DICT_ASSET_VERSION = 6
 
         /** DOMAIN_MODEL §3.1 规范序镜像（provider 分配职责归本类）。 */
         val POS_ORDER = mapOf(

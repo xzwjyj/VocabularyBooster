@@ -157,7 +157,8 @@ val appModule = module {
     viewModel { AchievementsViewModel(get()) } // Phase 6：勋章墙
     viewModel { StatsViewModel(get()) } // Phase 8.6：学习统计（FR-20）
     viewModel { SettingsViewModel(get(), get()) } // Phase 8：设置页（FR-15）；Phase 8.6：+音色枚举（FR-19）
-    single { ImportEngineFactory(androidContext(), get(), get(), get()) } // Phase 7：TXT 导入
+    // Phase 7：TXT 导入；SCR-TXTDICTENRICH：+词典富化源（查词同款复合词典源，import 时按需 lookup）
+    single { ImportEngineFactory(androidContext(), get(), get(), get(), get()) }
     viewModel { ImportViewModel(get(), get()) }
 
     // Phase 4 Step 4：学习会话屏——ViewModel 只委托应用级 PlaybackOrchestrator 单例

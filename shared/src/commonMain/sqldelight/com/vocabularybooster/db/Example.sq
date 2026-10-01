@@ -26,3 +26,16 @@ UPDATE Example SET chineseTranslation = ? WHERE exampleId = ?;
 
 selectLastInsertRowId:
 SELECT last_insert_rowid();
+
+-- SCR-SENSEATTR 例句重归位：移动归属释义（exampleId 不变——用户勾选行经 exampleId 关联，天然保留；
+-- exampleOrder 一并指派，避免目标释义内与既有行 order 碰撞导致播放顺序不稳定）
+moveExampleToEntry:
+UPDATE Example SET definitionEntryId = ?, exampleOrder = ? WHERE exampleId = ?;
+
+-- 删除守卫：例句是否被词条例句勾选行引用（有引用绝不删，宁留不错删；FR-5 选择粒度）
+countExampleSelections:
+SELECT COUNT(*) FROM WordBookEntryExampleSelection WHERE exampleId = ?;
+
+-- 按主键删（仅词典重归位路径用于剔除词典已移除的 TATOEBA/AI_GENERATED 例句；先经 countExampleSelections 守卫）
+deleteExampleById:
+DELETE FROM Example WHERE exampleId = ?;

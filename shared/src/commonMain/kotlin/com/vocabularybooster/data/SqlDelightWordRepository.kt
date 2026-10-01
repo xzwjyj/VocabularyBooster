@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
  * 种子优先 → 随包全量兜底）命中时，经 [SeedImporter] 导入该单词（幂等、单事务，
  * 与种子同代码路径）后重读返回——查词覆盖全量词典，库只长不缩。
  * 增强回填：增强前已导入的词条在 lookup 时经 [SeedImporter.backfillEnhancements]
- * 补齐例句/译文/音标（幂等、单事务）后重读。
+ * 补齐例句/译文/音标并按词典重归位例句（幂等、单事务）后重读。
  * 两个依赖可空：缺省（纯 DB 模式，测试/手工 Koin 图）行为与 Phase 2 完全一致。
  */
 public class SqlDelightWordRepository(
@@ -59,16 +59,25 @@ public class SqlDelightWordRepository(
         return if (changed > 0) readFromDb(text) ?: current else current
     }
 
-    /** 美音/英音音标缺失、零例句，或 Tatoeba 例句存在但译文为空（旧单串格式资产导入）。 */
+    /**
+     * 美音/英音音标缺失、零例句，或 Tatoeba 例句存在但译文为空（旧单串格式资产导入）。
+     * SCR-SENSEATTR v6：存在词典例句（TATOEBA/AI_GENERATED）也视为需回填——例句归属/译文
+     * 随资产演进（v6 重归位），diff 幂等，收敛后零写入；每次 lookup 多一次本地词典查询
+     * （~ms 级）+ 一次以读为主的空事务，v1 接受。
+     */
     private fun needsEnhancementBackfill(detail: WordDetail): Boolean {
         val examples = detail.examplesByEntryId.values.flatten()
         val examplesIncomplete = examples.isEmpty() ||
             examples.any {
                 it.sourceType == ExampleSourceType.TATOEBA && it.chineseTranslation.isBlank()
             }
+        val hasDictionaryExamples = examples.any {
+            it.sourceType == ExampleSourceType.TATOEBA || it.sourceType == ExampleSourceType.AI_GENERATED
+        }
         return detail.word.ipaAm.isNullOrBlank() ||
             detail.word.ipaBr.isNullOrBlank() ||
-            examplesIncomplete
+            examplesIncomplete ||
+            hasDictionaryExamples
     }
 
     /** FR-18：miss → 源命中 → 导入 → true；未装配词典或源未收录返回 false。 */

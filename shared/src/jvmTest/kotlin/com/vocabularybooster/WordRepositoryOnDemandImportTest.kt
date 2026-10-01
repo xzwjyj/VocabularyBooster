@@ -18,8 +18,9 @@ import kotlin.test.assertTrue
 /**
  * 按需导入（FR-18，Phase 8.6；TEST_PLAN §4.8 词典组）：真实 JDBC 库 + 真实 SeedImporter，
  * DictionaryProvider 用 Fake（Android 资产侧另有 BundledDictionarySmokeTest 走真 asset）。
- * 边界：源命中 → 导入后返回且二次查询走 DB / 源未收录 → null 且库零增长 /
- * DB 已有 → 不再打扰词典源。
+ * 边界：源命中 → 导入后返回且二次查询不重复导入 / 源未收录 → null 且库零增长 /
+ * DB 已有非词典增强词 → 不再打扰词典源（SCR-SENSEATTR v6：词典例句词每次 lookup
+ * 走幂等重归位 diff——仍咨询词典源，但收敛后零写入，不重复导入）。
  */
 class WordRepositoryOnDemandImportTest {
 
@@ -44,7 +45,7 @@ class WordRepositoryOnDemandImportTest {
     private val bundledWord = DictionaryWord(
         text = "Serendipity",
         ipaAm = "ˌserənˈdipəti",
-        ipaBr = "ˌserənˈdɪpəti", // FR-22：完整词条含英音——不触发增强回填，DB 命中后不再打扰词典源
+        ipaBr = "ˌserənˈdɪpəti", // FR-22：完整词条含英音
         definitions = listOf(
             DictionaryDefinitionEntry(
                 partOfSpeech = "noun",
@@ -53,11 +54,34 @@ class WordRepositoryOnDemandImportTest {
                 meaningEN = "good luck in making unexpected and fortunate discoveries",
                 meaningCN = "偶然发现珍宝的运气",
                 examples = listOf(
-                    // 完整词条（含例句）：lookup 不触发例句回填，DB 命中后不再打扰词典源
+                    // 词典例句词（TATOEBA）：v6 起每次 lookup 走幂等重归位 diff（咨询词典源但不重复导入）
                     DictionaryExample(
                         sentence = "Finding this beach was pure serendipity.",
                         chineseTranslation = "找到这片海滩纯属意外之喜。",
                         sourceType = "TATOEBA",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    /** 非词典例句词（视频导入形态）：音标齐全 + 无词典例句 → 不触发回填，DB 命中不打扰词典源。 */
+    private val videoExampledWord = DictionaryWord(
+        text = "legion",
+        ipaAm = "ˈliːdʒən",
+        ipaBr = "ˈliːdʒən",
+        definitions = listOf(
+            DictionaryDefinitionEntry(
+                partOfSpeech = "noun",
+                partOfSpeechOrder = 1,
+                definitionOrder = 0,
+                meaningEN = "a vast host or number",
+                meaningCN = "大批，众多",
+                examples = listOf(
+                    DictionaryExample(
+                        sentence = "Their followers were legion.",
+                        chineseTranslation = "他们的追随者多如牛毛。",
+                        sourceType = "REAL_MOVIE_TV",
                     ),
                 ),
             ),
@@ -88,7 +112,9 @@ class WordRepositoryOnDemandImportTest {
 
         val second = repo.lookup("serendipity")
         assertNotNull(second)
-        assertEquals(1, provider.calls) // 二次查询由 DB 命中，不再打扰词典源
+        // v6 重归位门：词典例句词二次查询也咨询词典源（幂等 diff），但绝不重复导入
+        assertEquals(2, provider.calls)
+        assertEquals(1L, db.database.wordQueries.countAll().executeAsOne())
     }
 
     @Test
@@ -106,8 +132,9 @@ class WordRepositoryOnDemandImportTest {
 
     @Test
     fun dbHitNeverConsultsProvider() = runTest {
-        // 完整词条（含例句）不触发回填；例句缺失时的回填咨询由 SeedImporterTest 覆盖
-        importer.import(listOf(bundledWord))
+        // 非词典例句词（视频导入形态）音标齐全 → 回填门短路，DB 命中不打扰词典源；
+        // 词典例句词的幂等重归位 diff 由 SeedImporterTest 覆盖（SCR-SENSEATTR v6）
+        importer.import(listOf(videoExampledWord))
         val repo = SqlDelightWordRepository(
             db.database,
             FakeProvider(explodeOnCall = true),
@@ -115,7 +142,7 @@ class WordRepositoryOnDemandImportTest {
             DispatchersForTest,
         )
 
-        val detail = repo.lookup("serendipity")
+        val detail = repo.lookup("legion")
         assertNotNull(detail)
         assertTrue(detail.entries.isNotEmpty())
     }

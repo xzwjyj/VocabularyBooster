@@ -317,3 +317,63 @@
 - **与播放段的并发关系（v1 已知边界）**：会话 TTS 段播放中试听 → Sherpa speakMutex 自然排队（插在当前段之后，不抢段）；例句原声段（Media3）不经该锁、可能短暂叠加。零引擎/编排器/端口/actual 改动，零 schema 变更。
 **测试**（TC-IPAPRON-01…05，TEST_PLAN v2.26）：app 单测 `WordPronouncerTest` 4（请求形态 / 空白防误触 / 重听取消上一次 + 取消重抛锁定 / 失败不崩溃）+ `LearningSessionViewModelTest` N 组（会话 VM 转发：试听请求追加、零推进零掌握、UI 不扰动）；androidTest 两处构造点补装配（Phase2UiFlowTest 用新 NoopSpeechSynthesizer、BookDeletedRecoveryUiSmokeTest 复用真实 TtsSpeechSynthesizer）。
 **验收**：门禁全绿（jvmTest up-to-date 合法——shared 零改动 / testDebugUnitTest×2 / detekt×2 / checkPlatformBoundaries / assembleDebug）；装机走查交接用户（三屏按钮出对应口音 / 试听后设置口音不变 / 重复点击即时换听 / 无英音词只显 US 侧）。
+
+### SCR-SENSEATTR: 词典例句逐释义归属 + 无译文句全量重译（资产 v6，2026-09-30 第一批收尾）
+
+**问题**：v5 词典例句只挂首释义（FR-3 旧规则），多释义词（take/run/gloss 等）的其余释义零例句；且 23.8 万条 Tatoeba 例句无中文译文。用户裁决（2026-09-26）：**任何释义不得零例句（完整覆盖铁律）**、分两批达全量、本地 Qwen 7B 级引擎离线跑批。
+**根因**：v5 建库时例句选择只按词匹配不分辨释义；Tatoeba 原始数据多数句无 zh。归属不能靠词形（一词多义），需三级策略：短语改挂/词性限定/重叠打分（`attribute_senses.js`），覆盖不到的释义由 LLM 生成例句兜底（sourceType=AI_GENERATED，App 侧标注）。
+**决策**（用户批准，方案见 SPEC_CHANGE_REQUEST_SENSE_ATTRIBUTION.md）：
+- 第一批（本条，user_version=6）：107,094 个有例句词条重排归属 + 48,767 个缺口释义生成例句 + 238,382 条无译文句重译（28,689 条人工 Tatoeba zh 保留不动）。第二批（v7，待跑）：729,304 零例句词条按 bnc 词频生成。
+- 引擎 = 本机 ollama qwen3:8b（/no_think + think-strip 双保险）；键去重 resume-safe（`t:词#di#句前缀` / `g:词#di`），失败重试一次后 parked、重跑同命令自动重试；ECONNREFUSED 自停。
+- 运维三教训：① **ollama verbose serve 任务输出涨到 5.1GB 会被任务回收机制杀掉**（~108MB/min）——serve 必须 `> /dev/null 2>&1` 启动；Windows 上被其它进程重定向持有的文件无法外部截断（共享冲突静默失败）。② 6/10 worker 配比为实测最优（翻译单 worker ~0.92/s、生成 ~0.26/s）。③ 归属校验 wordPresent 两轮修复：双向引理归一（屈折形词条 bothers↔bother）+ 后缀词干回退（mixing→mix）+ 派生额度仅 ≥8 字符长词 +5（短词 is→be→be**cause** 回归被测试抓住）。
+- **残余 234 条人工兜底**：sweep 后仍 g=200/t=34（ECDICT 缩写错挂 gloss（ps=磷/au=金）、专名释义（georges/burrs/fords）、屈折形词条僻义（says#2/swollen#3）、病理句（"Pawn pawned by pawn."/35 词国籍笑话/URL））——逐条人工撰写 EN|ZH 直落 llm_out.jsonl（键由 gaps.json 程序生成防转录错），g 类同样落 AI_GENERATED 语义。
+- build_v6.js 修复：跨盘备份 rename EXDEV（D:→C:Temp）→ copyFile+unlink。
+**验收**（2026-09-30）：`build_v6.js check` problems=0——rows=836,398 / replaced=107,094 / examples=315,838 / generated=48,767 / **noZhWords=0**；探针词 gloss/take/run 逐释义分布与 g 标记符合预期。资产落盘 user_version=6（167→187MB，v5 备份在 %TEMP%/enrich_work 不入 assets）。门禁六项全绿（:shared:jvmTest / :shared:testDebugUnitTest / :app:testDebugUnitTest / detekt×2 / checkPlatformBoundaries / :app:assembleDebug 652MB；期间 app/build 再现 Synology 同步「not a regular file」损坏，整删重建恢复）。App 侧代码与文档先期已绿（PROJECT_SPEC v1.25 / TEST_PLAN v2.27 TC-DICTATTR-01…08 / DATABASE_SCHEMA §2.3 / SeedImporter.reattributeExamples Q1 位序映射 / 冒烟 v6 完整覆盖不变量）。
+
+**装机走查（2026-09-30 晚，vivo 折叠屏，全部通过）**：
+- 装机即触发 v5→v6 资产重拷（user_version 门禁生效，187MB 落 files/dict）。
+- **装机期抓出真集成 bug**：BundledDictionaryProvider 原按 `List<List<String>>` 严格解码 examples，v6 行含数字基元 defIdx → kotlinx 严格模式整列抛异常，被 runCatching 吞掉 = **全词零例句静默丢失**；冒烟 `v6ExamplesCoverEverySense`（take 有 4 条释义零例句）失败暴露。修复 = 按 `List<List<JsonElement>>` 宽松解码 + `jsonPrimitive.content.toIntOrNull()`（coerceIn 防越界）；修复后定向冒烟 3/3 绿，门禁六项全部复跑绿。
+- 走查六点：① take 逐释义分布 {1,1,2,1}（资产真值=DB=屏幕三方一致，AI×2 挂 defIdx 0/3）；② AI 例句「来源：AI 例句」标注上屏；③ v6 重译译文上屏；④ 6 条旧视频例句勾选经多次 lookup 不消失；⑤ take 首释义 AI 例句勾选收藏落库（WordBookEntry 第 7 行 + 释义/例句勾选行齐）；⑥ **第三次 lookup diff 后勾选仍在**、例句 id 8–12 无重插（reattributeExamples 幂等实证）。
+- **运维教训（截图驱动走查）**：折叠屏常驻 Taskbar + vivo SideSlide 手势条占据屏幕右/底缘——底部坐标（FAB 位）会误触拉起**手机上另一个背单词应用**（其亦有巫师三词表），其系统级 Toast「已加入生词本」叠在我方界面上造成收藏成功假象，而我方 DB 零写入（journal 0 字节、mtime 冻结是判据）。对策：写操作断言**只认 run-as sqlite3**；每步 uiautomator dump 验 package；导航只用应用内按钮（系统返回键会退出 activity）；点击避开边缘 ≥120px。一度把按 defOrder 排序的查询输出误读为归属错位（noun 的 definitionOrder 也是 0）——排序键含糊时直接查 definitionEntryId 列。
+- 本批全部未 commit（用户自行安排）。
+
+### SCR-TXTDICTENRICH: TXT 导入词典富化（2026-10-01）
+
+**问题**：用户提出（2026-10-01）——TXT 导入的词只有行内信息本身（导入 hamper 只有 hamper），没有对应释义和例句；要求改为：单词行 → 该词全部中英文释义例句入本；带译文行 → 与词库释义匹配后入本。
+**决策**（用户批准，D1=零匹配兜底全量；方案见 SPEC_CHANGE_REQUEST_TXT_DICT_ENRICH.md）：
+- **两级富化**（ImportEngine 行循环内、仅对通过去重新建 entry 的行）：单词行 → 词典全量释义+全部例句入本全勾选；带译文行 → `SenseMatcher`（shared 纯函数：双方 token 化 `，, 、;；/ 空白` + trim/lowercase，「相等或互含」命中，中英双侧参与）选匹配子集；**零匹配兜底全量（D1）**。富化成功 → `pendingTranslation` 置 null。
+- **母数据与勾选两层分离**（实现期定型，比 SCR 草案更进一步）：词缺释义 → 词典释义例句**全量**导入 Word/DefinitionEntry/Example（与种子/按需导入同构——母数据永不残缺；若按勾选子集导母数据，词条全局展示会永久缺义）+ `fillBlankPronunciation` 双侧音标只补空缺（COALESCE）；词已有释义 → 绝不重建只在既有行勾选。带译文行的「子集」只体现在勾选层。
+- **临时译文不回流守卫**（实现期发现的行为漏洞）：富化词条（释义勾选在位）re-import 带译文行时，§4 规则 3 的「补写译文」会把临时译文写回正式释义已就位的词条——分支④加 `!hasDefinitionSelections` 守卫（`ExistingEntry` 扩字段 + `countEntryDefinitions` query-only 新查询）。
+- 装配：ImportEngine 构造尾参 `dictionaryProvider: DictionaryProvider? = null`（app 经 ImportEngineFactory 第 5 参注入查词同款 FallbackDictionaryProvider）；null/未收录/零释义 → 精确退化 Phase 7 原行为（既有 6 用例零改动全绿）。provider lookup 在 runBlocking 桥接事务内安全（只读词典资产库、withContext 返回恢复事务钉死线程）。
+- NFR-2：富化路径 10 万行预算 60s→120s（万行冒烟 1/10 比例锁 12s）。零 schema 迁移（query-only 新查询 2 条：fillBlankPronunciation + countEntryDefinitions）。
+**测试**（TC-IMP-09…14，TEST_PLAN v2.28）：commonTest `SenseMatcherTest` 6 + jvmTest `ImportEngineTest` 富化组 7（裸词全量 / 译文子集 / D1 兜底 / miss 退化 / 有释义仅勾选 / 无释义先补后勾 / re-import 幂等）+ `ImportPerfTest.tenThousandEnrichedLinesWithinTwelveSeconds`（实测秒级；期间再现机器级故障窗口——ImportPerfTest 类级运行一度 >10min，单测逐个跑均 4–9s，按 AOR-007 先例维持不入门禁）。
+**文档**：PROJECT_SPEC v1.26（FR-14 + NFR-2）/ IMPORT_SPEC v1.2（§3 注记 + §4 守卫 + §6 计数 + §7 预算 + §8 重写）/ TEST_PLAN v2.28。
+**验收**：定向测试组全绿（待全量门禁复跑）；装机走查交接用户（裸词 hamper 详情释义例句齐 / 带译文行只入匹配释义 / 报告富化计数可见）。
+
+### SCR-TXTDICTENRICH v2: TXT 导入词性标记过滤（2026-10-01）
+
+**问题**：用户提出（2026-10-01）——「如果单词同一行有写要导入的词性（n./v./vt./vi./adj./adv./int.），则导入单词时只导入对应词性的中英文释义和例句。在导入TXT词表的UI界面也把这一信息以及只写单词时会导入所有释义写入说明」。同批用户取消 v1 装机走查（「取消装机走查，直接修改下一版本」）。
+**决策**（用户直接指令，方案回填 SPEC_CHANGE_REQUEST_TXT_DICT_ENRICH.md §7）：
+- **解析层**：LineParser 剥离译文段首部词性标记（`n./v./vt./vi./adj./adv./int.`，大小写不敏感、点号必须有，正则长词形优先防 v. 吞 vt.）映射规范名（vt./vi./v→verb、n→noun、adj→adjective、adv→adverb、int→interjection，与 FR-18 ECDICT 转换及 DOMAIN_MODEL §3.1 对齐）；标记独占行 → 译文 null；未收录标记（prep.）与无点号前缀原样保留为译文。`WordWithTranslation.translation` 转 nullable + 尾参 `partOfSpeech`（既有调用源兼容）。
+- **引擎层**：`selectSenses` 勾选池两级收窄——词性先收窄、译文在池内再匹配；**词性零命中兜底全释义、池内译文零命中兜底词性池**（两级各自保真，同 D1「意图无法精确满足时保全数据」理由）；母数据导入不受词性影响（仍全量补齐，母数据永不残缺原则不动摇）；既有释义行同样按词性过滤。`DefinitionWithExamples` +`partOfSpeech`（SELECT * 已含列，query-only 零迁移）。`enrichedMatched` 只计译文匹配（词性独占行不计）。
+- **UI**：ImportScreen 选文件页说明三行化（裸词 → 全量释义例句；写词性 → 只入该词性，可再接译文筛选；去重说明保留）。
+**测试**（TC-IMP-15，TEST_PLAN v2.29）：commonTest `LineParserTest` 词性组 3（剥离与映射 / 独占行 null / 未收录与无点号原样）+ jvmTest `ImportEngineTest` 词性组 5（独占行只入该词性且母数据全量 / 词性+译文池内两级 / 池内零命中兜底词性池 / 词性零命中兜底全量 / 既有行按词性勾选不重建）。
+**文档**：PROJECT_SPEC v1.27（FR-14 行格式③ + 富化规则）/ IMPORT_SPEC v1.3（§3 词性标记行 + §8.1 规则 + §10 矩阵）/ TEST_PLAN v2.29。
+**验收**：定向测试组全绿（全量门禁 + APK 见批次收尾）；装机走查取消，随下一版 APK 由用户人工核验（`hamper n.` 只入名词释义例句 / UI 说明新文案）。
+
+### SCR-TXTDICTENRICH v2 追补: prep. 词性标记 + vt./vi. 映射措辞（2026-10-01）
+
+**问题**：用户指示——「vt./vi./v 统一映射 verb 改成 vt.和vi.映射对应动词。另外，补充 prep. 映射和 UI 说明」。
+**决策**：
+- **措辞**：vt./vi./v 的映射表述统一改为「映射**对应动词**（规范名 verb）」——功能不变：词库词性粒度按 FR-18 ECDICT 转换已合并及物/不及物为单一动词类，vt.、vi.、v. 三种标记都收窄到动词释义（若要区分及物/不及物需数据重建 + user_version 递增，本批不做）。
+- **prep.**：词性标记集补 `prep.` → `preposition`（DOMAIN_MODEL §3.1 规范位 5）——LineParser 正则 `^(vt|vi|adj|adv|prep|int|n|v)\.` + 映射表 + ImportScreen 说明标记列表。
+- 未收录标记的文档/测试示例由 prep. 改为 conj.（`and conj. 并且` 整段原样保留）。
+**测试**：`LineParserTest.posMarkerIsStrippedAndCanonicalized` 补 `about prep. 关于 → ("关于","preposition")`；`unrecognizedOrDotlessMarkerStaysPlainTranslation` 未收录示例改 conj.。TC-IMP-15 行更新（TEST_PLAN v2.30）。
+**文档**：PROJECT_SPEC v1.28 / IMPORT_SPEC v1.4 / SCR §7.1–§7.5。零 schema 迁移。
+
+### SCR-TXTDICTENRICH v2 追补 2: 单空格多词短语修正（2026-10-01）
+
+**问题**：用户装机自测实录——TXT 写短语 `roll out`，导入结果是 `roll`。根因是 Phase 7 原解析口径：单空格属分隔符级且优先于整词校验，首空格必然分割（原 LineParserTest 锁定 `take off`→take+off，IMPORT_SPEC §3「每级取首次出现位置」），多词短语无法以单空格形态导入。
+**决策**：单空格级改为**逐位置扫描**，跳过「译文以英文字母开头」的位置——英文尾巴（`roll out` 的 out）是短语成分不是译文。效果：`roll out` → 短语整词（词典按短语 lookup 富化）；`roll out 推出` → 首个非英文开头空格处分割短语+译文；`hello world,你好` → 单空格级全跳过后下探逗号级分割短语+译文；全英文行 → 整行短语。显式分隔级（Tab/2+ 空格/逗号/分号/冒号）不做扫描、右侧英文照常作译文；**译文以英文开头须用显式分隔符**（ImportScreen 说明补「多词短语整行书写；短语+译文用 Tab 或逗号」）。既有 2 个锁定旧口径的用例期望反转（`take off`→WordOnly、`hello world,你好`→逗号级）。
+**测试**（TC-IMP-16，TEST_PLAN v2.31）：commonTest `LineParserTest` 短语组 3 + jvmTest `ImportEngineTest.multiWordPhraseLineImportsAndEnrichesAsSingleWord`。
+**文档**：PROJECT_SPEC v1.29（FR-14 行格式①）/ IMPORT_SPEC v1.5（§3 单词行口径 + v1.5 注记 + 边界 #10 + §10 矩阵）/ SCR §7.6。零 schema 迁移。

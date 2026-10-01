@@ -456,4 +456,341 @@ class SeedImporterTest {
         )
         assertEquals("/ˈkɑːmə/", repo.lookup("karma")!!.word.ipaBr)
     }
+
+    // ---- 例句重归位（SCR-SENSEATTR v6：词典例句逐释义归属 diff）----
+
+    /** 对齐词条：词典例句挂到自己的释义（defIdx=1 的例句不落首释义）；幂等。 */
+    @Test
+    fun reattributeInsertsExampleAtItsOwnSense() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                        DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", "存入银行"),
+                    ),
+                ),
+            ),
+        )
+
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                DictionaryDefinitionEntry(
+                    "verb", 0, 0, "to deposit money", "存入银行",
+                    examples = listOf(
+                        DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dict))
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        // Q1 排序：verb(0) 先于 noun(1)——entries[0]=存入银行，entries[1]=河岸
+        val verbEntry = detail.entries.first { it.partOfSpeech == "verb" }
+        val nounEntry = detail.entries.first { it.partOfSpeech == "noun" }
+        assertEquals(1, detail.examplesByEntryId[verbEntry.definitionEntryId]!!.size)
+        assertTrue(detail.examplesByEntryId[nounEntry.definitionEntryId].orEmpty().isEmpty())
+
+        assertEquals(0, importer.backfillEnhancements(dict))
+    }
+
+    /** 对齐词条：归属不同的既有例句 → 移动（exampleId 不变——用户勾选行天然保留）；幂等。 */
+    @Test
+    fun reattributeMovesMisplacedExampleKeepingExampleId() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        // 旧导入形态：例句全挂首释义（v5 前的遗留归属）
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "land along a river", "河岸",
+                            examples = listOf(
+                                DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                            ),
+                        ),
+                        DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", "存入银行"),
+                    ),
+                ),
+            ),
+        )
+        val repo = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest)
+        val before = repo.lookup("bank")!!
+        val exampleIdBefore = before.examplesByEntryId.values.flatten().single().exampleId
+
+        // v6 词典：同一句归属 verb 释义
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                DictionaryDefinitionEntry(
+                    "verb", 0, 0, "to deposit money", "存入银行",
+                    examples = listOf(
+                        DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dict)) // 只移动，不重复建行
+
+        val after = repo.lookup("bank")!!
+        val moved = after.examplesByEntryId.values.flatten().single()
+        assertEquals(exampleIdBefore, moved.exampleId) // exampleId 稳定 → 勾选行经 exampleId 关联天然保留
+        assertEquals(
+            after.entries.first { it.partOfSpeech == "verb" }.definitionEntryId,
+            moved.definitionEntryId,
+        )
+
+        assertEquals(0, importer.backfillEnhancements(dict))
+    }
+
+    /** 译文覆盖只作用于词典来源例句（TATOEBA/AI_GENERATED）；视频例句译文绝不覆盖。 */
+    @Test
+    fun reattributeOverwritesTranslationOnlyForDictionarySourcedExamples() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "land along a river", "河岸",
+                            examples = listOf(
+                                // 视频例句：译文不得被词典覆盖
+                                DictionaryExample(
+                                    "The river overflowed the bank.", "河水漫过了堤岸（原视频字幕）。",
+                                    sourceType = "REAL_MOVIE_TV",
+                                ),
+                                // 词典例句：译文陈旧 → 覆盖
+                                DictionaryExample(
+                                    "She banked her salary.", "旧机翻译文。",
+                                    sourceType = "TATOEBA",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry(
+                    "noun", 1, 0, "land along a river", "河岸",
+                    examples = listOf(
+                        DictionaryExample(
+                            "The river overflowed the bank.", "河水漫过堤岸。",
+                            sourceType = "TATOEBA",
+                        ),
+                        DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dict)) // 只覆盖 TATOEBA 行
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        val examples = detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!
+        assertEquals(2, examples.size) // 不重复建行
+        assertEquals(
+            "河水漫过了堤岸（原视频字幕）。",
+            examples.first { it.sentence == "The river overflowed the bank." }.chineseTranslation,
+        )
+        assertEquals(
+            "她把工资存入了银行。",
+            examples.first { it.sentence == "She banked her salary." }.chineseTranslation,
+        )
+
+        assertEquals(0, importer.backfillEnhancements(dict))
+    }
+
+    /** 对齐词条：词典已剔除的词典例句无勾选引用 → 删除；非词典来源例句永不删。 */
+    @Test
+    fun reattributeDeletesStaleDictionaryExampleOnlyWithoutSelection() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "land along a river", "河岸",
+                            examples = listOf(
+                                DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                                // 词典已剔除的短语改挂句（v6 归属重排产物）
+                                DictionaryExample("She banks with HSBC.", "她的账户开在汇丰。", sourceType = "TATOEBA"),
+                                // 非词典来源：词典没有此句也不删
+                                DictionaryExample("Go to the bank!", "去银行吧！", sourceType = "TTS"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        // v6 词典只保留一句
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry(
+                    "noun", 1, 0, "land along a river", "河岸",
+                    examples = listOf(
+                        DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dict))
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        val examples = detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!
+        assertEquals(listOf("She banked her salary.", "Go to the bank!"), examples.map { it.sentence })
+
+        assertEquals(0, importer.backfillEnhancements(dict))
+    }
+
+    /** 删除守卫：陈旧词典例句被词条例句勾选行引用 → 保留不删（宁留不错删，FR-5）。 */
+    @Test
+    fun reattributeKeepsStaleExampleReferencedBySelection() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "land along a river", "河岸",
+                            examples = listOf(
+                                DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                                DictionaryExample("She banks with HSBC.", "她的账户开在汇丰。", sourceType = "TATOEBA"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        // 用户勾选了将被剔除的例句
+        val wordId = db.database.wordQueries.selectByNormalizedText("bank").executeAsOne().wordId
+        val staleExampleId = db.database.exampleQueries
+            .selectExamplesForEntry(
+                db.database.definitionEntryQueries.selectDefinitionsForWord(wordId).executeAsList().single().definitionEntryId,
+            )
+            .executeAsList()
+            .first { it.sentence == "She banks with HSBC." }
+            .exampleId
+        db.database.wordBookQueries.insertOriginalWordBook("Guard", null, 0L, 0L)
+        val wordBookId = db.database.wordBookQueries.selectLastInsertRowId().executeAsOne()
+        db.database.wordBookEntryQueries.insertEntry(wordBookId, wordId, 0L, null, 0L)
+        val entryId = db.database.wordBookEntryQueries.selectLastInsertRowId().executeAsOne()
+        db.database.wordBookEntryExampleSelectionQueries.insertExampleSelection(entryId, staleExampleId)
+
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry(
+                    "noun", 1, 0, "land along a river", "河岸",
+                    examples = listOf(
+                        DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(0, importer.backfillEnhancements(dict)) // 有引用 → 零删除零写入
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        assertEquals(2, detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!.size)
+    }
+
+    /** 生成兜底句如实标注：sourceType = AI_GENERATED（SCR-SENSEATTR 完整覆盖兜底，FR-3）。 */
+    @Test
+    fun reattributeInsertsGeneratedExampleWithAiGeneratedSourceType() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                    ),
+                ),
+            ),
+        )
+
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry(
+                    "noun", 1, 0, "land along a river", "河岸",
+                    examples = listOf(
+                        DictionaryExample(
+                            "We had a picnic on the bank of the Thames.",
+                            "我们在泰晤士河岸边野餐。",
+                            sourceType = "AI_GENERATED",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dict))
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        val example = detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!.single()
+        assertEquals(ExampleSourceType.AI_GENERATED, example.sourceType)
+        assertEquals("我们在泰晤士河岸边野餐。", example.chineseTranslation)
+    }
+
+    /** 非对齐词条（TXT/视频导入，释义结构与词典不一致）：保持旧语义——不移动、不删除。 */
+    @Test
+    fun reattributeKeepsLegacySemanticsForNonAlignedWord() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "land along a river", "河岸",
+                            examples = listOf(
+                                DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                                DictionaryExample("She banks with HSBC.", "她的账户开在汇丰。", sourceType = "TATOEBA"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        // 词典 2 释义（DB 只有 1 → 非对齐）：一句归属第二释义、一句已剔除——都不生效
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                DictionaryDefinitionEntry(
+                    "verb", 0, 0, "to deposit money", "存入银行",
+                    examples = listOf(
+                        DictionaryExample("She banked her salary.", "她把工资存入了银行。", sourceType = "TATOEBA"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(0, importer.backfillEnhancements(dict)) // 不移动、不删除、无新句
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        val examples = detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!
+        assertEquals(2, examples.size) // 两句原位保留（首释义）
+    }
 }

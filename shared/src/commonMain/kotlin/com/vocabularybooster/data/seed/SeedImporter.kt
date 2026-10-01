@@ -2,6 +2,8 @@ package com.vocabularybooster.data.seed
 
 import com.vocabularybooster.db.VocabularyDatabase
 import com.vocabularybooster.db.DefinitionEntry as DefinitionEntryRow
+import com.vocabularybooster.db.Example as ExampleRow
+import com.vocabularybooster.domain.dictionary.DictionaryDefinitionEntry
 import com.vocabularybooster.domain.dictionary.DictionaryWord
 import com.vocabularybooster.domain.model.toNormalizedWordText
 import kotlinx.coroutines.CoroutineDispatcher
@@ -90,13 +92,13 @@ public class SeedImporter(
         }
 
     /**
-     * 增强回填（Phase 8.6 Tatoeba/音标）：为增强前已导入的词条补齐例句/译文/音标。
-     * 幂等、全量单事务；词不存在 → 0（绝不建词/建空行，[import] 才负责建词）。
+     * 增强回填（Phase 8.6 Tatoeba/音标 + SCR-SENSEATTR 例句重归位）：为已导入词条
+     * 补齐例句/译文/音标并把例句按词典归属重新挂位。幂等、全量单事务；
+     * 词不存在 → 0（绝不建词/建空行，[import] 才负责建词）。
      * 规则：音标只补空缺（ipaAm/ipaBr 为 null 且词典有值才写，绝不覆盖已有值）；
-     * 同句已存在（跨释义按句子去重）→ 跳过；存在但译文空且词典有译文 → 只更新译文
-     * （[Example.sq] updateExampleTranslation）；缺句 → 挂到首释义（与词典例句挂载约定一致）。
+     * 例句 diff 重归位见 [reattributeExamples]。
      *
-     * @return 变更行数（更新音标 + 新增例句 + 更新译文），0 = 无事可做
+     * @return 变更行数（音标 + 例句插入/移动/译文/删除），0 = 无事可做
      */
     public suspend fun backfillEnhancements(word: DictionaryWord): Int = withContext(dispatcher) {
         database.transactionWithResult {
@@ -128,44 +130,82 @@ public class SeedImporter(
             val entries = database.definitionEntryQueries
                 .selectDefinitionsForWord(existingWord.wordId)
                 .executeAsList()
-            val firstEntry = entries.firstOrNull()
-                ?: return@transactionWithResult changed
-            changed + backfillMissingExamples(word, entries, firstEntry)
+            if (entries.isEmpty()) return@transactionWithResult changed
+            changed + reattributeExamples(word, entries)
         }
     }
 
     /**
-     * 例句/译文回填主体（[backfillEnhancements] 内步骤，同事务内执行）：
-     * 全词现有例句索引（句子 → 行，跨释义去重）；同句已存在 → 跳过；
-     * 存在但译文空且词典有译文 → 只更新译文；缺句 → 挂到首释义（与词典例句挂载约定一致）。
+     * 例句 diff 重归位（SCR-SENSEATTR，[backfillEnhancements] 内步骤，同事务内执行）。
+     * 词典例句自 v6 起逐释义归属（DictionaryDefinitionEntry.examples 按释义分组）。
+     * 释义 → DB 行映射按 Q1 位序（双方各自 (partOfSpeechOrder, definitionOrder) 排序后
+     * 对位——不信任词条构建序，provider 之外的构造者无此契约）：
+     * - **对齐词条**（DB 释义数 == 词典释义数——查词导入词）：缺句 → 插到对应释义
+     *   （[applyExampleDiff]）；DB 有而词典已剔除的词典例句（短语改挂类）→
+     *   **无勾选行引用才删**（[deleteStaleDictionaryExamples]，宁留不错删）。
+     * - **非对齐词条**（TXT/视频导入词，释义结构与词典不一致）：defIdx 无法可靠映射 →
+     *   保持旧语义（缺句挂首释义、只补译文差异，不移动不删除）。
+     * 幂等：对齐后二次执行零写入。
      */
-    private fun backfillMissingExamples(
+    private fun reattributeExamples(
         word: DictionaryWord,
         entries: List<DefinitionEntryRow>,
-        firstEntry: DefinitionEntryRow,
     ): Int {
-        val bySentence = buildMap {
-            for (entry in entries) {
-                database.exampleQueries
-                    .selectExamplesForEntry(entry.definitionEntryId)
-                    .executeAsList()
-                    .forEach { putIfAbsent(it.sentence, it) }
-            }
+        val aligned = word.definitions.size == entries.size
+        // Q1 位序映射：entries 已按 Q1（仓储契约），词条侧显式排序后对位（构建序无关）
+        val defsInQ1 = word.definitions.sortedWith(
+            compareBy({ it.partOfSpeechOrder }, { it.definitionOrder }),
+        )
+        val perEntryOrder = mutableMapOf<Long, Long>() // definitionEntryId -> 下一个可用 exampleOrder
+        val dbExamples = mutableListOf<ExampleRow>()
+        for (entry in entries) {
+            val list = database.exampleQueries
+                .selectExamplesForEntry(entry.definitionEntryId)
+                .executeAsList()
+            dbExamples += list
+            perEntryOrder[entry.definitionEntryId] = (list.maxOfOrNull { it.exampleOrder } ?: -1L) + 1L
         }
-        val firstEntryMaxOrder = database.exampleQueries
-            .selectExamplesForEntry(firstEntry.definitionEntryId)
-            .executeAsList()
-            .maxOfOrNull { it.exampleOrder }
+        val bySentence = HashMap<String, ExampleRow>()
+        for (row in dbExamples) bySentence.putIfAbsent(row.sentence, row)
+        val dictSentences = HashSet<String>()
+        defsInQ1.forEach { definition ->
+            definition.examples.forEach { dictSentences += it.sentence }
+        }
+
+        var changed = applyExampleDiff(aligned, defsInQ1, entries, bySentence, perEntryOrder)
+        if (aligned) changed += deleteStaleDictionaryExamples(dbExamples, dictSentences)
+        return changed
+    }
+
+    /**
+     * 逐句 diff（仅对齐词条做移动；非对齐一律挂首释义）：缺句 → 插入目标释义；
+     * 已有句归属不同 → [Example.sq] moveExampleToEntry 移动（exampleId 不变，用户勾选行
+     * 经 exampleId 关联天然保留）；同位句 → 译文覆盖（仅词典来源行，绝不碰视频/种子例句）。
+     */
+    private fun applyExampleDiff(
+        aligned: Boolean,
+        defsInQ1: List<DictionaryDefinitionEntry>,
+        entries: List<DefinitionEntryRow>,
+        bySentence: Map<String, ExampleRow>,
+        perEntryOrder: MutableMap<Long, Long>,
+    ): Int {
+        val firstEntry = entries.first()
+
+        fun nextOrder(entryId: Long): Long {
+            val next = perEntryOrder.getOrPut(entryId) { 0L }
+            perEntryOrder[entryId] = next + 1L
+            return next
+        }
 
         var changed = 0
-        var nextOrder = (firstEntryMaxOrder?.plus(1)) ?: 0L
-        for (definition in word.definitions) {
+        defsInQ1.forEachIndexed { defIdx, definition ->
+            val target = if (aligned) entries[defIdx] else firstEntry
             for (example in definition.examples) {
                 val existing = bySentence[example.sentence]
                 when {
                     existing == null -> {
                         database.exampleQueries.insertExample(
-                            definitionEntryId = firstEntry.definitionEntryId,
+                            definitionEntryId = target.definitionEntryId,
                             sentence = example.sentence,
                             chineseTranslation = example.chineseTranslation,
                             sourceType = example.sourceType,
@@ -173,21 +213,61 @@ public class SeedImporter(
                             licenseNote = example.licenseNote,
                             audioUri = example.audioUri,
                             audioDurationMs = example.audioDurationMs,
-                            exampleOrder = nextOrder,
+                            exampleOrder = nextOrder(target.definitionEntryId),
                         )
-                        nextOrder++
                         changed++
                     }
-                    existing.chineseTranslation.isBlank() && example.chineseTranslation.isNotBlank() -> {
-                        database.exampleQueries.updateExampleTranslation(
-                            chineseTranslation = example.chineseTranslation,
+                    aligned && existing.definitionEntryId != target.definitionEntryId -> {
+                        database.exampleQueries.moveExampleToEntry(
+                            definitionEntryId = target.definitionEntryId,
+                            exampleOrder = nextOrder(target.definitionEntryId),
                             exampleId = existing.exampleId,
                         )
                         changed++
+                    }
+                    else -> {
+                        val overwrite = existing.isDictionarySourced() &&
+                            example.chineseTranslation.isNotBlank() &&
+                            existing.chineseTranslation != example.chineseTranslation
+                        if (overwrite) {
+                            database.exampleQueries.updateExampleTranslation(
+                                chineseTranslation = example.chineseTranslation,
+                                exampleId = existing.exampleId,
+                            )
+                            changed++
+                        }
                     }
                 }
             }
         }
         return changed
     }
+
+    /**
+     * 剔除分支（仅对齐词条）：词典已无此句的**词典来源**例句删除——非词典来源（视频/种子）
+     * 永不删；被勾选行引用（countExampleSelections > 0）保留不删（宁留不错删，FR-5）。
+     */
+    private fun deleteStaleDictionaryExamples(
+        dbExamples: List<ExampleRow>,
+        dictSentences: Set<String>,
+    ): Int {
+        var changed = 0
+        for (row in dbExamples) {
+            val staleDictionaryRow = row.sentence !in dictSentences && row.isDictionarySourced()
+            if (staleDictionaryRow) {
+                val selections = database.exampleQueries
+                    .countExampleSelections(row.exampleId)
+                    .executeAsOne()
+                if (selections == 0L) {
+                    database.exampleQueries.deleteExampleById(row.exampleId)
+                    changed++
+                }
+            }
+        }
+        return changed
+    }
+
+    /** 词典管线产出（TATOEBA/AI_GENERATED）——译文覆盖与剔除分支只作用于这类行。 */
+    private fun ExampleRow.isDictionarySourced(): Boolean =
+        sourceType == "TATOEBA" || sourceType == "AI_GENERATED"
 }

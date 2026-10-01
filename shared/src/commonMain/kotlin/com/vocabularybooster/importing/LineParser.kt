@@ -6,8 +6,16 @@ package com.vocabularybooster.importing
  *
  * 分隔符优先级：Tab > 2+ 空格 > 单空格 > 逗号（半/全角）> 分号（半/全角）> 冒号（半/全角）；
  * 每级取**首次出现**位置尝试分割，「成功」= 左侧为合法词 + 右侧非空；
+ * 单空格级例外（v1.5 短语修正）：**逐位置扫描**且跳过「译文以英文字母开头」的位置——
+ * `roll out` 的 out 是短语成分不是译文，故整词存活；`roll out 推出` 在首个非英文开头的
+ * 空格处分割；`hello world,你好` 单空格级全跳过后下探逗号级；译文确以英文开头时须用
+ * Tab / 逗号等显式分隔符；
  * 全部分隔符失败后按「仅词」整行校验（多词短语合法：词内空格是词法字符）；
  * 任一失败 → [ParsedLine.Invalid]（保留原文供报告样例，最多 20 条由引擎截取）。
+ *
+ * 词性标记（SCR-TXTDICTENRICH v2）：译文段**首部**的 `n./v./vt./vi./adj./adv./prep./int.`
+ * （大小写不敏感，点号必须有）在解析期剥离并映射规范名——vt./vi./v 均映射**对应动词**
+ * （规范名 verb；词库粒度已按 FR-18 合并及物/不及物）；标记后无余文 → 译文 null（裸词 + 词性过滤）。
  */
 public object LineParser {
 
@@ -16,6 +24,20 @@ public object LineParser {
 
     private const val WORD_PATTERN = "^[A-Za-z][A-Za-z\\u2019'\\- ]{0,63}$"
     private val wordRegex = Regex(WORD_PATTERN)
+
+    /** 词性标记（长词形优先防 v. 吞掉 vt.）；规范名映射见 [POS_CANONICAL]。 */
+    private val posMarkerRegex = Regex("""^(vt|vi|adj|adv|prep|int|n|v)\.""", RegexOption.IGNORE_CASE)
+
+    private val POS_CANONICAL = mapOf(
+        "n" to "noun",
+        "v" to "verb",
+        "vt" to "verb",
+        "vi" to "verb",
+        "adj" to "adjective",
+        "adv" to "adverb",
+        "prep" to "preposition",
+        "int" to "interjection",
+    )
 
     public fun parse(raw: String): ParsedLine {
         val line = raw.trim()
@@ -29,6 +51,7 @@ public object LineParser {
      * 分隔符优先级尝试（每级首现位置）；「成功」= 左侧合法词 + 右侧非空。
      * 译文超限 → 整行 invalid（不再尝试更宽分割——超限时整行必然 >64 字符，
      * 仅词校验也必然失败，直接短路，IMPORT_SPEC §3）。
+     * 右侧先剥词性标记（§3）再作译文。
      */
     private fun translationSplitOf(line: String, raw: String): ParsedLine? {
         for ((left, right) in splitCandidates(line)) {
@@ -36,15 +59,25 @@ public object LineParser {
                 return if (right.length > MAX_TRANSLATION_LENGTH) {
                     ParsedLine.Invalid(raw)
                 } else {
+                    val (partOfSpeech, translation) = stripPosMarker(right)
                     ParsedLine.WordWithTranslation(
                         text = left,
                         normalizedText = left.lowercase(),
-                        translation = right,
+                        translation = translation,
+                        partOfSpeech = partOfSpeech,
                     )
                 }
             }
         }
         return null
+    }
+
+    /** 剥离译文段首部词性标记 →（规范名 or null，余文 or null——标记独占时无译文）。 */
+    private fun stripPosMarker(right: String): Pair<String?, String?> {
+        val match = posMarkerRegex.find(right) ?: return null to right
+        val canonical = POS_CANONICAL[match.value.dropLast(1).lowercase()]
+        val remainder = right.substring(match.value.length).trim()
+        return canonical to remainder.ifEmpty { null }
     }
 
     /** 仅词行（多词短语：空格属词法字符）；否则非法（保留原文供报告）。 */
@@ -63,7 +96,14 @@ public object LineParser {
 
         runOfTwoOrMoreSpaces(line)?.let { (start, len) -> candidates += splitAt(line, start, len) }
 
-        line.indexOf(' ').takeIf { it > 0 }?.let { candidates += splitAt(line, it, 1) }
+        // 单空格级（v1.5 短语修正）：逐位置扫描，「译文以英文字母开头」的位置跳过——
+        // 多词短语的词内空格不是分隔符；首个非英文开头位置才分割（`roll out 推出`）
+        line.forEachIndexed { index, c ->
+            if (c == ' ' && index > 0) {
+                val (left, right) = splitAt(line, index, 1)
+                if (right.isNotEmpty() && !right[0].isEnglishLetter()) candidates += left to right
+            }
+        }
 
         firstOfAny(line, ',', '，')?.let { (start, len) -> candidates += splitAt(line, start, len) }
         firstOfAny(line, ';', '；')?.let { (start, len) -> candidates += splitAt(line, start, len) }
@@ -71,6 +111,8 @@ public object LineParser {
 
         return candidates
     }
+
+    private fun Char.isEnglishLetter(): Boolean = this in 'A'..'Z' || this in 'a'..'z'
 
     private fun splitAt(line: String, sepIndex: Int, sepLength: Int): Pair<String, String> =
         line.substring(0, sepIndex).trimEnd() to line.substring(sepIndex + sepLength).trim()
@@ -111,11 +153,16 @@ public sealed interface ParsedLine {
     /** 仅词行（无译文）：`pendingTranslation = null`。 */
     public data class WordOnly(val text: String, val normalizedText: String) : ParsedLine
 
-    /** 词 + 译文行：译文 = 分隔符后整段（可含逗号等原样保留，边界 #8/#9）。 */
+    /**
+     * 词 + 译文行：译文 = 分隔符后整段剥去首部词性标记的余文（可含逗号等原样保留，
+     * 边界 #8/#9）；[partOfSpeech] = 剥出的规范词性名（无标记 null，SCR-TXTDICTENRICH v2）。
+     * 标记独占行（`word n.`）→ translation = null（等效裸词 + 词性过滤）。
+     */
     public data class WordWithTranslation(
         val text: String,
         val normalizedText: String,
-        val translation: String,
+        val translation: String?,
+        val partOfSpeech: String? = null,
     ) : ParsedLine
 
     /** 非法行（词字符越界/中文开头/含数字/译文超限等）：保留原文供报告。 */
