@@ -793,4 +793,184 @@ class SeedImporterTest {
         val examples = detail.examplesByEntryId[detail.entries[0].definitionEntryId]!!
         assertEquals(2, examples.size) // 两句原位保留（首释义）
     }
+
+    // ---- 释义中文自愈（SCR-SENSEATTR v7：资产 d: 补译 → 已导入词条回填收敛）----
+
+    /**
+     * 对齐词条：Q1 位序对位填充空白 meaningCN——词条列表序（noun→verb）≠ Q1 序（verb→noun）
+     * 也不串位；非空白绝不覆盖；幂等。
+     */
+    @Test
+    fun definitionCnBackfillFillsBlankAtAlignedPositions() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        // 旧资产形态：动词释义中文空白（ECDICT 整词级中文未覆盖该义——metrics 类）
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                        DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", ""),
+                    ),
+                ),
+            ),
+        )
+
+        // v7 词典：两义中文齐备（noun 的词典值故意不同——不得覆盖非空白）
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸（词典新）"),
+                DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", "存入银行"),
+            ),
+        )
+        assertEquals(1, importer.backfillEnhancements(dict))
+
+        val detail = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest).lookup("bank")!!
+        val verbEntry = detail.entries.first { it.partOfSpeech == "verb" }
+        val nounEntry = detail.entries.first { it.partOfSpeech == "noun" }
+        assertEquals("存入银行", verbEntry.meaningCN) // 空白 → 填充（Q1 对位，不吃到 noun 的值）
+        assertEquals("河岸", nounEntry.meaningCN) // 非空白 → 绝不覆盖
+
+        assertEquals(0, importer.backfillEnhancements(dict)) // 幂等：二次执行零写入
+    }
+
+    /** 非空白绝不覆盖；词典侧同为空白 → 保持空白零写入。 */
+    @Test
+    fun definitionCnBackfillNeverOverwritesNonBlank() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                        DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", "存入银行"),
+                    ),
+                ),
+                DictionaryWord(
+                    text = "gloss",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "surface shine", ""),
+                    ),
+                ),
+            ),
+        )
+
+        // bank 两义词典值均不同 → 不覆盖；gloss 词典侧仍空白 → 无可补
+        val bankDict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸（词典新）"),
+                DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", "存入银行（词典新）"),
+            ),
+        )
+        val glossDict = DictionaryWord(
+            text = "gloss",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "surface shine", ""),
+            ),
+        )
+        assertEquals(0, importer.backfillEnhancements(bankDict))
+        assertEquals(0, importer.backfillEnhancements(glossDict))
+
+        val repo = SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest)
+        assertEquals("河岸", repo.lookup("bank")!!.entries.first { it.partOfSpeech == "noun" }.meaningCN)
+        assertEquals("", repo.lookup("gloss")!!.entries[0].meaningCN)
+    }
+
+    /** 非对齐词条（TXT/视频导入，释义数 ≠ 词典）：位序映射不可靠 → 零写入。 */
+    @Test
+    fun definitionCnBackfillSkipsNonAlignedWord() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "bank",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry("noun", 1, 0, "land along a river", ""),
+                    ),
+                ),
+            ),
+        )
+
+        val dict = DictionaryWord(
+            text = "bank",
+            definitions = listOf(
+                DictionaryDefinitionEntry("noun", 1, 0, "land along a river", "河岸"),
+                DictionaryDefinitionEntry("verb", 0, 0, "to deposit money", "存入银行"),
+            ),
+        )
+        assertEquals(0, importer.backfillEnhancements(dict)) // 1 ≠ 2 → 不动
+
+        assertEquals(
+            "",
+            SqlDelightWordRepository(db.database, dispatcher = DispatchersForTest)
+                .lookup("bank")!!.entries[0].meaningCN,
+        )
+    }
+
+    /**
+     * lookup 端到端：视频例句词（非词典来源，旧门不触发）+ 音标齐备 + 仅释义中文空白 →
+     * v7 新门触发词典咨询自愈（v6 门对这种形态恒 false）；视频例句不动。
+     */
+    @Test
+    fun lookupBackfillsBlankMeaningCnFromDictionaryProvider() = runTest {
+        val db = TestDb.inMemory()
+        val importer = newImporter(db)
+        importer.import(
+            listOf(
+                DictionaryWord(
+                    text = "metrics",
+                    ipaAm = "/ˈmetrɪks/",
+                    ipaBr = "/ˈmetrɪks/",
+                    definitions = listOf(
+                        DictionaryDefinitionEntry(
+                            "noun", 1, 0, "the study of poetic meter", "韵律学",
+                            examples = listOf(
+                                DictionaryExample(
+                                    "We track key metrics in the dashboard.",
+                                    "我们在仪表盘上追踪关键指标。",
+                                    sourceType = "REAL_MOVIE_TV",
+                                ),
+                            ),
+                        ),
+                        DictionaryDefinitionEntry("noun", 1, 1, "a function of a topological space", ""),
+                    ),
+                ),
+            ),
+        )
+        val dictProvider = object : DictionaryProvider {
+            override suspend fun lookup(text: String): DictionaryWord? =
+                if (text == "metrics") {
+                    DictionaryWord(
+                        text = "metrics",
+                        ipaAm = "/ˈmetrɪks/",
+                        ipaBr = "/ˈmetrɪks/",
+                        definitions = listOf(
+                            DictionaryDefinitionEntry("noun", 1, 0, "the study of poetic meter", "韵律学"),
+                            DictionaryDefinitionEntry("noun", 1, 1, "a function of a topological space", "度量，距离函数"),
+                        ),
+                    )
+                } else {
+                    null
+                }
+        }
+        val repo = SqlDelightWordRepository(
+            database = db.database,
+            dictionaryProvider = dictProvider,
+            seedImporter = importer,
+            dispatcher = DispatchersForTest,
+        )
+
+        val detail = repo.lookup("metrics")!!
+        assertEquals("度量，距离函数", detail.entries.first { it.definitionOrder == 1 }.meaningCN)
+        assertEquals("韵律学", detail.entries.first { it.definitionOrder == 0 }.meaningCN)
+        // 视频例句原样保留（非词典来源，不删除不覆盖）
+        val video = detail.examplesByEntryId.values.flatten().single()
+        assertEquals("We track key metrics in the dashboard.", video.sentence)
+    }
 }

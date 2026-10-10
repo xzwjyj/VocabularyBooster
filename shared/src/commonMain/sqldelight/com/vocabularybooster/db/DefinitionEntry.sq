@@ -24,3 +24,8 @@ ORDER BY partOfSpeechOrder ASC, definitionOrder ASC;
 
 selectLastInsertRowId:
 SELECT last_insert_rowid();
+
+-- SCR-SENSEATTR v7：释义中文自愈（DB 行 meaningCN 空白 → 词典值填充；调用方守卫
+-- 「只补空白，绝不覆盖非空」——见 SeedImporter.backfillEnhancements）
+updateMeaningCN:
+UPDATE DefinitionEntry SET meaningCN = ? WHERE definitionEntryId = ?;

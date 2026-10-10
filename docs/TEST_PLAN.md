@@ -202,6 +202,8 @@
 
 **词典例句逐释义归属与完整覆盖（SCR-SENSEATTR，v2.27 已登记，TC-DICTATTR-01…08）**：词典资产 v6（例句行 `[en,zh,defIdx(,"g")]` 逐释义归属 + user_version=6）——build 期三级归属（最长短语改挂 / 词性限定 / EN token + CN bigram 重叠打分）+ 缺口释义离线 Qwen 生成兜底 + 23.8 万句全量重译（NLLB 抽样止损停批：截断 + 半角标点，Qwen 单引擎全包）。jvmTest `SeedImporterTest` 重归位组 7（01 对齐词条例句挂自身释义非首释义 / 02 归属不同 → `moveExampleToEntry` 移动且 exampleId 稳定——勾选行天然保留 / 03 译文覆盖限 TATOEBA·AI_GENERATED，视频句绝不覆盖 / 04 陈旧词典句无勾选引用才删、非词典来源永不删 / 05 删除守卫：被 `WordBookEntryExampleSelection` 引用 → 保留零写入 / 06 生成句如实标注 AI_GENERATED（FR-3）/ 07 非对齐词条（TXT/视频形态）保持旧语义不移动不删除）；androidTest `BundledDictionarySmokeTest` v6 完整覆盖不变量（08 take 每条释义至少 1 例句且分布 ≥2 释义）。装机走查：vivo 覆盖安装后查 take/gloss 等多释义词——例句逐释义分布、AI 例句标注可见、勾选过的旧例句不消失、译文为重译新版。
 
+**释义中文自愈（SCR-SENSEATTR v7，v2.33 已登记，TC-DICTATTR-09…13）**：资产 v7（释义中文补译 d: 74,876 含 v8 手写 3 + 零例句词生成 gen2 全覆盖，user_version=7/8）——App 侧 `SeedImporter.fillBlankMeaningCn` 仅对齐词条 Q1 位序对位补空白。jvmTest `SeedImporterTest` v7 组 3（09 对位填充：DB 行 meaningCN 空白且词典侧非空 → 填充 / 10 非空白绝不覆盖（ECDICT 原中文/视频词中文优先）/ 11 非对齐词条（TXT/视频形态）位序不可靠零写入）+ `WordRepositoryOnDemandImportTest` v7 组 2（12 词典回填：lookup 触发 blank-CN 回填后重读 / 13 视频词 blank-CN 咨询一次即收敛——幂等二次零写入）。装机走查：vivo 四项（metrics 自愈 / 新部分中文词 / gen2 样本 / 兜底词）+ v8 三词（octodecillion 等 UI 正常中英文）。
+
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
 ## 5. FR 追踪矩阵（需求 → 用例）
@@ -223,7 +225,7 @@
 | FR-14 | TC-IMP 全组 |
 | FR-15 | TC-UI 设置、TC-LE-02 + 设置 VM 拼读停顿滑杆（TC-AE-33 app 组） |
 | FR-17 | TC-UI 词条编辑组（jvmTest 仓储 + VM 单测 + 冒烟） |
-| FR-18 | TC-UI 词典组（jvmTest 按需导入 + androidTest 真实 asset 冒烟）+ TC-DICTATTR-01…08（v6 逐释义归属，v2.27） |
+| FR-18 | TC-UI 词典组（jvmTest 按需导入 + androidTest 真实 asset 冒烟）+ TC-DICTATTR-01…08（v6 逐释义归属，v2.27）+ TC-DICTATTR-09…13（v7 释义中文自愈，v2.33） |
 | FR-19 | TC-UI 音色组（VM 单测 + 冒烟 + jvmTest 设置键往返） |
 | FR-20 | TC-UI 统计组（jvmTest 聚合 + 统计卡冒烟） |
 | FR-21 | 装机走查（v1.17 vivo 实测）+ 回填组音标用例（复用 FR-18 组） |
@@ -324,3 +326,4 @@
 | 2.30 | 2026-10-01 | **TXT 导入词性标记追补用例登记（SCR-TXTDICTENRICH v2 追补 / FR-14 v1.28）**：TC-IMP-15 更新——`LineParserTest` 词性组补 prep.→preposition 剥离用例、未收录标记用例改 conj.（`and conj. 并且` 整段原样保留）。上游：PROJECT_SPEC v1.28、IMPORT_SPEC v1.4 |
 | 2.31 | 2026-10-01 | **TXT 导入多词短语修正用例登记（用户实录缺陷 / FR-14 v1.29）**：新增 **TC-IMP-16**（commonTest `LineParserTest` 短语组 3 + 既有 2 用例期望反转（`take off`→短语、`hello world,你好`→逗号级短语+译文）+ jvmTest `ImportEngineTest` 短语富化 1）；FR 矩阵 FR-14 行注记。装机走查项（`roll out` 导入为短语整词 / 短语+译文两形态）。上游：PROJECT_SPEC v1.29、IMPORT_SPEC v1.5 |
 | 2.32 | 2026-10-01 | **点卡跳段用例登记（SCR-SEGMENTSEEK / FR-11 v1.30）**：新增 **TC-AE-35**（jvmTest `PlaybackOrchestratorStateTest` seek 组 8 + app 单测 `LearningSessionViewModelTest` J3 转发 1）；FR 矩阵 FR-11 行注记。装机走查项（点卡跳段体感 / 快速连点 / 窗口倒计时中点卡 / 暂停态点卡后 Resume）。上游：PROJECT_SPEC v1.30、AUDIO_ENGINE_SPEC v2.12 |
+| 2.33 | 2026-10-10 | **释义中文自愈用例登记（SCR-SENSEATTR v7/v8 / FR-18，资产 v7+v8）**：新增 **TC-DICTATTR-09…13**（jvmTest `SeedImporterTest` v7 组 3：对位填充 / 非空白绝不覆盖 / 非对齐词条零写入 + `WordRepositoryOnDemandImportTest` v7 组 2：lookup 词典回填 / 视频词咨询一次收敛）；FR 矩阵 FR-18 行注记。装机走查项（metrics 自愈 / 新部分中文词 / gen2 样本 / 兜底词 + v8 三词 UI 中英文）。上游：`SPEC_CHANGE_REQUEST_SENSE_ATTRIBUTION.md` §7/§8、DECISION_LOG SCR-SENSEATTR v7+v8 |

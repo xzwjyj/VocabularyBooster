@@ -389,3 +389,19 @@
 - UI：释义卡/例句卡/词头 clickable → VM `seekToSegment(owner)` 走既有命令转发路径；testTag 沿用卡片既有键（`learning_def_{id}` / `learning_example_{id}` / `learning_word`）。
 **测试**（TC-AE-35，TEST_PLAN v2.32）：jvmTest `PlaybackOrchestratorStateTest` seek 组 8（双向纯导航 / 词头起播 / 窗口作废续播 / Paused 迁移不恢复 / error 清除 / 开关禁用 no-op / 空词与终态与 Idle 幂等）+ app 单测 `LearningSessionViewModelTest` J3 点卡转发。零引擎接口变更（手写 Fake 零破坏）、零 schema 迁移。
 **文档**：PROJECT_SPEC v1.30（FR-11 控制表 +Seek、FR-21 注记卡片可点）/ AUDIO_ENGINE_SPEC v2.12（§3/§6）/ DOMAIN_MODEL v1.8（§10）。
+
+### SCR-SENSEATTR v7+v8: 释义中文补齐 + 零例句词全覆盖 + -illion 记号热修（2026-10-10 收口，v1.3.0）
+
+**问题**：v6 收口时两批缺口并入 v7——① ECDICT 逐义英文无对应中文（整词级 translation 无法对位）；② 729,304 词条零例句（违背用户裁决「找不到例句的释义不能零例句」）。v8 热修：用户装机报告「octodecillion 释义是数字加特殊字符」——ECDICT translation 上标转义记号（`10#[57]` = 10⁵⁷）伪中文。
+**决策**（用户批准 SCR §7/§8；本地 ollama qwen3:8b 离线跑批）：
+- **资产管线 v7**：`d:` 键释义补译（键公式 = `d:word#defIdx#en.slice(0,60)`，llm_tasks.js 与 build_v6.js fillDefinitionCn 两处逐字一致）；`gen2:` 键零例句词逐释义生成（bnc/frq 词频序）。wordPresent 校验器六轮「词典记号等价」放宽（sth/sb 占位、be 形式、冠词可选、物主/反身类、a/b 占位通配 ≥3 实词锚、连字符断行合并、OSA 换位、屈折后缀白名单），**每轮放行必带应拒反例**（test_wordpresent_v4.js 39 用例——"take off" 不吞 "take office"）。硬洞兜底 = 类别模板 4,125（acronym/variant/vulgar/clinical/crime）+ 手写 1：BLOCK_RE 族（rape/粗俗）「EN 必含词头」与「EN 不含 BLOCK_RE」互斥，中性语域元句是唯一出路，build_v6 只查 en/zh 非空不复跑 BLOCK_RE。
+- **跑批终数**：d: 74,873/74,873（模型 74,801 + 重试 16 + 人工 56）；gen2 769,476 键全集主队列 + `gen2sweep` 终扫回收 636 + `replay_promote` 重放晋级 2,209（校验器放宽后零 GPU 回收历史拒稿）；check 终态 rows=836,398 / examples=1,085,314 / generated=818,243 / noZhWords=0 / problems=0 / zeroCovered=729,304/729,304 / defCnFilled=74,873。
+- **抗撕架构**：serve/队列经 `cmd //c start` 脱离进程树常驻（CLI 重启杀不死）；durable cron 心跳 + 逐级自动推进收尾；`OLLAMA_*` 并行调优 + serve 输出重定向 /dev/null（verbose 5.1GB 任务文件被回收的根因）。
+- **App 侧 v7 自愈**：`SeedImporter.fillBlankMeaningCn`（仅对齐词条 DB 释义数==词典释义数、Q1 位序对位，**空白才填、非空绝不覆盖**、TXT/视频词零写入）+ `updateMeaningCN` query（零迁移）+ `SqlDelightWordRepository.needsEnhancementBackfill` 增「任一释义 meaningCN 空白」触发。已导入词靠 lookup 回填收敛，幂等。
+- **v8 热修**：全量正则双形态审计 `/#\[\d+\]|#\d+#\d+/` = 3 条（octodecillion/septendecillion/undecillion；`LIKE '%#[%'` 漏无括号形态 `10#1#0#2`）；fillDefinitionCn 记号伪 CN 视同空白可替换（垃圾无条目保留原文不 FATAL、defCnGarbageKept 计数；hit.en 手写条目可选补 blank EN）+ hand_d3.js 手写 3 条（zh=记号解码：短级差 美/法 10^(3n+3)、长级差 英/德 10^(6n)）。defCnFilled 74,873→74,876。
+- **管线单向性（v8 教训）**：build_v6.js 以「当前资产」为源重建，v7+ 产物零例句词已带例句 → 直接再跑全量 stale-exampled-word FATAL；**重建必须先回置阶段备份为源**（v6.bak；llm_out.jsonl 追加不改旧键 → 同输入确定性重建）。
+**测试**：jvmTest `SeedImporterTest` v7 组 3（对位填充 / 非空不覆盖 / 非对齐零写入）+ `WordRepositoryOnDemandImportTest` v7 组 2（词典回填空白 CN / 视频词咨询一次即收敛）；门禁六项全绿。
+**装机走查（2026-10-10，vivo）**：v7 四项全过（metrics 自愈 / 新部分中文词 / gen2 样本 zebra / 兜底词 aaj）——**装机抓出真 bug：DICT_ASSET_VERSION 忘升 7（设备静默不更新）已修**；v8 三项全过（7→8 门禁重拷 / octodecillion 手术清行重导 / 三词 UI 正常中英文）。
+**走查疑似缺陷撤案（同日）**：「每会话仅首次按需导入落库」经确定性 UI 驱动（dump→定位→tap→逐步断言）证伪——同进程 quokka+narwhal、终版 APK okapi+pangolin 双双导入成功；真相=走查方法缺陷（详情页无输入框裸 tap 丢字 + 输入框带旧词时 input text 追加拼串 → 正常 miss）。10-08「install -r 后首会话失效」同因一并撤案。app 代码零变更。
+**文档**：SCR §7（v2）/ §8（v3 + §8.4 撤案复盘）/ tools/dict README（v7 第 7 步 + v8 第 8 步 + 管线单向性与 Kotlin 门禁警示）/ TEST_PLAN v2.33（TC-DICTATTR-09…13）。
+**发布**：v1.3.0（versionCode 4）；资产 v7+v8 均 344,498,176 字节（user_version 7/8），APK ~712MB 走 GitHub Release 附件。

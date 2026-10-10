@@ -92,11 +92,11 @@ public class SeedImporter(
         }
 
     /**
-     * 增强回填（Phase 8.6 Tatoeba/音标 + SCR-SENSEATTR 例句重归位）：为已导入词条
-     * 补齐例句/译文/音标并把例句按词典归属重新挂位。幂等、全量单事务；
-     * 词不存在 → 0（绝不建词/建空行，[import] 才负责建词）。
+     * 增强回填（Phase 8.6 Tatoeba/音标 + SCR-SENSEATTR 例句重归位 + v7 释义中文自愈）：
+     * 为已导入词条补齐例句/译文/音标/空白释义中文并把例句按词典归属重新挂位。
+     * 幂等、全量单事务；词不存在 → 0（绝不建词/建空行，[import] 才负责建词）。
      * 规则：音标只补空缺（ipaAm/ipaBr 为 null 且词典有值才写，绝不覆盖已有值）；
-     * 例句 diff 重归位见 [reattributeExamples]。
+     * 释义中文只补空白（见 [fillBlankMeaningCn]）；例句 diff 重归位见 [reattributeExamples]。
      *
      * @return 变更行数（音标 + 例句插入/移动/译文/删除），0 = 无事可做
      */
@@ -131,8 +131,39 @@ public class SeedImporter(
                 .selectDefinitionsForWord(existingWord.wordId)
                 .executeAsList()
             if (entries.isEmpty()) return@transactionWithResult changed
-            changed + reattributeExamples(word, entries)
+            changed + fillBlankMeaningCn(word, entries) + reattributeExamples(word, entries)
         }
+    }
+
+    /**
+     * 释义中文自愈（SCR-SENSEATTR v7，[backfillEnhancements] 内步骤，同事务内执行）。
+     * 资产 v7 起空白 meaningCN 由管线补译（ECDICT 整词级中文 vs 逐义英文的历史缺口）；
+     * 已导入词条靠本步骤收敛——**仅对齐词条**（DB 释义数 == 词典释义数，Q1 位序对位，
+     * 同 [reattributeExamples] 判定），DB 行 meaningCN 空白且词典侧非空 → 填充：
+     * - 非空白**绝不覆盖**（ECDICT 原有中文/视频词中文优先）；
+     * - 非对齐词条（TXT/视频导入词）位序映射不可靠 → 零写入。
+     * 幂等：填满后二次执行零写入。
+     */
+    private fun fillBlankMeaningCn(
+        word: DictionaryWord,
+        entries: List<DefinitionEntryRow>,
+    ): Int {
+        if (entries.size != word.definitions.size) return 0
+        // Q1 位序映射：entries 已按 Q1（仓储契约），词条侧显式排序后对位（构建序无关）
+        val defsInQ1 = word.definitions.sortedWith(
+            compareBy({ it.partOfSpeechOrder }, { it.definitionOrder }),
+        )
+        var changed = 0
+        entries.forEachIndexed { idx, entry ->
+            if (entry.meaningCN.isBlank() && defsInQ1[idx].meaningCN.isNotBlank()) {
+                database.definitionEntryQueries.updateMeaningCN(
+                    meaningCN = defsInQ1[idx].meaningCN,
+                    definitionEntryId = entry.definitionEntryId,
+                )
+                changed++
+            }
+        }
+        return changed
     }
 
     /**

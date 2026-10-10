@@ -40,9 +40,9 @@ public class SqlDelightWordRepository(
     }
 
     /**
-     * FR-18 增强回填：旧导入词条（例句增强前无例句、Tatoeba 译文缺失、或音标缺失）→
-     * 从词典源补齐后重读。词典源未收录/无可补 → 原样返回（每次 lookup 多一次
-     * 本地词典查询，~ms 级，可接受）。
+     * FR-18 增强回填：旧导入词条（例句增强前无例句、Tatoeba 译文缺失、音标缺失、
+     * 或释义中文空白——SCR-SENSEATTR v7）→ 从词典源补齐后重读。词典源未收录/无可补 →
+     * 原样返回（每次 lookup 多一次本地词典查询，~ms 级，可接受）。
      */
     private suspend fun backfillEnhancements(text: String, current: WordDetail): WordDetail {
         val provider = dictionaryProvider
@@ -51,6 +51,7 @@ public class SqlDelightWordRepository(
         val changed = dictWord
             ?.takeIf { word ->
                 word.definitions.sumOf { it.examples.size } > 0 ||
+                    word.definitions.any { it.meaningCN.isNotBlank() } ||
                     !word.ipaAm.isNullOrBlank() ||
                     !word.ipaBr.isNullOrBlank()
             }
@@ -62,8 +63,10 @@ public class SqlDelightWordRepository(
     /**
      * 美音/英音音标缺失、零例句，或 Tatoeba 例句存在但译文为空（旧单串格式资产导入）。
      * SCR-SENSEATTR v6：存在词典例句（TATOEBA/AI_GENERATED）也视为需回填——例句归属/译文
-     * 随资产演进（v6 重归位），diff 幂等，收敛后零写入；每次 lookup 多一次本地词典查询
-     * （~ms 级）+ 一次以读为主的空事务，v1 接受。
+     * 随资产演进（v6 重归位），diff 幂等，收敛后零写入。
+     * SCR-SENSEATTR v7：任一释义 meaningCN 空白也触发（资产 v7 补译空白中文，已导入词
+     * 靠回填自愈）；每次 lookup 多一次本地词典查询（~ms 级）+ 一次以读为主的空事务，
+     * v1 接受。
      */
     private fun needsEnhancementBackfill(detail: WordDetail): Boolean {
         val examples = detail.examplesByEntryId.values.flatten()
@@ -76,6 +79,7 @@ public class SqlDelightWordRepository(
         }
         return detail.word.ipaAm.isNullOrBlank() ||
             detail.word.ipaBr.isNullOrBlank() ||
+            detail.entries.any { it.meaningCN.isBlank() } ||
             examplesIncomplete ||
             hasDictionaryExamples
     }

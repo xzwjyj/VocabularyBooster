@@ -24,8 +24,9 @@ CREATE TABLE DictEntry(
   examples     TEXT NOT NULL,     -- 紧凑 JSON [["英文原句","中文译文",defIdx(,"g")],…]（v6 起逐释义归属；"g"=AI 生成兜底）
   ipaBr        TEXT               -- 英音音标（ipa-dict en_UK；可空——短语/长尾无英音属预期）
 ) WITHOUT ROWID;
--- PRAGMA user_version = 6：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 /
---   v5 ipa-dict 英音+美音补缺 / v6 例句逐释义归属 + 全量重译 + 生成兜底；v7 = 第二批零例句词条按词频递补）。
+-- PRAGMA user_version = 8：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 /
+--   v5 ipa-dict 英音+美音补缺 / v6 例句逐释义归属 + 全量重译 + 生成兜底；v7 = 第二批零例句词条按词频递补 +
+--   释义中文补译；v8 = -illion 词族上标记号伪译文修复（3 释义，含 blank-EN 手工补齐））。
 -- 版本 = 修订号：数据重建也必须递增，否则设备端同 user_version 的旧缓存不会重拷（BundledDictionaryProvider）
 ```
 
@@ -73,6 +74,32 @@ node llm_tasks.js generate           # 缺口释义生成（"g:" 键）
 node llm_tasks.js translate          # 无译文句重译（"t:" 键；失败重试一次后 parked llm_failed.jsonl，
                                      #  收尾重跑同命令即自动重试 parked）
 node build_v6.js                     # 合并 v5×attributed×llm_out → v6 资产（缺译/缺生成 FATAL；崩溃安全换盘）
+# 7. 第二批零例句词条 + 释义中文补译（SCR-SENSEATTR §7 v2）→ user_version=7
+#    d:：blank meaningCN 释义补译；gen2:：零例句词条逐释义生成（bnc/frq 词频序，常用词先行）
+#    校验器 wordPresent 经六轮「词典记号等价」放宽（sth/sb 占位、be 形式、词头冠词可选、
+#    one's/oneself↔物主/反身类、a/b 占位通配（≥3 实词锚）、连字符断行合并、OSA 换位模糊、
+#    tail 屈折后缀白名单——"take off" 不吞 "take office"）；每轮放行必带应拒反例
+#    （test_wordpresent_v4.js，39 用例）。实绩终数见 DECISION_LOG（d: 74,873 已全收口含 56 人工）
+node llm_tasks.js defs               # 释义补译（"d:" 键；键公式 = d:word#defIdx#en.slice(0,60)，
+                                     #  与 build_v6.js fillDefinitionCn 两处逐字一致）
+node llm_tasks.js gen2               # 零例句词条生成（"g:" 键；自动跳过 parked≥2 硬洞防重启重磨）
+node llm_tasks.js gen2sweep          # 批尾终扫：无视跳过全量重试一次
+node %TEMP%/enrich_work/replay_promote.js --write   # 校验器放宽后重放历史拒稿，零 GPU 回收晋级
+node build_v6.js check               # 覆盖审计（缺译/缺生成/blank-CN 全 FATAL）
+node build_v6.js                     # 写 v7 资产（user_version=7；备份落 %TEMP% 不入 assets）
+# 8. -illion 词族记号伪译文修复（SCR-SENSEATTR §7 v3，用户报告 2026-10-10）→ user_version=8
+#    ECDICT translation 的上标转义记号（"10#[57]" = 10^57）是不可读伪中文；fillDefinitionCn
+#    将其视同空白，由手写 "d:" 条目替换（hand_d3.js，3 释义；hit.en 可选补齐 blank meaningEN）。
+#    实绩：defCnFilled 74,873→74,876，defCnGarbageKept=0；垃圾无条目时保留原文不 FATAL。
+node %TEMP%/enrich_work/hand_d3.js --write
+node build_v6.js check               # 期望 problems=0 + defCnFilled=74,876 + 三词 probe 正常中文
+node build_v6.js                     # 写 v8 资产（user_version=8）
+# ⚠ 管线单向性：build_v6.js 以「当前资产」为源重建——v7/v8 产物的零例句词已带生成例句，
+#   再跑会被当 stale-exampled-word FATAL。**重建必须先把阶段备份回置为源**：
+#   cp %TEMP%/enrich_work/ecdict.sqlite.v6.bak ../../app/src/main/assets/dict/ecdict.sqlite
+#   （llm_out.jsonl 追加不改旧键 → 同输入确定性重建；v7/v8 现网产物各自有 .bak 在 %TEMP%）
+# ⚠ Kotlin 门禁：DICT_ASSET_VERSION（BundledDictionaryProvider）必须与 user_version 同步递增，
+#   忘改 = 设备静默不更新（v7 装机实录教训）。
 ```
 
 运行时分工注记：本机 CPython 在语料扫描上确定性段错误（机器级故障）——

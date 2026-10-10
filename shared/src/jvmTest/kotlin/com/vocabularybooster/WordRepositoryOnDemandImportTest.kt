@@ -20,7 +20,8 @@ import kotlin.test.assertTrue
  * DictionaryProvider 用 Fake（Android 资产侧另有 BundledDictionarySmokeTest 走真 asset）。
  * 边界：源命中 → 导入后返回且二次查询不重复导入 / 源未收录 → null 且库零增长 /
  * DB 已有非词典增强词 → 不再打扰词典源（SCR-SENSEATTR v6：词典例句词每次 lookup
- * 走幂等重归位 diff——仍咨询词典源，但收敛后零写入，不重复导入）。
+ * 走幂等重归位 diff——仍咨询词典源，但收敛后零写入，不重复导入；v7：释义中文空白
+ * 也触发咨询——填满即收敛，见 blankMeaningCnVideoWordConsultsOnceThenConverges）。
  */
 class WordRepositoryOnDemandImportTest {
 
@@ -145,5 +146,26 @@ class WordRepositoryOnDemandImportTest {
         val detail = repo.lookup("legion")
         assertNotNull(detail)
         assertTrue(detail.entries.isNotEmpty())
+    }
+
+    @Test
+    fun blankMeaningCnVideoWordConsultsOnceThenConverges() = runTest {
+        // SCR-SENSEATTR v7：视频例句词音标齐全但释义中文空白 → 回填门新增触发条件，
+        // 首查咨询自愈；填满后二次查询不再打扰词典源（幂等收敛）
+        val blankCnWord = videoExampledWord.copy(
+            definitions = listOf(
+                videoExampledWord.definitions[0].copy(meaningCN = ""),
+            ),
+        )
+        importer.import(listOf(blankCnWord))
+        val provider = FakeProvider(word = videoExampledWord) // 词典侧中文齐备
+        val repo = SqlDelightWordRepository(db.database, provider, importer, DispatchersForTest)
+
+        val first = repo.lookup("legion")!!
+        assertEquals("大批，众多", first.entries[0].meaningCN) // 空白 → 词典值填充
+        assertEquals(1, provider.calls)
+
+        repo.lookup("legion") // 收敛：填满后不再咨询
+        assertEquals(1, provider.calls)
     }
 }
