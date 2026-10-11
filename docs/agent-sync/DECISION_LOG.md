@@ -405,3 +405,30 @@
 **走查疑似缺陷撤案（同日）**：「每会话仅首次按需导入落库」经确定性 UI 驱动（dump→定位→tap→逐步断言）证伪——同进程 quokka+narwhal、终版 APK okapi+pangolin 双双导入成功；真相=走查方法缺陷（详情页无输入框裸 tap 丢字 + 输入框带旧词时 input text 追加拼串 → 正常 miss）。10-08「install -r 后首会话失效」同因一并撤案。app 代码零变更。
 **文档**：SCR §7（v2）/ §8（v3 + §8.4 撤案复盘）/ tools/dict README（v7 第 7 步 + v8 第 8 步 + 管线单向性与 Kotlin 门禁警示）/ TEST_PLAN v2.33（TC-DICTATTR-09…13）。
 **发布**：v1.3.0（versionCode 4）；资产 v7+v8 均 344,498,176 字节（user_version 7/8），APK ~712MB 走 GitHub Release 附件。
+
+### SCR-IPACOVERAGE: 单词+短语双音标全量补齐（2026-10-10 全收口，装机走查四项全过）
+
+**问题**：用户装机报告「flayer 没有音标」——词条完整但 ECDICT 源库 phonetic 空（长尾）且 ipa-dict 不收（收 slayer 不收 flayer）；系统性缺口 = 单词 449,387 中美音缺 216,724 / 英音缺 385,080，短语 387,011 中英音恒 0。
+**决策**（用户批准 SCR；批准时扩裁「短语也要补」，D3 v2）：
+- 引擎 = espeak-ng 1.51（GPL，构建期工具不入 APK）：`msiexec /a` 便携镜像 + UCRT app-local（`System32\downlevel\api-ms-win-crt-*.dll`+`ucrtbase.dll`；7-Zip 直解包 MSI 扁平化目录否决；Win10 19045 必需）。gruut（美英同形+重音符位错）/ piper-phonemize（索引无包）/ LLM（不可审计）实测否决。
+- 记法：espeak 真 IPA 原样入列，主重音符置于音节核前（`mˈeɪkɚ`）；三记法并存（ADR-010 延续）；**不做机器归位**（朴素左移会把 kənˈfɜːm 错标 ˈkənfɜːm——coda/onset 切分需音节化知识）。
+- 范围：全部 836,398 条双列补空；**既有非空值零触碰**（ipa-dict/回填同口径）；短语音标=机器推断含连读弱化，「短语恒无英音」口径废止。
+- 交付：资产 v9（`user_version=9`）+ `DICT_ASSET_VERSION` 8→9 同步；零 schema 迁移；已导入词靠既有回填链路 lookup 自动收敛。
+**执行**：
+- pilot 500 词 + 300 短语分层双口音表（`%TEMP%/enrich_work/ipa_pilot_table.txt` / `ipa_pilot_phrase_table.txt`）用户签收后全量。质量判据全过：rhotic（flayer ɚ/ə）/ trap-bath（dance æ/a）/ lot（quokka ɑː/ɒ）/ 闪音（distributist ɾ/t）/ yod（vendue master）。
+- `tools/dict/fill_ipa.py`（入 git）两阶段：compute（espeak stdin 行模式 50k/块，行数守恒断言，.part 断点续传）+ apply（备份→单事务写库→user_version=9→全量校验）+ --check。
+- **实绩**：填充美音 585,782 + 英音 772,091；compute 613s + apply 36s；资产 344,498,176 → 410,787,840 字节（APK 712.6MB → 731.7MB，+19MB 压缩后）；校验 = 全量双列覆盖 + 既有值零改动 + probe（flayer 双填 / slayer/maker/zebra/octodecillion 既有值原样）。
+**执行期坑（实录）**：
+- **本机 CPython 在后台任务里 spawn subprocess 必段错误（两次 139 复现，前台同代码秒过）**——fill_ipa.py 必须前台跑；compute 超 600s 由 harness 转后台续跑存活（前台起跑的关键）。`cmd start` 脱离方案被 MSYS 引号绞杀不可用。
+- git-bash 后台/嵌套引号两坑再证：`start ""` 空标题被吞。
+- executemany 参数序反（SET ?/WHERE ? 传 (键,值)）→ 零命中静默通过 commit（user_version 已带 9 数据未动）——**写库后必须独立复核**，--check 模式即为此设；复位 user_version 后重跑正序修复。
+- build/ 被 Synology 同步污染（class not a regular file）→ `rm -rf shared/build app/build` 全清重编即好（既例复发）。
+- github.com 代理窗口 3 次重试恢复；msys2.org 同窗不可达。
+**测试**：零新用例（纯数据填充，回填行为已有 TC 覆盖）；门禁六项全绿（jvmTest / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug 731,679,501 字节）。
+**文档**：PROJECT_SPEC v1.31（FR-18 双音标全量补齐条款 + 版本记录）/ tools/dict README 第 9 步（引擎就位配方 + 实绩）/ .gitignore +espeak-ng-a/ / SCR / AUDIT / IMPLEMENTATION_PLAN。
+**装机走查（2026-10-10 深夜，vivo 折叠屏，四项全过）**：
+- **v8→v9 重拷门禁** ✓：v8 在位时升版 APK 首启自动重拷（~12s），`run-as` 验 filesDir 资产 410,787,840 字节逐字节相符 + `PRAGMA user_version=9`；flayer 设备行 `flayer|flˈeɪɚ|flˈeɪə` 与源资产一致。
+- **flayer 双音标显示** ✓：详情头部 US /flˈeɪɚ/ + UK /flˈeɪə/ 同屏双显（v8 时代该词双空零渲染）。
+- **probe 组同屏（三记法并存）** ✓：flay 卡片 US /flei/（ECDICT 类 DJ 既有值）+ UK /flˈeɪ/（v9 新填）同屏——既有值零触碰的直接证据。
+- **已导入词回填 + 幂等取证** ✓：clutch（app DB 原 `clutch||`）打开详情 → DB 变 `clutch|klʌtʃ|klˈʌtʃ`、mtime 1791679618→1791679804、屏幕双显；**二次 lookup 零写入**（行不变、mtime 冻结 1791679804、journal 0 字节且时间戳为 9-30 旧残留）——回填链路对 v9 资产自动收敛且幂等。
+- 走查方法沿既定铁律（dump 定位 + 清空输入框 + force-stop 重开取净字段；DEL keyevent 不可靠、input text 追加拼串坑再证）。

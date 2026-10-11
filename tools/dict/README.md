@@ -1,8 +1,8 @@
 # 随包全量词典（FR-18，Phase 8.6）
 
 查词兜底数据源：ECDICT（MIT License，<https://github.com/skywind3000/ECDICT>）1.0.28
-子集 → 只读 SQLite 随 APK 打包（`app/src/main/assets/dict/ecdict.sqlite`，约 123MB
-含 Tatoeba 例句，**不入 git**——本目录可再生，见下）。
+子集 → 只读 SQLite 随 APK 打包（`app/src/main/assets/dict/ecdict.sqlite`，v9 起 ~411MB
+含 Tatoeba 例句与全量双音标，**不入 git**——本目录可再生，见下）。
 
 ## 子集口径（用户裁决"全量 ~77 万词"）
 
@@ -24,9 +24,10 @@ CREATE TABLE DictEntry(
   examples     TEXT NOT NULL,     -- 紧凑 JSON [["英文原句","中文译文",defIdx(,"g")],…]（v6 起逐释义归属；"g"=AI 生成兜底）
   ipaBr        TEXT               -- 英音音标（ipa-dict en_UK；可空——短语/长尾无英音属预期）
 ) WITHOUT ROWID;
--- PRAGMA user_version = 8：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 /
+-- PRAGMA user_version = 9：资产版本（v1 无例句列 / v2 例句对格式 / v3 粗口过滤 / v4 全量中文翻译 /
 --   v5 ipa-dict 英音+美音补缺 / v6 例句逐释义归属 + 全量重译 + 生成兜底；v7 = 第二批零例句词条按词频递补 +
---   释义中文补译；v8 = -illion 词族上标记号伪译文修复（3 释义，含 blank-EN 手工补齐））。
+--   释义中文补译；v8 = -illion 词族上标记号伪译文修复（3 释义，含 blank-EN 手工补齐）；v9 = 单词+短语双音标
+--   espeak-ng 全量补齐，既有值零触碰（SCR-IPACOVERAGE））。
 -- 版本 = 修订号：数据重建也必须递增，否则设备端同 user_version 的旧缓存不会重拷（BundledDictionaryProvider）
 ```
 
@@ -94,6 +95,21 @@ node build_v6.js                     # 写 v7 资产（user_version=7；备份�
 node %TEMP%/enrich_work/hand_d3.js --write
 node build_v6.js check               # 期望 problems=0 + defCnFilled=74,876 + 三词 probe 正常中文
 node build_v6.js                     # 写 v8 资产（user_version=8）
+# 9. 单词+短语双音标全量补齐（SCR-IPACOVERAGE，2026-10-10）→ user_version=9
+#    espeak-ng 就位（一次性；本目录 espeak-ng-a/ 已 gitignore）：
+#      curl -sL -o %TEMP%/espeak-ng-x64.msi \
+#        https://github.com/espeak-ng/espeak-ng/releases/download/1.51/espeak-ng-x64.msi
+#      msiexec /a %TEMP%\espeak-ng-x64.msi /qn TARGETDIR=<本目录>\espeak-ng-a
+#      cp /c/Windows/System32/downlevel/api-ms-win-crt-*.dll "<本目录>/espeak-ng-a/eSpeak NG/"
+#      cp /c/Windows/System32/ucrtbase.dll               "<本目录>/espeak-ng-a/eSpeak NG/"
+#    ⚠ 7-Zip 直解包 MSI 会扁平化目录（voice 全失联）——必须 msiexec /a；UCRT 桩 Win10 19045 必需。
+#    ⚠ 本机 CPython 后台任务里 spawn subprocess 必段错误（两次实测）——fill_ipa.py 必须前台跑；
+#      compute 断点可续（.part 续行），超 10min 分多次前台调用即可。
+#    实绩（2026-10-10）：美音 585,782 + 英音 772,091 填充，既有值零改动；compute 613s + apply 36s；
+#    资产 344,498,176 → 410,787,840 字节。
+PYTHONIOENCODING=utf-8 python fill_ipa.py compute   # 阶段A：espeak 全量 -> %TEMP% 缓存（可续）
+PYTHONIOENCODING=utf-8 python fill_ipa.py apply     # 阶段B：备份+写库+校验（user_version=9）
+PYTHONIOENCODING=utf-8 python fill_ipa.py --check   # 独立复核（覆盖率/既有值零改动）
 # ⚠ 管线单向性：build_v6.js 以「当前资产」为源重建——v7/v8 产物的零例句词已带生成例句，
 #   再跑会被当 stale-exampled-word FATAL。**重建必须先把阶段备份回置为源**：
 #   cp %TEMP%/enrich_work/ecdict.sqlite.v6.bak ../../app/src/main/assets/dict/ecdict.sqlite

@@ -41,6 +41,7 @@ app/src/main/assets/dict/
 tools/dict/stardict.db
 tools/dict/*.zip
 tools/dict/__pycache__/
+tools/dict/espeak-ng-a/   # espeak-ng 便携镜像（msiexec /a 产物 + UCRT app-local，SCR-IPACOVERAGE）
 
 # ===== 神经 TTS 依赖（tools/tts-neural/fetch_deps.py 再生；均不入 git）=====
 shared/src/androidMain/jniLibs/
