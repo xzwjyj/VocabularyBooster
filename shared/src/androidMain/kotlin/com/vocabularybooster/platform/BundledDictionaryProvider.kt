@@ -167,8 +167,8 @@ public class BundledDictionaryProvider(
         const val DICT_DIR = "dict"
         const val DICT_FILE = "ecdict.sqlite"
 
-        /** 词典资产版本（tools/dict 管线写入 user_version）：v2 = 例句对格式，v3 = 例句数据修订（粗口过滤 + zh 优先重选），v4 = 全部例句中文翻译（opus-mt-en-zh），v5 = ipa-dict 英音音标 + 美音补缺，v6 = 例句逐释义归属 + 全量重译 + 生成兜底，v7 = 释义中文补译（blank-CN 补齐）+ 零例句词生成兜底，v8 = -illion 词族上标记号伪译文修复（3 释义，含 blank-EN 补齐），v9 = 单词+短语双音标 espeak-ng 全量补齐（SCR-IPACOVERAGE，既有值零触碰）。数据重建也必须递增本号。 */
-        const val DICT_ASSET_VERSION = 9
+        /** 词典资产版本（tools/dict 管线写入 user_version）：v2 = 例句对格式，v3 = 例句数据修订（粗口过滤 + zh 优先重选），v4 = 全部例句中文翻译（opus-mt-en-zh），v5 = ipa-dict 英音音标 + 美音补缺，v6 = 例句逐释义归属 + 全量重译 + 生成兜底，v7 = 释义中文补译（blank-CN 补齐）+ 零例句词生成兜底，v8 = -illion 词族上标记号伪译文修复（3 释义，含 blank-EN 补齐），v9 = 单词+短语双音标 espeak-ng 全量补齐（SCR-IPACOVERAGE，既有值零触碰），v10 = 例句译文术语审校批（SCR-EXREVIEW，qwen3:14b 判 ok 保留/fix 重译/regen 重生成，实改 6,053 行）。数据重建也必须递增本号。 */
+        const val DICT_ASSET_VERSION = 10
 
         /** DOMAIN_MODEL §3.1 规范序镜像（provider 分配职责归本类）。 */
         val POS_ORDER = mapOf(

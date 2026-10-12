@@ -432,3 +432,15 @@
 - **probe 组同屏（三记法并存）** ✓：flay 卡片 US /flei/（ECDICT 类 DJ 既有值）+ UK /flˈeɪ/（v9 新填）同屏——既有值零触碰的直接证据。
 - **已导入词回填 + 幂等取证** ✓：clutch（app DB 原 `clutch||`）打开详情 → DB 变 `clutch|klʌtʃ|klˈʌtʃ`、mtime 1791679618→1791679804、屏幕双显；**二次 lookup 零写入**（行不变、mtime 冻结 1791679804、journal 0 字节且时间戳为 9-30 旧残留）——回填链路对 v9 资产自动收敛且幂等。
 - 走查方法沿既定铁律（dump 定位 + 清空输入框 + force-stop 重开取净字段；DEL keyevent 不可靠、input text 追加拼串坑再证）。
+
+### SCR-EXREVIEW: 例句译文术语审校批（资产 v10，2026-10-11）
+
+**问题**：用户装机报告「nautiloid 例句把 the nautiloid shell 译成珍珠层」→ 用户裁决「类似其它词汇翻译不好的例子，也一起改掉」。
+**检出**（`%TEMP%/enrich_work/audit_term_mismatch.py`）：EN 例句含词头 + 译文与释义 CN 零共享汉字（tier-1）13,298 ∪ 模板幻觉句 3,301（重叠 2,248）= **14,351**；bigram 级 71,737 旗标误报为主（同义换词两字对全错开）不批。
+**决策**（用户批准方案 A + qwen3:14b；门禁 + 50 条抽检；签收期追加裁决 B 定向终审 late-anchor 池）：
+- `review_tasks.js`（入 git）：单行判定 OK/FIX/REGEN + 门禁（termOk 共享字或保留词头原文、「X的变形」无锚释义放宽；wordPresent/BLOCK_RE/长度标点只约束 REGEN）；失败纠正重试一次后 parked 不强写；渐进回收 repair（parked term 词 FIX-only）→ tighten（late-anchor 位疑 + haycocks 种子）→ detaint（ECDICT「[人名]」污染释义 83 词信 EN 重译、译文字符禁令）。
+- 写库分工（本机 CPython 全表扫描再段错误，AOR-007 类）：`review_plan.js`（Node）出计划 {updates/llmOverrides/未计划行抽样 1,987}，`apply_review.py` 只做备份+单事务+校验+llm_out 追加（尾部 30MB 精确行去重 → 重放幂等）。
+**实绩**：verdict 键 12,432 = ok 保留 5,903 + fix 3,963 + regen 2,143（实改 6,053 行；其余为与原文相同的零操作/失配 ok）。~1,919 parked 保留原文（模板句为主，`review_failed.jsonl` 留档）。资产 410,787,840 → 410,980,352 字节；`user_version=10` + `DICT_ASSET_VERSION` 9→10 同步。校验：nautiloid probe 手工签收句逐字在位 / 全库「珍珠层」=0 / 计划行 6,053 逐符相符 / 抽样 1,987 行零改动 / 总行数 836,398 不变；独立 `--check` 复跑全过。
+**手工签收 verdict 3 条**（模型 miss 的 SCR 探针词）：nautiloid（用户原报；逃过 tier-1 的实录——释义「鹦鹉螺类**动**物」与误译「海洋生**物**」共享「物」字，零共享字条件不成立）、aster turbinellis（REGEN 植物学正确句；其源释义本身是脏数据「[网络] 白ster」致模型无从判对）、hectically（纯中文重译去 "frenziedly" 夹英文）。追加后从 v9.bak 回置重放一次（计划数字自洽，llm_out 仅增 2 条新覆盖）。
+**残留**（用户知情）：REGEN 新句对 junk 词头（abor/a-going 类）仍生硬（词头术语在场但句子受词头限制）；binger 译文「冰毒」vs EN "crack cocaine" 药物类别小错位（术语「瘾君子」正确）；bigram 71,737 池不在本批。
+**文档**：SCR-EXREVIEW / IMPLEMENTATION_PLAN_EXAMPLE_REVIEW / tools/dict README 第 10 步 / 本日志；`llm_tasks.js` 仅 `require.main === module` 导出化微改（校验逻辑零变更）。

@@ -575,4 +575,8 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+if (require.main === module) {
+  main().catch((e) => { console.error(e); process.exit(1); });
+}
+// SCR-EXREVIEW: validators exported for review_tasks.js — logic unchanged.
+module.exports = { wordPresent, BLOCK_RE, validZh };

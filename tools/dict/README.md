@@ -110,10 +110,26 @@ node build_v6.js                     # 写 v8 资产（user_version=8）
 PYTHONIOENCODING=utf-8 python fill_ipa.py compute   # 阶段A：espeak 全量 -> %TEMP% 缓存（可续）
 PYTHONIOENCODING=utf-8 python fill_ipa.py apply     # 阶段B：备份+写库+校验（user_version=9）
 PYTHONIOENCODING=utf-8 python fill_ipa.py --check   # 独立复核（覆盖率/既有值零改动）
-# ⚠ 管线单向性：build_v6.js 以「当前资产」为源重建——v7/v8 产物的零例句词已带生成例句，
+# 10. 例句译文术语审校批（SCR-EXREVIEW，2026-10-11）→ user_version=10
+#    gen2 例句术语级误译（nautiloid→「珍珠层」级）：tier-1 零共享字 13,298 ∪ 模板幻觉句 3,301
+#    （重叠 2,248）= 14,351，逐条 qwen3:14b 判 OK 保留 / FIX 重译 / REGEN 整句重生成。
+#    门禁：termOk（译文与释义 CN 共享 CJK 字或保留词头原文；「X的变形」类无锚释义放宽）
+#    + wordPresent + BLOCK_RE + 长度/句末标点；parked 不强写；渐进回收 repair/tighten/detaint。
+#    实绩：ok 5,903 保留 / fix 3,963 / regen 2,143（实改 6,053 行）；~1,919 parked 保留原文。
+#    ⚠ 检出盲区实录：nautiloid 逃过 tier-1（释义「…动物」与误译「海洋生物」共享「物」字）——
+#      手工签收 verdict 直接追加 review_out.jsonl（键 = 词头#释义号#例句全文精确匹配）。
+node review_tasks.js run               # 审校批（resume-safe；sample/status/repair/tighten/detaint
+                                        #  子命令见文件头；qwen3:14b，OLLAMA_NUM_PARALLEL=8）
+node review_plan.js                    # Node 全表扫描出写库计划（CPython 扫描段错误纪律；
+                                        #  含 updates/llmOverrides/未计划行抽样）
+python apply_review.py apply           # 备份 v9 → 单事务 UPDATE → user_version=10 → 校验 →
+                                        #  llm_out.jsonl 追加 g: 覆盖（重建安全；尾部去重幂等）
+python apply_review.py --check         # 独立复核（nautiloid probe/珍珠层=0/计划行逐符/抽样零改动）
+# ⚠ 管线单向性：build_v6.js 以「当前资产」为源重建——v7+ 产物的零例句词已带生成例句，
 #   再跑会被当 stale-exampled-word FATAL。**重建必须先把阶段备份回置为源**：
 #   cp %TEMP%/enrich_work/ecdict.sqlite.v6.bak ../../app/src/main/assets/dict/ecdict.sqlite
-#   （llm_out.jsonl 追加不改旧键 → 同输入确定性重建；v7/v8 现网产物各自有 .bak 在 %TEMP%）
+#   （llm_out.jsonl 追加不改旧键 → 同输入确定性重建；v7+ 现网产物各自有 .bak 在 %TEMP%，
+#    v10 的 g: 覆盖已入 llm_out.jsonl → 重建自动携带本批修正）
 # ⚠ Kotlin 门禁：DICT_ASSET_VERSION（BundledDictionaryProvider）必须与 user_version 同步递增，
 #   忘改 = 设备静默不更新（v7 装机实录教训）。
 ```
@@ -126,5 +142,6 @@ Tatoeba 数据（sentences/links，~1.2GB 解压）不入 git、不随包，仅�
 
 `stardict.db`、`*.zip`、`app/src/main/assets/dict/` 均已 gitignore；
 `convert.py`、`enrich_node.js`、`attribute_senses.js`、`llm_tasks.js`、`build_v6.js`、
+`fill_ipa.py`、`review_tasks.js`、`review_plan.js`、`apply_review.py`、
 `nllb_translate.py`（留档）与本 README 入 git；`node_modules/`（wink-nlp）与
 `%TEMP%/enrich_work/` 中间产物不入 git。
