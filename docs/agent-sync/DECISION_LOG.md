@@ -444,3 +444,30 @@
 **手工签收 verdict 3 条**（模型 miss 的 SCR 探针词）：nautiloid（用户原报；逃过 tier-1 的实录——释义「鹦鹉螺类**动**物」与误译「海洋生**物**」共享「物」字，零共享字条件不成立）、aster turbinellis（REGEN 植物学正确句；其源释义本身是脏数据「[网络] 白ster」致模型无从判对）、hectically（纯中文重译去 "frenziedly" 夹英文）。追加后从 v9.bak 回置重放一次（计划数字自洽，llm_out 仅增 2 条新覆盖）。
 **残留**（用户知情）：REGEN 新句对 junk 词头（abor/a-going 类）仍生硬（词头术语在场但句子受词头限制）；binger 译文「冰毒」vs EN "crack cocaine" 药物类别小错位（术语「瘾君子」正确）；bigram 71,737 池不在本批。
 **文档**：SCR-EXREVIEW / IMPLEMENTATION_PLAN_EXAMPLE_REVIEW / tools/dict README 第 10 步 / 本日志；`llm_tasks.js` 仅 `require.main === module` 导出化微改（校验逻辑零变更）。
+
+### SCR-BGPLAYBACK: 熄屏/后台续播前台媒体服务（2026-10-13，FR-25 / PROJECT_SPEC v1.31）
+
+**问题**：用户报告「app 熄屏后播放停止」——targetSdk 35 无前台服务（Doze 杀 AudioTrack）+ 无 WakeLock + ExoPlayer 无 setWakeMode，三重缺失致熄屏即停。语音命令"会了"须降级为纯倒计时/按钮（FR-12 绝无后台持麦）。
+
+**决策**（用户选方案 A「继续播放（前台媒体服务）」+ 批准 IMPLEMENTATION_PLAN）：
+- plain `Service` + 手动 `ServiceCompat.startForeground(FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)` + 4h 有界 PARTIAL_WAKE_LOCK + 活跃 `MediaSession`（满足 Android 14 mediaPlayback 前台服务合规）。**不取 `MediaSessionService`**——前台时机须确定性（paused-start 下 MediaSessionService 自动升前台不确定）。
+- MediaSession 绑 `OrchestratorMirroringPlayer`（`ForwardingPlayer` 包 STATE_IDLE 桩 ExoPlayer，永不发声）：getter 合成 PlaybackState 投影（锁屏渲染），transport 覆写路由至控制器→编排器。
+- **前台服务生命周期 ↔ 传输态绑定**：`PlaybackForegroundController` 采集 `controls.state`，Playing/Paused/CommandWindow→`gateway.start()`（防重入），终态→`gateway.stop()`。服务进程内采集更新通知（差异签名，不每 100ms 刷）；不传状态快照——避 Android 12+ 后台启动前台服务限制。
+- **后台语音门禁**（FR-12 红线）：`BackgroundGatedSpeechCommandRecognizer` 包住两条装配路径产出（FallbackSpeechCommandRecognizer / 直连 Vosk），`isAvailable = delegate && appForeground`（combine+Eagerly），后台 `listenOnce` 短路 `Unavailable` 零调 delegate。
+- **熄屏竞态守护**：ProcessLifecycleOwner ON_STOP 时若处 CommandWindow 且 listening=true → 立即 pause 关麦（与门短路为兜底）；Playing/纯倒计时窗口不 pause（续播是目的）。
+- **循环打破**：`AppForegroundState`（DI 无依赖单例）作 appForeground 共享源——recognizer 读 / 控制器写，避免 recognizer→控制器→编排器→recognizer 循环。
+- `dispose()` 增设 Stopped 信号——**仅在拆解活跃传输态时发**（Playing/Paused/CommandWindow→Stopped；已 Idle/Completed/Stopped 不翻——`resumeSessionPropagatesBookDeletedAndStaysIdle` 契约「保持 Idle」依赖前置态不被 spurious 翻转）。
+- 铁律 8「切后台自动暂停」**废止**（PHASE_5 走查清单 + TEST_PLAN）——现为熄屏续播 + 语音后台门禁。
+
+**执行**（9 步）：Step 0 规格同步（PROJECT_SPEC FR-25 / AUDIO_ENGINE_SPEC §8 / ARCHITECTURE §1 / TEST_PLAN v2.34）→ Step 1 依赖（media3-session 1.5.1 + lifecycle-process 2.8.7 + manifest 4 权限+service mediaPlayback）→ Step 2 dispose() Stopped → Step 3 ExoPlayer setWakeMode(C.WAKE_MODE_LOCAL) → Step 4 BackgroundGatedSpeechCommandRecognizer + TC-BG-01 → Step 5 前台服务+控制器+MediaSession+通知（6 文件：PlaybackControls/PlaybackServiceGateway/OrchestratorMirroringPlayer/PlaybackForegroundService/PlaybackForegroundController + TC-BG-02/04）→ Step 6 DI 装配（AppModule 包 recognizer + 4 新绑定；App.onCreate 预装配控制器）→ Step 7 测试+门禁 → Step 8 收尾。
+
+**编译期坑（实录）**：
+- media3 1.5.1 `Player.Listener` 媒体项回调名是 `onMediaItemTransition`（非 `-ed` 后缀，javap 确认）；`onPlayWhenReadyChanged`/`onPlaybackStateChanged`/`onMediaMetadataChanged` 同常。
+- lifecycle 2.8.7 `Lifecycle.getCurrentState()` Kotlin 投影为属性 `currentState`（`override val`，非 `override fun`）——`addObserver`/`removeObserver` 仍是 fun。
+- `PlaybackForegroundService` companion 默认 private → 跨文件 gateway 取 ACTION_* 须 `companion object`（去 private）。
+- 本机 build/ 再被 Synology 同步污染（class/merger.xml "not a regular file"）→ `rm -rf shared/build app/build` 全清重编即好（既例复发，单次重编可过）。
+- `:shared:jvmTest` Gradle Test Executor 偶发 native segfault（"Connection reset by peer"）+ `ImportPerfTest.hundredThousandLinesImportWithinSixtySeconds` 在 Synology 同步目录 I/O 退化下超 60s——**重试即过**（非代码缺陷）。
+
+**测试**：5 新用例——TC-BG-01（后台语音门禁 5 例）/ TC-BG-02（前台服务 start/stop 绑定 2 例）/ TC-BG-03（dispose→Stopped DB 仍 ACTIVE）/ TC-BG-04（熄屏竞态 4 例）；门禁六项全绿（jvmTest 396 / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug）。dispose() 回归 `resumeSessionPropagatesBookDeletedAndStaysIdle` 已修（option B：仅传输态发 Stopped）。
+
+**文档**：SCR-BGPLAYBACK / IMPLEMENTATION_PLAN_BG_PLAYBACK / PROJECT_SPEC v1.31（FR-25）/ AUDIO_ENGINE_SPEC v2.13（§8 熄屏/后台续播契约 + setWakeMode + 双形态）/ ARCHITECTURE v1.1（§1 L40）/ TEST_PLAN v2.34（TC-BG-01..05 + 铁律 8 修订）/ PHASE_5 走查清单（铁律 8 废止）/ DECISION_LOG（本条）。v1.6.0（versionCode 7）。待装机走查（熄屏续播 / 后台门禁 / 通知栏控制 / 竞态关麦）。

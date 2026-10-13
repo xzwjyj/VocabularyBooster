@@ -3,6 +3,7 @@ package com.vocabularybooster.app
 import android.app.Application
 import android.util.Log
 import com.vocabularybooster.app.di.appModule
+import com.vocabularybooster.app.playback.PlaybackForegroundController
 import com.vocabularybooster.achievement.AchievementEngine
 import com.vocabularybooster.data.seed.SeedDictionaryProvider
 import com.vocabularybooster.data.seed.SeedImporter
@@ -42,6 +43,10 @@ class VocabularyBoosterApp : Application() {
         // 先于任何 UI 与完成事件——SharedFlow 无 replay，迟订阅丢历史事件）
         koinApp.koin.get<AchievementEngine>()
             .start(CoroutineScope(SupervisorJob() + Dispatchers.IO))
+        // FR-25（SCR-BGPLAYBACK）：前台控制器冷启动预装配——尽早注册 ProcessLifecycleObserver
+        // （先于首个 Activity ON_START，否则首窗 ON_STOP 漏捕→后台标志错），并确定编排器在主线程构造
+        // （同 AudioPlayer 先例）；Idle 初态不升前台服务，纯注册 + 采集。
+        koinApp.koin.get<PlaybackForegroundController>()
         // 首启词库导入：幂等（ensureSeeded 空库才导）；失败仅记日志，不阻断启动
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { seedImporter.ensureSeeded(seedProvider) }

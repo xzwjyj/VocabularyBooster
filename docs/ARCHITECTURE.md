@@ -37,7 +37,7 @@
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**数据流**：UI 事件 → ViewModel → 引擎方法 → 引擎驱动（注入的）平台端口 → 状态经 StateFlow 回 UI。引擎自驱循环播放，不依赖 UI 存活（后台/熄屏仍可续播的潜力保留）。
+**数据流**：UI 事件 → ViewModel → 引擎方法 → 引擎驱动（注入的）平台端口 → 状态经 StateFlow 回 UI。引擎自驱循环播放，不依赖 UI 存活（后台/熄屏续播 = FR-25 已实现：app 层 `PlaybackForegroundService` mediaPlayback 前台服务 + PARTIAL_WAKE_LOCK + `BackgroundGatedSpeechCommandRecognizer` 后台语音门禁，业务规则由 `PlaybackOrchestrator.state` + `ProcessLifecycleOwner` 驱动，不新增 commonMain 端口）。
 
 ## 2. 技术选型决策（ADR 摘要）
 
@@ -178,3 +178,4 @@ interface TextLineSource { fun lines(encoding: DetectedEncoding): Flow<String> }
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | 1.0 | 2026-09-01 | Phase 0 初版 |
+| 1.1 | 2026-10-12 | §1 L40「后台/熄屏续播潜力保留」→「已实现（FR-25）」——app 层 `PlaybackForegroundService`（mediaPlayback FGS + PARTIAL_WAKE_LOCK + MediaSession）+ `BackgroundGatedSpeechCommandRecognizer` 后台语音门禁；§5 端口矩阵不新增（app 层组件，非 commonMain 端口）。零跨平台边界影响。上游：PROJECT_SPEC v1.31 / AUDIO_ENGINE_SPEC v2.13 |

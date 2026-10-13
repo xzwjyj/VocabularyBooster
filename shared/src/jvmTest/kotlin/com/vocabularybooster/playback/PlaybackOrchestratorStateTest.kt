@@ -663,6 +663,28 @@ class PlaybackOrchestratorStateTest {
         h.orchestrator.dispose()
     }
 
+    // —— TC-BG-03（SCR-BGPLAYBACK / FR-25）：dispose() 置 Stopped 内存信号——DB 会话不动仍 ACTIVE ——
+
+    @Test
+    fun disposeSetsStoppedSignalWhilePreservingDbSession() = runTest {
+        val db = TestDb.inMemory()
+        val h = Harness(db, backgroundScope)
+        val (bookId, wordIds) = db.seedBook(listOf("alpha"))
+        h.content.contents[bookId to wordIds[0]] = standardContent(wordIds[0], "alpha")
+        assertIs<StartResult.Started>(h.orchestrator.startSession(bookId))
+        runCurrent()
+        assertIs<PlaybackState.Playing>(h.orchestrator.state.value) // 已起播
+        val ttsStopsBefore = h.tts.stopCount
+
+        h.orchestrator.dispose() // onCleared：停驱动 + 停端口 + 置 Stopped 内存信号
+        runCurrent()
+
+        assertIs<PlaybackState.Stopped>(h.orchestrator.state.value) // 内存态信号
+        assertTrue(h.tts.stopCount > ttsStopsBefore) // 端口停（既有取消顺序不变）
+        // DB 会话不动——仍 ACTIVE 可 resume（dispose 仅内存态，学习历史真相在库）
+        assertEquals(SessionStatus.ACTIVE, h.sessionRepo.getSession(1L)!!.status)
+    }
+
     // —— TC-AE-11：双语逐段切换 + rate/pitch 取设置（SPELLING 0.8×）——
 
     @Test

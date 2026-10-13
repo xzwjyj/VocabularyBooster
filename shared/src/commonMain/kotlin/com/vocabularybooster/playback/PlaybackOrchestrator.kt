@@ -280,11 +280,23 @@ public class PlaybackOrchestrator(
         result
     }
 
-    /** 释放（宿主 onCleared）：停驱动 Job 与播放端口；不动会话状态（学习历史真相在库）。 */
+    /**
+     * 释放（宿主 onCleared）：停驱动 Job 与播放端口；置内存态 Stopped 信号驱动前台控制器停服务。
+     * `_state=Stopped` 仅内存态——DB `LearningSession` 仍 ACTIVE（resumable），与既有崩溃恢复/
+     * 位置持久化语义零变化（学习历史真相在库）；`sessionOwned` 守卫防新屏误消费 Stopped。
+     * （FR-25 / SCR-BGPLAYBACK：onCleared 仅 Activity 真正 finishing 触发，旋转/熄屏不清 VM。）
+     */
     public fun dispose() {
         stepJob?.cancel()
         synthesizer.stop()
         audioPlayer.stop()
+        // FR-25：仅在拆解活跃传输态时发 Stopped——驱动前台控制器停服务（DB 会话仍 ACTIVE）。
+        // 已 Idle/Completed/Stopped 不翻——resumeSession 拒绝路径契约「保持 Idle」依赖前置态不被 spurious 翻转
+        // （resumeSessionPropagatesBookDeletedAndStaysIdle：dispose 后 resume 被拒须仍 Idle）。
+        val s = _state.value
+        if (s is PlaybackState.Playing || s is PlaybackState.Paused || s is PlaybackState.CommandWindow) {
+            _state.value = PlaybackState.Stopped
+        }
     }
 
     // —— 驱动循环（单一 Job；CancellationException 顺着协程取消自然退出）——

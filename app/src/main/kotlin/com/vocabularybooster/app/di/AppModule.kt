@@ -19,6 +19,14 @@ import com.vocabularybooster.app.ui.WordSelectionEditorViewModel
 import com.vocabularybooster.app.ui.WordDetailViewModel
 import com.vocabularybooster.platform.BundledDictionaryProvider
 import com.vocabularybooster.playback.AudioPlayer
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.vocabularybooster.app.playback.AndroidPlaybackServiceGateway
+import com.vocabularybooster.app.playback.AppForegroundState
+import com.vocabularybooster.app.playback.OrchestratorPlaybackControls
+import com.vocabularybooster.app.playback.PlaybackControls
+import com.vocabularybooster.app.playback.PlaybackForegroundController
+import com.vocabularybooster.app.playback.PlaybackServiceGateway
+import com.vocabularybooster.app.speech.BackgroundGatedSpeechCommandRecognizer
 import com.vocabularybooster.playback.PlaybackOrchestrator
 import com.vocabularybooster.platform.AndroidDatabaseDriverFactoryProvider
 import com.vocabularybooster.platform.AndroidLogSink
@@ -96,7 +104,7 @@ val appModule = module {
             }
             android.util.Log.i("VB-SpeechEngine", "vosk prewarm finished: isAvailable=${vosk.isAvailable.value}")
         }
-        when (SpeechEnginePolicy.select(systemAvailable)) {
+        val delegate: SpeechCommandRecognizer = when (SpeechEnginePolicy.select(systemAvailable)) {
             SpeechEngineKind.SYSTEM_SERVICE -> FallbackSpeechCommandRecognizer(
                 primary = vosk,                    // Vosk：已预加载、响应瞬时、零盲区（主引擎）
                 secondary = AndroidSpeechCommandRecognizer(ctx),  // 系统引擎：仅主引擎硬失败时回退
@@ -104,6 +112,10 @@ val appModule = module {
             )
             SpeechEngineKind.EMBEDDED_VOSK -> vosk
         }
+        // FR-25（SCR-BGPLAYBACK）：后台语音门禁 wrapper——包住两条装配路径产出，作 SpeechCommandRecognizer
+        // 唯一出口（后台 → isAvailable=false / listenOnce 短路 Unavailable，FR-12 后台持麦红线）。
+        // appForeground 源 = AppForegroundState（DI 无依赖单例，与控制器共享——打破 recognizer→控制器→编排器→recognizer 循环）。
+        BackgroundGatedSpeechCommandRecognizer(delegate, get<AppForegroundState>().flow, speechScope)
     }
     single { CommandParser() }
     // Phase 8.6（FR-18）：复合词典源——精选种子优先（含例句），随包全量词典兜底（无例句）；
@@ -135,6 +147,21 @@ val appModule = module {
             recognizer = get(),
             commandParser = get(),
             eventBus = get(), // Phase 6：与勋章引擎同一总线实例（发布/订阅对偶）
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        )
+    }
+
+    // FR-25（SCR-BGPLAYBACK）：熄屏/后台续播 DI 装配——前台媒体服务 + 控制器 + appForeground 共享源。
+    // AppForegroundState 无依赖单例——打破 recognizer→控制器→编排器→recognizer 循环（recognizer 与控制器共享同一实例）。
+    single { AppForegroundState() }
+    single<PlaybackControls> { OrchestratorPlaybackControls(get<PlaybackOrchestrator>()) }
+    single<PlaybackServiceGateway> { AndroidPlaybackServiceGateway(androidContext()) }
+    single {
+        PlaybackForegroundController(
+            controls = get<PlaybackControls>(),
+            gateway = get<PlaybackServiceGateway>(),
+            lifecycle = ProcessLifecycleOwner.get().lifecycle,
+            appForegroundState = get<AppForegroundState>(),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         )
     }

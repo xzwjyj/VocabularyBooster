@@ -62,6 +62,7 @@ public class Media3AudioPlayer(
     private val player: ExoPlayer = ExoPlayer.Builder(appContext)
         .setAudioAttributes(EXO_AUDIO_ATTRIBUTES, /* handleAudioFocus = */ false)
         .setHandleAudioBecomingNoisy(true)
+        .setWakeMode(C.WAKE_MODE_LOCAL) // FR-25（SCR-BGPLAYBACK）：双重保险——服务级 PARTIAL_WAKE_LOCK 为主，ExoPlayer 自管例句原声段为辅（引用计数并存）
         .build()
 
     private val _progressMs = MutableStateFlow<Long?>(null)

@@ -206,6 +206,8 @@
 
 **应用图标（bug#4）**：装机目视走查项（自适应图标 + 主题图标），无自动化用例。
 
+**熄屏/后台续播（SCR-BGPLAYBACK，v2.34 已登记，TC-BG-01…05）**：FR-25 v1.31——熄屏/后台音频续播（mediaPlayback 前台服务 `PlaybackForegroundService` + PARTIAL_WAKE_LOCK + Media3 MediaSession/ForwardingPlayer 桩 + MediaStyle 通知五控制）+ FR-12 后台语音门禁（`BackgroundGatedSpeechCommandRecognizer` wrapper 后台 `isAvailable=false` + `listenOnce` 短路 `Unavailable`，CommandWindow 复用 D2 纯倒计时）+ `dispose()` 增设 Stopped 内存信号（DB 会话不动仍可 resume）。app 单测 `BackgroundGatedSpeechCommandRecognizerTest`（**01**：Fake delegate + MutableStateFlow 前台标志；前台 true → `isAvailable` 随 delegate / `listenOnce` 透传；false → `isAvailable` 恒 false / `listenOnce` 返 `Unavailable` 零调用 delegate——FR-12 后台持麦红线）+ `PlaybackForegroundControllerTest`（**02** 状态映射：Playing/Paused/CommandWindow → `desiredForeground=true`、Idle/Stopped/Completed → false、同状态重复不重启服务 Fake Gateway 计数；**04** 熄屏竞态：ON_STOP + CommandWindow.listening → 调 `pause()`、ON_STOP + Playing → 不动续播、ON_START 零控制）；jvmTest `PlaybackOrchestratorStateTest` 增（**03** `disposeSetsStoppedPreservesDbSession`：Fake 引擎断言 LearningSession 仍 ACTIVE、`_state.value==Stopped`；既有 dispose/重启用例全回归——取消顺序不变）；androidTest 冒烟可选（**05** `startForegroundService` 通知可见 + MediaSession active；模拟器无 Doze，Doze 归真机走查）。纯 app 层组件 + commonMain 1 行内存信号，端口接口零改动、SherpaOnnx 零改动、零 schema 变更。装机走查：vivo 熄屏续播跨多词持续 1 分钟+ / 后台 CommandWindow 无麦纯倒计时走完 advance / 通知栏 Pause·Next·Exit 可用 / 拔耳机仍自动暂停 / 拒通知权限前台续播仍生效。
+
 ## 5. FR 追踪矩阵（需求 → 用例）
 
 | FR | 用例组 |
@@ -232,6 +234,7 @@
 | FR-22 | TC-UI 口音组（jvmTest SegmentBuilder 映射 + 编排器口音段 + 设置键往返 + 回填组英音 / app 单测 VM 口音 + TtsLocales EN_GB / androidTest 设置冒烟；装机走查双显与口音朗读）+ TC-IPAPRON 组（v1.24 音标旁试听） |
 | FR-23 | TC-AE-30 路由组（jvmTest LangRoutedSpeechSynthesizerTest 9：路由 / 非 READY 走系统 / 异常同段回退粘滞 / 取消红线 / stop 双转发 / 音色联动 / readiness 投影）；神经 actual 装机走查（自然度 / 英音 / 缓存命中 / 降级不中断） |
 | FR-24 | TC-AE-31 ZH 族组（jvmTest LangRoutedSpeechSynthesizerTest 5：全语言路由 / ZH 非 READY 走系统 / ZH 异常回退粘滞 / 每族独立 / ZH 取消与音色联动）+ TC-AE-32 数字归一化组（jvmTest ZhTtsTextNormalizerTest 边界表，SCR-ZHNUM）；melo actual 装机走查（中文自然度 / 首播延迟与缓存 / 双预热 / EN↔ZH 驻留与 PSS；数字读音装机复验） |
+| FR-25 | TC-BG 组（app 单测 01 后台门禁 / 02 控制器状态映射 / 04 熄屏竞态 + jvmTest 03 dispose Stopped 信号保 DB 会话 + androidTest 05 通知冒烟）；装机走查（熄屏续播跨多词 / 后台纯倒计时 / 通知栏五控制 / 拔耳机 / 拒权限续播）+ TC-AE-06 互证（TTS 期间零识别调用） |
 
 ## 6. 覆盖率门槛（Kover，Phase 质量门）
 
@@ -251,7 +254,7 @@
 | 音频焦点 | 来电/其他 App 抢焦点 → 自动暂停，回归焦点不自动播放（安全） |
 | 权限流 | 麦克风拒绝 → 降级路径可用（NFR-8） |
 | 大文件真机 | 5 万行 GBK 真机导入时长 + 取消 |
-| 熄屏/后台 | 会话状态与音频焦点行为符合预期 |
+| 熄屏/后台续播（FR-25） | 熄屏/后台音频续播（跨多词持续 1 分钟+）；后台 CommandWindow 无麦指示纯倒计时走完 advance；通知栏 Pause/Next/Exit 可用；拔耳机仍自动暂停；拒通知权限前台续播仍生效（通知不可见） |
 
 ### 7.1 Phase 5 真机验收（M1–M4，ROADMAP Phase 5 出口，裁决 D-E）
 
@@ -265,7 +268,7 @@
 | M1 | 正常语音命令：授权 → 重启（进程内不自动恢复为设计语义）→ 窗口内说「会了」→ 恰一次掌握 + 立即下一词；同窗重复命令（语音后补按钮 / 按钮后补语音）不重复 advance | 全步骤符合预期 | ☐ PASS ☐ FAIL（待真机执行） |
 | M2 | 识别率：安静环境、明确发音，三别名 会了/记住了/掌握了 各 ≥10 次 | 命中率 = 命中次数 / 总说命令次数 ≥ 90%（Timeout 不计分母） | ☐ PASS ☐ FAIL（待真机执行） |
 | M3 | 权限拒绝：新装拒绝 → 不崩溃 + 整窗降级倒计时 + 「会了」按钮仍可用；重启后绝不自动申请权限 | 全步骤符合预期 | ☐ PASS ☐ FAIL（待真机执行） |
-| M4 | 无后台监听：Playing 期间零麦克风指示；窗口内监听属正常；Pause/Exit/离开学习屏即消失 | 窗口外零麦克风活动 | ☐ PASS ☐ FAIL（待真机执行） |
+| M4 | 无后台监听：Playing 期间零麦克风指示；窗口内监听属正常；Pause/Exit/离开学习屏即消失；**FR-25 后台门禁**：熄屏/后台 `isAvailable=false` 纯倒计时（零麦活动），音频续播不停 | 窗口外零麦克风活动 | ☐ PASS ☐ FAIL（待真机执行） |
 
 ## 8. CI 计划（Phase 1 落地）
 
@@ -327,3 +330,4 @@
 | 2.31 | 2026-10-01 | **TXT 导入多词短语修正用例登记（用户实录缺陷 / FR-14 v1.29）**：新增 **TC-IMP-16**（commonTest `LineParserTest` 短语组 3 + 既有 2 用例期望反转（`take off`→短语、`hello world,你好`→逗号级短语+译文）+ jvmTest `ImportEngineTest` 短语富化 1）；FR 矩阵 FR-14 行注记。装机走查项（`roll out` 导入为短语整词 / 短语+译文两形态）。上游：PROJECT_SPEC v1.29、IMPORT_SPEC v1.5 |
 | 2.32 | 2026-10-01 | **点卡跳段用例登记（SCR-SEGMENTSEEK / FR-11 v1.30）**：新增 **TC-AE-35**（jvmTest `PlaybackOrchestratorStateTest` seek 组 8 + app 单测 `LearningSessionViewModelTest` J3 转发 1）；FR 矩阵 FR-11 行注记。装机走查项（点卡跳段体感 / 快速连点 / 窗口倒计时中点卡 / 暂停态点卡后 Resume）。上游：PROJECT_SPEC v1.30、AUDIO_ENGINE_SPEC v2.12 |
 | 2.33 | 2026-10-10 | **释义中文自愈用例登记（SCR-SENSEATTR v7/v8 / FR-18，资产 v7+v8）**：新增 **TC-DICTATTR-09…13**（jvmTest `SeedImporterTest` v7 组 3：对位填充 / 非空白绝不覆盖 / 非对齐词条零写入 + `WordRepositoryOnDemandImportTest` v7 组 2：lookup 词典回填 / 视频词咨询一次收敛）；FR 矩阵 FR-18 行注记。装机走查项（metrics 自愈 / 新部分中文词 / gen2 样本 / 兜底词 + v8 三词 UI 中英文）。上游：`SPEC_CHANGE_REQUEST_SENSE_ATTRIBUTION.md` §7/§8、DECISION_LOG SCR-SENSEATTR v7+v8 |
+| 2.34 | 2026-10-12 | **熄屏/后台续播用例登记（SCR-BGPLAYBACK / FR-25 v1.31）**：新增 **TC-BG-01…05**（app 单测 `BackgroundGatedSpeechCommandRecognizerTest` 01 后台门禁 + `PlaybackForegroundControllerTest` 02 状态映射 / 04 熄屏竞态；jvmTest `PlaybackOrchestratorStateTest` 03 `dispose()` 增 Stopped 内存信号保 DB 会话仍 ACTIVE；androidTest 05 通知 + MediaSession 冒烟可选）；§7 熄屏/后台行重写为续播 + 后台门禁；M4 增 FR-25 后台门禁注记（熄屏/后台 `isAvailable=false` 纯倒计时、音频续播不停）；FR 矩阵 +FR-25 行。**撤销铁律 8「切后台自动暂停 = 设计行为」（v2.5 登记、原 M2 统计口径）**→ 改为「熄屏/后台续播 + 语音后台门禁」——`PHASE_5_REAL_DEVICE_ACCEPTANCE_CHECKLIST.md` 同步修订铁律 8。装机走查项（熄屏续播跨多词持续 1 分钟+ / 后台 CommandWindow 纯倒计时走完 advance / 通知栏五控制 / 拔耳机仍自动暂停 / 拒通知权限前台续播）。上游：PROJECT_SPEC v1.31、AUDIO_ENGINE_SPEC v2.13、ARCHITECTURE v1.1、`SPEC_CHANGE_REQUEST_BG_PLAYBACK.md`、DECISION_LOG SCR-BGPLAYBACK ADR-013 |

@@ -14,8 +14,8 @@ android {
         applicationId = "com.vocabularybooster"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -61,6 +61,14 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.koin.android)
     implementation(libs.koin.androidx.compose)
+    // FR-25（SCR-BGPLAYBACK）：熄屏/后台续播——前台媒体服务 MediaSession + ProcessLifecycleOwner 前台标志
+    // media3-exoplayer：app 内 OrchestratorMirroringPlayer 包一个 STATE_IDLE 桩 ExoPlayer（ForwardingPlayer 非空委托；
+    //   :shared 的 implementation 不向 app 透出编译类路径，故 app 显式声明）
+    // media3-session：MediaSession + ForwardingPlayer（活跃会话满足 Android 14 mediaPlayback 前台服务合规）
+    // lifecycle-process：ProcessLifecycleOwner 应用级前台/后台标志
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.kotlinx.datetime) // Phase 6：shared 域模型公开 API 暴露 Instant（Achievement.earnedAt 等），app main 消费需在编译类路径（与既有 test 源集同版本目录项）
 
     testImplementation(libs.junit)

@@ -12,6 +12,12 @@
         </intent>
     </queries>
 
+    <!-- FR-25（SCR-BGPLAYBACK）：熄屏/后台续播前台媒体服务（mediaPlayback 类型 + WakeLock + 通知栏控制） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".VocabularyBoosterApp"
         android:icon="@mipmap/ic_launcher"
@@ -28,6 +34,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- FR-25（SCR-BGPLAYBACK）：熄屏/后台续播前台媒体服务（PlaybackForegroundController 驱动启停） -->
+        <service
+            android:name=".playback.PlaybackForegroundService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
     </application>
 
 </manifest>

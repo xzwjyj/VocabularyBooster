@@ -208,6 +208,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | **Exit** | 退出会话，触发 FR-9 流程（若整本未完成） |
 
 - **验收**：Pause→Resume 恢复到同一 Segment 的同一进度（文件音频恢复到 offsetMs；TTS Segment 允许整段重读——系统 TTS 无 seek 能力，属已确认的平台限制，但**不得**回到 Word 开头）；Next/Previous/Replay/Seek 不改变任何词的掌握状态。
+- **通知栏控制（v1.31，FR-25 扩展）**：学习会话前台服务运行期间，系统通知栏提供 Pause/Resume、Previous、Next、Exit 五控制——经 app 层控制器转发编排器，与屏内按钮**同一执行路径**（D2 精神延伸，零第二套语义）；通知栏 Exit **直接执行无二次确认**（通知栏交互即明确意图，二次确认仅针对屏内按钮防误触）。详见 FR-25。
 
 ### FR-12 语音识别交互协议
 
@@ -222,6 +223,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - **首/末字近音结构规则（2026-09-17 需求变更，用户裁决）**：对默认别名「会了」，识别最终文本**首字 ∈ 会近音字集（会/坏/换/回/惠/汇）或末字 ∈ 了近音字集（了/啦/咯/来/呀——「呀」为 2026-09-18 vivo 轻声实证「会了」→「呀」元音 a/e 混淆增补，用户裁决）即判定命中**（`STRUCTURAL_NEAR_CHARS_BY_ALIAS`）——结构级兜底连续近音误听（截断「会」「坏」、h 声母丢失「了了」、「会了吗」「…会了」句式），替代逐形白名单增补。不误杀守卫收窄：首尾字均不在近音集的无关短语（「你好」「hello」）与空文本仍不命中；繁体「會了」（末字=了）随本裁决转为命中；规则与白名单同样按别名归集（自定义别名不适用）。详见 AUDIO_ENGINE_SPEC §7 v2.0/v2.3。
 - **轻声/气音支持（2026-09-18 需求变更，用户裁决）**：内置引擎弃用库 `SpeechService`（其 VOICE_RECOGNITION 源走 OEM 语音处理链，实测 vivo 04:41 把轻声/气音整窗抹成纯静默——录音流正常、识别器零回调），改为**自管录音管线**：`AudioRecord`（**MIC 原始源**，绕开 OEM 处理）50ms 块读入 + ①块 RMS **自适应预增益**（归一目标电平，上限 10×，削波保护）+ ②`EndpointerMode.SHORT`（模型 VAD 灵敏度最高档）+ ③**自端点强制终局（双触发）**：持续语音能量后 500ms 尾静默，或模型已解出非空假设 700ms 无改进（假设稳定——不依赖声学门限，环境底噪持续越过能量门限时仍可裁决），任一触发即 `getFinalResult()` 冲刷假设（不依赖模型 VAD 自行决断；冲刷后识别器重置、同窗可继续听第二句；partial 仅作冲刷裁决信号，命令语义仍只认 final 文本）。**轻声识别为尽力而为能力**：受小模型对无浊音语音的解码上限约束，验收口径（M2）仍为正常音量明确发音；轻声实测效果以真机日志证据登记。详见 AUDIO_ENGINE_SPEC §8 v2.1/v2.2。
 - **验收**：TTS 播放中对着麦克风说任何内容均无效果；窗口期说"会了"触发 FR-7；别名可配置生效（该子句已按裁决 D4（2026-09-12）延期至 Phase 8：Phase 5 验收口径 = 固定代码别名 会了/记住了/掌握了 均可命中，用户可编辑别名随 FR-15 设置页交付，见 AUDIO_ENGINE_SPEC §7）；无系统识别服务、或系统服务存在但不可用的国行机型，经**内置离线引擎**（含 E3 窗口内回退）同样满足本验收（E1/E3，2026-09-14，AUDIO_ENGINE_SPEC §8）；近音误听（如「坏了」）经近音兜底白名单同样命中（2026-09-16，AUDIO_ENGINE_SPEC §7 v1.7）。
+- **后台/熄屏语音门禁（v1.31，FR-25 扩展）**：本协议「识别只存在于 CommandWindow 态」进一步收紧——App 进入后台（屏幕关闭 / Activity onStop）时识别器 `isAvailable` 置 false（app 层 `BackgroundGatedSpeechCommandRecognizer` wrapper，前台标志来自 `ProcessLifecycleOwner`），CommandWindow 自然退化为纯倒计时（既有 D2 双形态复用，`listening=false`），「会了」按钮失效（后台无法点击亦无意义）；**绝不在后台调用 `listenOnce` / 持有麦克风**（wrapper 后台短路返回 `Unavailable`，FR-12「绝无后台监听」红线硬守）。窗口中熄屏（ON_STOP 时 state==CommandWindow.listening）→ 控制器 `pause()` 关麦转 Paused(窗口位)。详见 FR-25。
 
 ### FR-13 完成勋章
 
@@ -357,6 +359,20 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 - **许可**：MeloTTS MIT（MyShell.ai，sherpa-onnx 官方转换分发）；随包分发合规；
 - **验收**：中文段神经自然语音（人耳判定）；英文段零变化；ZH 段首播延迟可接受（melo RTF 装机实测）+ 同段二播命中缓存；神经 ZH 失败当场回退系统会话不中断；杀进程双模型预热正常；EN↔ZH 交替播放驻留稳定无换载抖动；PSS 记录在案。（kokoro int8 首选装机人耳否决——2026-09-20 用户判定「还不如上一版」，按 ADR-012 预授权备胎切 melo；「音色枚举切换」验收项随单说话人模型自然失效。）
 
+### FR-25 熄屏/后台续播（v1.31，2026-10-12 用户提出，批准 SPEC_CHANGE_REQUEST_BG_PLAYBACK）
+
+- **动机**：学习会话播放中熄屏 → 播放停止。根因 = 三处平台缺口叠加——无前台媒体服务（targetSdk 35，Android 8.0+ 强制 `mediaPlayback` 类型前台服务才允许后台播音频，14+ 更严，系统直接掐后台音频）；无 WakeLock（Doze 让 CPU 睡眠，AudioTrack 阻塞写 / ExoPlayer 停滞）；ExoPlayer 未 `setWakeMode`。编排器是应用级 `single` scope，Activity onStop 不取消它——停播纯是系统/Doze 掐的（ARCHITECTURE §1 L40「后台/熄屏续播潜力保留」本 SCR 落地）。
+- **前台媒体服务**：新建 `PlaybackForegroundService`（app 模块，`foregroundServiceType="mediaPlayback"`）——`startForeground` 持媒体通知（MediaStyle）+ 进程级 `PARTIAL_WAKE_LOCK`（覆盖 ExoPlayer 与 SherpaOnnx AudioTrack IO 阻塞写，单锁兜底两 actual，SherpaOnnx actual 零改动）+ Media3 `MediaSession`（`ForwardingPlayer` 桩镜像编排器状态，满足 Android 14 mediaPlayback FGS 合规：系统期望活跃 MediaSession 否则宽限后杀进程）。
+- **服务生命周期**：app 层 `PlaybackForegroundController`（DI single）collect `PlaybackOrchestrator.state`——传输活跃（Playing/Paused/CommandWindow）→ 启动并保持前台服务；终态（Idle/Stopped/Completed）→ `stopForeground` + `stopSelf`；状态变化只更新 MediaSession/通知不重启服务。
+- **`dispose()` 增设 Stopped 内存信号**：宿主 `onCleared` 时编排器除现有 cancelStep + stopPorts 外，置 `_state.value = PlaybackState.Stopped`（**仅内存态——DB `LearningSession` 仍 ACTIVE 可 resume**，与既有崩溃恢复/位置持久化语义零变化）；目的 = 让控制器观测到「播放已停」可靠停服务。`sessionOwned` 守卫（ViewModel）已防 Stopped 被新屏误消费。`onCleared` 仅 Activity 真正 finishing 触发，旋转/熄屏不清 VM。
+- **后台/熄屏语音门禁（FR-12 收紧，见 FR-12 后台门禁注）**：`BackgroundGatedSpeechCommandRecognizer`（app 层 wrapper，包住系统服务在场 / 缺席两条装配路径产出）——`isAvailable = delegate.isAvailable && appInForeground`，`listenOnce` 后台短路返回 `Unavailable`（绝不后台持麦/试探）。前台标志 = `ProcessLifecycleOwner`（`lifecycle-process`）ON_START→true / ON_STOP→false。CommandWindow 复用既有 D2 双形态自然退化为纯倒计时，编排器/解析器/掌握语义零改动。
+- **熄屏竞态严守（FR-12 红线）**：ON_STOP 时若 `state==CommandWindow && listening==true` → 控制器 `orchestrator.pause()`（取消窗口 Job → listenOnce 协程取消 → actual destroy 关麦，转 Paused(窗口位)）；`state==Playing/Paused` → 不动（续播/保持）。绝不让麦进入后台哪怕一瞬。
+- **ExoPlayer 双重保险**：`Media3AudioPlayer` Builder +`setWakeMode(C.WAKE_MODE_LOCAL)`（PARTIAL_WAKE_LOCK；与服务级 wakelock 引用计数并存）——服务级为主，ExoPlayer 自管例句原声段为辅。
+- **通知栏控制**：见 FR-11 通知栏注——Pause/Resume/Previous/Next/Exit 五控制经通知 action → 控制器 → 编排器，与屏内按钮同一执行路径；Exit 直接执行无二次确认。
+- **权限与清单**：+`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` / `WAKE_LOCK` / `POST_NOTIFICATIONS`（minSdk 26，<33 忽略；Android 13+ 运行时授权，拒授权时通知不显但 FGS 前台状态仍生效）+`<service android:foregroundServiceType="mediaPlayback">`。
+- **不改**：commonMain 端口接口（后台门禁 = app wrapper 非端口概念泄漏）、学习/掌握/推进/完成/退出三分支语义、CommandWindow 时序、位置持久化双源优先级（L3）、ADR-09 段语义、SherpaOnnx actual、SQL schema / 模型资产、屏内 Exit 二次确认流。
+- **验收**：熄屏后音频继续循环播放（跨多个词持续 1 分钟以上）；熄屏时 CommandWindow 无麦指示、倒计时走完正常 advance；通知栏五控制可用；拔耳机仍自动暂停；屏内 Exit 二次确认流不变；拒授权通知权限时前台续播仍生效（通知不可见）。详见 AUDIO_ENGINE_SPEC §8（v2.13）。
+
 ### 应用图标（v1.14，Phase 8.6；bug list 第 4 项，打磨项）
 
 自定义自适应应用图标（矢量前景/背景 + Android 13+ 单色主题图标），替换系统默认图标；无行为需求，交付记录见 ROADMAP Phase 8.6 与 ADR-007。
@@ -412,6 +428,7 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | TXT 导入：编码 / 格式 / 去重 / 大文件 / 目标生词本 | FR-14 |
 | 跨平台：KMP 共享核心；Compose / SwiftUI；核心不依赖平台 API | NFR-6 → ARCHITECTURE |
 | 数据模型基准与排序规则（partOfSpeechOrder ASC, definitionOrder ASC） | FR-2 → DOMAIN_MODEL §4 |
+| 熄屏/后台续播（屏幕关闭后音频继续） | FR-25 / FR-12 后台门禁 → AUDIO_ENGINE_SPEC §8 |
 
 ---
 
@@ -454,4 +471,5 @@ Example 是原子单元：`Sentence（例句原文） + ChineseTranslation（例
 | 1.28 | 2026-10-01 | **TXT 导入词性标记追补（SCR-TXTDICTENRICH v2 追补）**：用户指示「vt.和vi.映射对应动词（措辞）+ 补充 prep. 映射和 UI 说明」——词性标记集补 `prep.`（→preposition）；vt./vi./v 映射表述改为「对应动词 verb」（功能不变：词库粒度按 FR-18 已合并及物/不及物为单一动词类）；ImportScreen 说明标记列表更新。零 schema 迁移。下游：IMPORT_SPEC v1.4 / TEST_PLAN v2.30；决策：SCR-TXTDICTENRICH v2 追补（DECISION_LOG） |
 | 1.29 | 2026-10-01 | **TXT 导入多词短语修正（用户实录缺陷：`roll out` 被导入为 roll）**：FR-14 行格式 ①——多词短语整行书写，单空格分隔改为逐位置扫描并跳过「译文以英文字母开头」的位置（`roll out` 整词、`roll out 推出` 短语+译文、`hello world,你好` 逗号级分割）；译文以英文开头须用显式分隔符；UI 说明补短语行。下游：IMPORT_SPEC v1.5 / TEST_PLAN v2.31（TC-IMP-16）；决策：SCR-TXTDICTENRICH v2 追补 2（DECISION_LOG） |
 | 1.30 | 2026-10-01 | **FR-11 加法扩展：新增 Seek 点卡跳段控制**（用户提出并批准 SPEC_CHANGE_REQUEST_SEGMENT_SEEK——面板纯展示，想重听指定释义/例句只能等组内循环绕回或整词重播）：学习面板点释义卡/例句卡/词头 → 跳到该卡**首个启用段**（当前词内双向；卡 → 段归属键 = SegmentOwner，与 FR-21 高亮同键）；纯导航零掌握零换词（Replay 级，SessionWord 零接触）；卡片段全被 FR-10 开关禁用 → 幂等 no-op 不打断在播段；CommandWindow 开着则作废窗口（镜像 Previous，非命令消费）；Paused 只迁移暂停位**不自动恢复**（用户裁决 D1）且 error 暂停位随跳转清除；词头可点（裁决 D2）。实现 = 编排器 `seekTo(owner)`（游标迁移与 applyPlayingRestore 同口径，playedCount = 启用段序 rank）+ VM `seekToSegment` + 卡片 clickable。零引擎接口变更、零 schema 迁移。FR-21 面板注记卡片可点。下游同步：AUDIO_ENGINE_SPEC v2.12 / TEST_PLAN v2.32（TC-AE-35）/ DOMAIN_MODEL v1.8；决策记录：SCR-SEGMENTSEEK（DECISION_LOG） |
+| 1.31 | 2026-10-12 | **新增 FR-25 熄屏/后台续播**（用户提出「目前 app 熄屏后播放停止」并批准 SPEC_CHANGE_REQUEST_BG_PLAYBACK，裁决续播方案非防熄屏轻路径）：mediaPlayback 前台服务 `PlaybackForegroundService` + 进程级 PARTIAL_WAKE_LOCK + Media3 MediaSession（ForwardingPlayer 桩镜像状态，Android 14 FGS 合规）+ MediaStyle 通知五控制（FR-11 通知栏注）；app 层 `PlaybackForegroundController` collect `orchestrator.state` 驱动启停；`dispose()` 增设 `_state=Stopped` 内存信号（DB 会话不动仍可 resume）；`BackgroundGatedSpeechCommandRecognizer` wrapper 后台 `isAvailable=false` + listenOnce 短路 Unavailable（FR-12 后台门禁收紧，CommandWindow 复用 D2 纯倒计时）；窗口中熄屏 `pause()` 关麦；`Media3AudioPlayer` +`setWakeMode` 双重保险；+4 权限 +`<service>` +2 依赖（media3-session / lifecycle-process）。**撤销 TEST_PLAN 铁律 8「切后台自动暂停 = 设计行为」**→ 改为「熄屏/后台续播 + 语音后台门禁」。零 schema 变更、commonMain 端口接口零改动、SherpaOnnx 零改动。下游同步：AUDIO_ENGINE_SPEC v2.13 / ARCHITECTURE §1 L40 / TEST_PLAN v2.34（TC-BG-01..05）；决策记录：SCR-BGPLAYBACK（DECISION_LOG ADR-013） |
 | 1.31 | 2026-10-10 | **FR-18 加法扩展：单词+短语双音标全量补齐（SCR-IPACOVERAGE，资产 v9）**：用户装机报告「flayer 没有音标」→ 裁决「所有单词的美音和英音都补齐」+ 批准时扩「短语也要补」。espeak-ng 1.51 离线确定性 G2P（msiexec /a 便携镜像 + UCRT app-local，构建期工具不入 APK；gruut/piper-phonemize/LLM 备选实测否决）；填充美音 585,782 + 英音 772,091，既有非空值零触碰，全量 836,398 条双列覆盖（`PRAGMA user_version=9`）；三记法并存取舍（ADR-010 延续，espeak 主重音符置于音节核前，不做机器归位）+「短语恒无英音」口径废止（机器推断含连读弱化）；已导入词靠既有回填链路 lookup 自动收敛。零 schema 迁移；运行时唯一改动 = `DICT_ASSET_VERSION` 8→9。下游：tools/dict README 第 9 步 / DECISION_LOG（SCR-IPACOVERAGE） |
