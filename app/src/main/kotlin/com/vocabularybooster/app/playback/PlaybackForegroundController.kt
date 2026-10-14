@@ -19,8 +19,9 @@ import kotlinx.coroutines.launch
  * 2. **app 前台 / 后台标志源**：[ProcessLifecycleOwner] 的 ON_START→true / ON_STOP→false 投影为
  *    [appForeground] StateFlow，供 [BackgroundGatedSpeechCommandRecognizer] 与门（后台 → isAvailable=false，
  *    FR-12「绝无后台监听」红线硬守）。
- * 3. **通知栏 / 锁屏 transport 路由**：onNotificationPause/Resume/Next/Previous/Exit → [PlaybackControls]
+ * 3. **通知栏 / 锁屏 transport 路由**：onNotificationPause/Resume/Next/Previous → [PlaybackControls]
  *    suspend 入口（编排器），与界面按钮走同一控制路径（铁律 5「会了」同源语义延伸）。
+ *    （SCR-BGPLAYBACK 追补：通知栏三大键不含退出——退出仅 app 内按钮，2026-10-14 用户裁决。）
  *
  * **熄屏竞态守护**（TC-BG-04）：ON_STOP 时若恰处 CommandWindow 且 `listening=true`（识别窗口开着麦），
  * 立即 `pause()` 取消窗口 Job 关麦——[BackgroundGatedSpeechCommandRecognizer] 后台短路为兜底，
@@ -90,5 +91,4 @@ class PlaybackForegroundController(
     public fun onNotificationResume() { scope.launch { controls.resume() } }
     public fun onNotificationNext() { scope.launch { controls.next() } }
     public fun onNotificationPrevious() { scope.launch { controls.previous() } }
-    public fun onNotificationExit() { scope.launch { controls.exit() } }
 }

@@ -95,13 +95,29 @@ class OrchestratorMirroringPlayer(
     override fun getMediaMetadata(): MediaMetadata =
         currentMediaItem?.mediaMetadata ?: MediaMetadata.EMPTY
 
+    /**
+     * 可用命令投影（SCR-BGPLAYBACK 追补）：桩 delegate 空播放列表 → 默认无 SEEK_TO_NEXT/PREVIOUS，
+     * Android 13+ 锁屏/通知栏媒体轮播的三大传输键（上一词/播放-暂停/下一词）按本集合渲染——
+     * 恒定宣告这五项（播放暂停 + 前后跳），与 [seekToNext]/[seekToPrevious] 覆写一一对应。
+     */
+    override fun getAvailableCommands(): Player.Commands =
+        Player.Commands.Builder()
+            .addAll(
+                Player.COMMAND_PLAY_PAUSE,
+                Player.COMMAND_SEEK_TO_PREVIOUS,
+                Player.COMMAND_SEEK_TO_NEXT,
+                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            )
+            .build()
+
     // —— 写：transport 路由至控制器（桩 delegate 零传输） ——
 
     override fun play() { controller.onNotificationResume() }
     override fun pause() { controller.onNotificationPause() }
     override fun seekToNext() { controller.onNotificationNext() }
     override fun seekToPrevious() { controller.onNotificationPrevious() }
-    override fun stop() { /* 锁屏 stop / 系统 dismiss 不路由——退出经通知栏「退出」按钮 ACTION_NOTIFY_EXIT，避免误弃会话 */ }
+    override fun stop() { /* 锁屏 stop / 系统 dismiss 不路由——退出仅经 app 内按钮（SCR-BGPLAYBACK 追补：通知栏三大键不含退出），避免误弃会话 */ }
 
     // —— listener 自管（ForwardingPlayer 默认委托 delegate；本类须自持以在 syncTo 时派发合成事件） ——
 

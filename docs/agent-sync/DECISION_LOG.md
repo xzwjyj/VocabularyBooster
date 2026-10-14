@@ -471,3 +471,23 @@
 **测试**：5 新用例——TC-BG-01（后台语音门禁 5 例）/ TC-BG-02（前台服务 start/stop 绑定 2 例）/ TC-BG-03（dispose→Stopped DB 仍 ACTIVE）/ TC-BG-04（熄屏竞态 4 例）；门禁六项全绿（jvmTest 396 / testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug）。dispose() 回归 `resumeSessionPropagatesBookDeletedAndStaysIdle` 已修（option B：仅传输态发 Stopped）。
 
 **文档**：SCR-BGPLAYBACK / IMPLEMENTATION_PLAN_BG_PLAYBACK / PROJECT_SPEC v1.31（FR-25）/ AUDIO_ENGINE_SPEC v2.13（§8 熄屏/后台续播契约 + setWakeMode + 双形态）/ ARCHITECTURE v1.1（§1 L40）/ TEST_PLAN v2.34（TC-BG-01..05 + 铁律 8 修订）/ PHASE_5 走查清单（铁律 8 废止）/ DECISION_LOG（本条）。v1.6.0（versionCode 7）。待装机走查（熄屏续播 / 后台门禁 / 通知栏控制 / 竞态关麦）。
+
+## SCR-BGPLAYBACK 追补（2026-10-14，v1.6.0 装机走查收口）
+
+**背景**：v1.6.0（commit `d29620a`，本地未发布）装机走查四项全过：① 熄屏续播（Asleep 下 chromatic→tadpole→nautiloid 推进、PLAYING 无断、FGS mediaPlayback 前台）② 后台语音门禁（熄屏 4 窗口全「倒计时」零「听音中」，亮屏正对照「听音中」确现）③ 通知控制（继续→PLAYING 按钮互切 / 下一词·上一词换词 / 媒体键 PAUSED→PLAYING→PAUSED / 退出后 FGS+通知 425+MediaSession 三清零）④ 竞态关麦（听音窗口中熄屏 ~2s 内 state=PAUSED(2) + 通知「已暂停」）。走查工具链：`dumpsys media_session`（description=当前词 + state）为主要取证（本 vivo 无 sqlite3，run-as 不可用——release 非 debuggable）；`dumpsys notification --noredact` 抓通知文案；`dumpsys activity services` 验 FGS。
+
+**装机抓出（walkthrough 价值实证）**：
+1. **真 bug（发布阻塞）**：`POST_NOTIFICATIONS` 只在 manifest 声明、从未发起运行时请求——Android 13+ 用户通知全不可见（`granted=false`，importance=NONE userSet=false）。通知栏/锁屏控制对用户全部失效，仅熄屏续播本身不受影响（走查先 `adb shell pm grant` 方能见通知）。
+2. **设备约束**：vivo 通知栏对普通（非 MediaStyle）通知只渲染 3/4 action——第 4 个「退出」不可达（通知记录层 actions=4 确在，纯 SystemUI 渲染裁切）。
+
+**用户裁决（2026-10-14，3 条）**：① 修权限请求；② 接受通知栏无退出，把 播放/暂停、上一词、下一词 做成熄屏+屏上通知栏三个大按键；③ 先只在本地 commit。
+
+**执行**：`LearningSessionScreen` LaunchedEffect → `ActivityCompat.requestPermissions(POST_NOTIFICATIONS)`（首进会话一次，拒绝不阻断；抽 `requestNotificationPermissionIfNeeded` 私有函数过 detekt CyclomaticComplexMethod 15/15 压线——结构化修复优于 suppress 既例）；`PlaybackForegroundService.buildNotification` 改 `MediaStyleNotificationHelper.MediaStyle(mediaSession).setShowActionsInCompactView(0,1,2)` + 三 action（撤退出钮与 ACTION_NOTIFY_EXIT/onNotificationExit/`ic_menu_close_clear_cancel`）；`OrchestratorMirroringPlayer` +`getAvailableCommands()` 覆写（COMMAND_PLAY_PAUSE/SEEK_TO_PREVIOUS/SEEK_TO_NEXT/±_MEDIA_ITEM——媒体轮播大键可见性来源，桩 delegate 空播放列表默认无 seek 命令）。API 事实：`MediaStyleNotificationHelper.MediaStyle(mediaSession)` + `setShowActionsInCompactView(int...)`、`Player.Commands.Builder.addAll(int...)`（javap 确认）。versionCode 7 / versionName 1.6.0 维持（未发布修复并入首发）。门禁六项全绿（jvmTest 396 / app:testDebugUnitTest / detekt×2 / checkPlatformBoundaries / assembleDebug）。
+
+**走查方法论沉淀**：媒体键路径（KEYCODE_MEDIA_PLAY_PAUSE=85）可在锁屏态验 MediaSession transport；`am startservice` 投 non-exported 组件被拒（uid 隔离正确行为）→ 通知 PendingIntent 只能真实点击；锁屏面板是否显示应用通知受系统 `isShowKeyguard` 设置影响（本机 off，通知仅解锁态可见）；熄屏取证窗口内 `svc power stayon usb` 与 keyevent 26 互不干扰（显式熄屏覆盖 stayon）。
+
+**文档**：PROJECT_SPEC v1.32 / AUDIO_ENGINE_SPEC v2.14 / TEST_PLAN v2.35（TC-BG-06/07）/ SCR §7 追补。
+
+**开放观察项（非阻塞，2026-10-14 登记）**：装机复验——重装 v1.6.0 后首次进会话弹 `POST_NOTIFICATIONS` 系统请求（允许 → 通知即刻可见）；通知栏媒体卡片渲染 上一词/暂停/下一词 三键（content-desc 为自定义文案 = 三 custom action 在场）。媒体键 KEYCODE_MEDIA_NEXT(87) 在早前会话实证换词（chromatic⇒scroll）；KEYCODE_MEDIA_PREVIOUS(88) 两次未见换词，且该会话 `PlaybackState actions=694` 与覆写投影（预期含 SKIP_TO_NEXT）不符——但取证时序混杂（提取器可能读到已释放的 historical session record，dumpsys 保留 inactive 记录的最后 metadata），复测三连（87×2/88×1）全无变化后会话真实状态未确认，随即 USB 断开无法续验。**判定为未定**：用户可达路径（通知栏/锁屏三大键按钮 = custom action PendingIntent、屏内控制条）均已验证通过，媒体键 PREVIOUS 仅影响耳机/他源媒体键，待设备再连复测（确认会话 Playing 后 keyevent 88 观察 description= 变化），若复现再对 PlayerWrapper availableCommands 交集约化诊断。
+
+**装机坑（2026-10-14）**：`pm revoke POST_NOTIFICATIONS` 后锁屏态 `adb install -r` 报 `INSTALL_FAILED_ABORTED: User rejected permissions`（安装门把已撤销的运行时权限当拒绝态）——绕行：`pm grant` → install → `pm revoke` 重建拒权态测「拒绝不阻断」。

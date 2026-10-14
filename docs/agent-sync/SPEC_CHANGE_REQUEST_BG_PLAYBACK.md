@@ -83,3 +83,13 @@
 - **Android 14 mediaPlayback FGS 合规**：须 `foregroundServiceType` 声明 + 通知 + 活跃 MediaSession（否则宽限后杀）；`POST_NOTIFICATIONS` 运行时授权（Android 13+）——未授权时通知不显但 FGS 仍可跑（前台状态生效）；走查须覆盖拒授权路径。
 - **minSdk 26 / targetSdk 35 跨版本**：FGS 类型权限仅 API 34+ 强制（<34 忽略）；`setWakeMode` API 1 可用；`lifecycle-process` 全版本可用。版本兼容性低风险。
 - **版本号占用**：FR-25 / PROJECT_SPEC v1.31 / AUDIO v2.13 / TEST_PLAN v2.34——v2.33 已被 SCR-SENSEATTR v7/v8 占用（2026-10-10），本批顺延至 v2.34；执行时重查版本表。
+
+## 7. 追补（2026-10-14，v1.6.0 装机走查后用户裁决 3 条）
+
+走查四项全过（① 熄屏续播跨 3 词 PLAYING 无断 / ② 后台窗口纯倒计时零听音 + 亮屏正对照 / ③ 三键路由 + 媒体键 + 退出三清零 / ④ 听音中熄屏 2s 内 PAUSED+已暂停），抓出 1 个发布阻塞 bug + 1 个设备约束：
+
+1. **修 `POST_NOTIFICATIONS` 运行时请求**（真 bug）：v1 批次只声明未请求——Android 13+ 真实用户通知全不可见（走查靠 `adb shell pm grant` 后方可见）。修法：首次进入会话屏（`LearningSessionScreen` LaunchedEffect）`ActivityCompat.requestPermissions`；拒绝不阻断（FGS/熄屏续播不依赖通知可见）。
+2. **通知形态改 MediaStyle 三大传输键**（设备约束 + 裁决）：vivo 通知栏对普通通知只渲染 3/4 action（第 4 个「退出」被裁）。裁决：接受通知栏无退出（退出仅屏内按钮），把 播放/暂停、上一词、下一词 做成**熄屏与屏上通知栏的三个大按键**——`MediaStyleNotificationHelper.MediaStyle` + 活跃 MediaSession → Android 13+ SystemUI 媒体轮播渲染系统标准大键；`OrchestratorMirroringPlayer.getAvailableCommands` 恒宣告 play-pause/prev/next（桩 delegate 空播放列表默认无 seek 命令，不覆写轮播缺键）；非轮播回退形态显示同三 action 文本键；撤 `ACTION_NOTIFY_EXIT` / `onNotificationExit`。
+3. **只在本地 commit**：v1.6.0 未发布，修复并入首发构建（versionCode 7 / versionName 1.6.0 维持）。
+
+文档同步：PROJECT_SPEC v1.32 / AUDIO_ENGINE_SPEC v2.14 / TEST_PLAN v2.35（TC-BG-06 权限请求 + TC-BG-07 媒体轮播三大键，装机走查用例）。

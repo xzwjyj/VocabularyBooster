@@ -3,8 +3,10 @@
 package com.vocabularybooster.app.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +44,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.ActivityCompat
 import com.vocabularybooster.domain.model.Lang
 import com.vocabularybooster.playback.Segment
 import com.vocabularybooster.playback.SegmentOwner
@@ -79,6 +82,10 @@ fun LearningSessionScreen(
     }
 
     LaunchedEffect(bookId) { viewModel.start(bookId) }
+
+    // FR-25 追补（SCR-BGPLAYBACK）：媒体通知可见性前提——首次进会话请求通知权限（Android 13+）。
+    // 拒绝不阻断播放（前台服务/熄屏续播不依赖通知可见），仅无通知栏/锁屏控制；结果由系统持有，本屏不消费。
+    LaunchedEffect(Unit) { requestNotificationPermissionIfNeeded(context) }
 
     // 返回键：会话进行中（含窗口/暂停/错误）→ 退出二次确认；Loading/终态 → 直接返回
     val sessionActive = ui is LearningUiState.Playing || ui is LearningUiState.Paused ||
@@ -653,6 +660,25 @@ private const val MILLIS_PER_SECOND: Float = 1000f
 /** RECORD_AUDIO 已授权判定（UI 权限呈现用；授权裁决只属系统，本屏不缓存结果之外的状态）。 */
 private fun Context.hasRecordAudio(): Boolean =
     checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+/** POST_NOTIFICATIONS 已授权判定（Android 13+ 运行时权限；12L 及以下装即授予无需请求）。 */
+private fun Context.hasPostNotifications(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+/** 通知权限请求码（结果不经本屏消费，仅标识来源）。 */
+private const val REQUEST_POST_NOTIFICATIONS: Int = 4251
+
+/** 未授权且宿主为 Activity 时发起通知权限请求（已授权/无 Activity 为 no-op）。 */
+private fun requestNotificationPermissionIfNeeded(context: Context) {
+    val activity = context as? Activity ?: return
+    if (context.hasPostNotifications()) return
+    ActivityCompat.requestPermissions(
+        activity,
+        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+        REQUEST_POST_NOTIFICATIONS,
+    )
+}
 
 private fun noticeMessage(notice: LearningNotice): String = when (notice) {
     is LearningNotice.StartRejected -> notice.message

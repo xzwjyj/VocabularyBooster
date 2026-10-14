@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaStyleNotificationHelper
 import com.vocabularybooster.app.R
 import com.vocabularybooster.playback.PlaybackState
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +44,11 @@ import org.koin.core.component.inject
  *   ——避免每 100ms CommandWindow 倒计时 tick 刷通知（倒计时仅 app 前台 UI 可见）。
  * - **MediaSession 传输路由**：锁屏 / 通知栏 play/pause/next/previous → MediaSession →
  *   [OrchestratorMirroringPlayer] 覆写的 transport → [PlaybackForegroundController.onNotification*]
- *   → [PlaybackControls]（编排器 suspend 入口）；通知栏「退出」按钮 → ACTION_NOTIFY_EXIT 同路。
+ *   → [PlaybackControls]（编排器 suspend 入口）。
+ * - **通知形态（SCR-BGPLAYBACK 追补）**：[MediaStyleNotificationHelper.MediaStyle] + 活跃 MediaSession
+ *   → Android 13+ 锁屏/通知栏**媒体轮播三大键**（上一词/播放-暂停/下一词，系统标准传输键，可见性由
+ *   [OrchestratorMirroringPlayer.getAvailableCommands] 投影）；非轮播回退形态显示同三 action 文本键。
+ *   通知栏不再提供「退出」（vivo 等机型第 4 action 被裁 + 用户裁决 2026-10-14）——退出仅 app 内按钮。
  *
  * @param controls 编排器控制（app-local seam，DI 注入；进程内采集状态）
  * @param controller 前台控制器（DI 注入；transport 路由 + appForeground 标志源）
@@ -89,7 +94,6 @@ class PlaybackForegroundService : Service(), KoinComponent {
             ACTION_NOTIFY_RESUME -> controller.onNotificationResume()
             ACTION_NOTIFY_NEXT -> controller.onNotificationNext()
             ACTION_NOTIFY_PREVIOUS -> controller.onNotificationPrevious()
-            ACTION_NOTIFY_EXIT -> controller.onNotificationExit()
             else -> handleStart() // ACTION_START 或系统重建（null intent）：按当前 state 决定升降前台
         }
         return START_NOT_STICKY // 服务被杀不重建——控制器 reflect() 在 state 再活跃时经 gateway.start() 重拉
@@ -165,10 +169,14 @@ class PlaybackForegroundService : Service(), KoinComponent {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // MediaStyle + 活跃 MediaSession：Android 13+ 由 SystemUI 媒体轮播渲染三大传输键（SCR-BGPLAYBACK 追补）
+            .setStyle(
+                MediaStyleNotificationHelper.MediaStyle(mediaSession)
+                    .setShowActionsInCompactView(0, 1, 2),
+            )
             .addAction(notificationAction(ACTION_NOTIFY_PREVIOUS, "上一词", android.R.drawable.ic_media_previous))
             .addAction(pauseResumeAction)
             .addAction(notificationAction(ACTION_NOTIFY_NEXT, "下一词", android.R.drawable.ic_media_next))
-            .addAction(notificationAction(ACTION_NOTIFY_EXIT, "退出", android.R.drawable.ic_menu_close_clear_cancel))
             .build()
     }
 
@@ -246,7 +254,6 @@ class PlaybackForegroundService : Service(), KoinComponent {
         const val ACTION_NOTIFY_RESUME = "com.vocabularybooster.playback.NOTIFY_RESUME"
         const val ACTION_NOTIFY_NEXT = "com.vocabularybooster.playback.NOTIFY_NEXT"
         const val ACTION_NOTIFY_PREVIOUS = "com.vocabularybooster.playback.NOTIFY_PREVIOUS"
-        const val ACTION_NOTIFY_EXIT = "com.vocabularybooster.playback.NOTIFY_EXIT"
         const val DEFAULT_TITLE = "VocabularyBooster"
     }
 }
