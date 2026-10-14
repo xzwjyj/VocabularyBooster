@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- FR-12：语音命令「会了」——仅 CommandWindow 内识别，绝无后台监听（Phase 5 Step 1） -->
+    <!-- FR-12：语音命令「会了」——仅 CommandWindow 内识别，绝无常驻监听（Phase 5 Step 1）；
+         SCR-BGVOICE（2026-10-14）：熄屏/后台窗口照常开麦（识别仍只存在于 CommandWindow 态） -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- E2（2026-09-14）：SpeechRecognizer.isRecognitionAvailable 内部 queryIntentServices 受
@@ -12,9 +13,12 @@
         </intent>
     </queries>
 
-    <!-- FR-25（SCR-BGPLAYBACK）：熄屏/后台续播前台媒体服务（mediaPlayback 类型 + WakeLock + 通知栏控制） -->
+    <!-- FR-25（SCR-BGPLAYBACK）：熄屏/后台续播前台媒体服务（mediaPlayback 类型 + WakeLock + 通知栏控制）；
+         SCR-BGVOICE（2026-10-14）：+microphone 类型——熄屏语音 while-in-use 豁免（Android 11+ 后台持麦
+         须 mic 型 FGS；Android 14+ per-type 权限族） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -35,10 +39,11 @@
             </intent-filter>
         </activity>
 
-        <!-- FR-25（SCR-BGPLAYBACK）：熄屏/后台续播前台媒体服务（PlaybackForegroundController 驱动启停） -->
+        <!-- FR-25（SCR-BGPLAYBACK）：熄屏/后台续播前台媒体服务（PlaybackForegroundController 驱动启停）；
+             SCR-BGVOICE：双类型——mic 位承载熄屏语音（命令窗口后台照常开麦） -->
         <service
             android:name=".playback.PlaybackForegroundService"
-            android:foregroundServiceType="mediaPlayback"
+            android:foregroundServiceType="mediaPlayback|microphone"
             android:exported="false" />
     </application>
 

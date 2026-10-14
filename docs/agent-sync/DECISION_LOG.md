@@ -491,3 +491,28 @@
 **媒体键复测收口（2026-10-14 晚，设备重连后；前项「未定」终裁）**：**vivo OEM 键路由，非 app 缺陷**。证据链：① 装机复验先确认用户路径——重装 v1.6.0 后首次进会话弹 `POST_NOTIFICATIONS` 系统请求（允许 → 通知即刻可见）；通知栏媒体卡片渲染 上一词/暂停/下一词 三键（content-desc 为自定义文案 = 三 custom action 在场）。② `actions=694` 复核为**正确投影**：PlaybackStateCompat 常量表 `SKIP_TO_PREVIOUS=1<<4(16)` / `SKIP_TO_NEXT=1<<5(32)` / `PLAY_PAUSE=1<<9(512)` / `SET_RATING=1<<7(128)`（无条件 OR），694 = PAUSE|PLAY|PLAY_PAUSE|SKIP_TO_PREVIOUS|SKIP_TO_NEXT|SET_RATING，与 `getAvailableCommands` 五命令经 mw.java `createPlaybackStateCompat` 装配**逐位一致**——先前「预期 918 不符」系按框架版常量凭记忆心算的误报；框架 onMediaButtonEvent 的 actions 门控对 87/88 均放行，排除门控。③ 暂停态实验（暂停无自然推进）：85 → PLAYING ✓；88/87 各 2.7s 观测窗零换词 ✗。Playing 态中途（组内三词 chromatic→scroll→nautiloid 回绕，整词循环 ≥15s，短窗观察免疫窗口自然推进）：88/87 各 2.7s 零换词 ✗——**双态双键死寂**。④ `cmd media_session dispatch`：play-pause 通、next/previous 死（与物理键同不对称 → 分歧点在共享分发层 = MediaSessionService 的 vivo 改造）。⑤ Sessions Stack 仅我方一个会话（排除 Android 13+ engaged-session 抢路由）；telecom 全局优先会话 active=false；`Last VivoMediaButtonReceiver = com.tencent.qqmusic`（vivo 私有媒体键注册表，广播路由可绕过会话栈）——唯一可解释 PLAY/SKIP 不对称的层。⑥ App 侧 media3 链路源码对称（applyMediaButtonKeyEvent → stub → PlayerWrapper → transport 覆写）；通知按钮 → controller 下游在 d29620a 走查已验换词，8a35e68 未触碰该链路。**影响面**：仅物理/线控媒体键的上一词/下一词（耳机线控、他源媒体键）；用户可达路径零影响（SystemUI 媒体轮播三大键 = 会话命令/custom action 通道、屏内控制条）。**撤回先前「NEXT(87) 实证换词 chromatic⇒scroll」**——组内回绕下窗口自然推进产生同向假象。**可选缓解（未实施，需用户裁决）**：`MediaSession.Builder.setMediaButtonBroadcastReceiver()` 注册 MBR 或可竞争 vivo 注册表（vivo 无文档不作承诺）；真实蓝牙/线控耳机按键复测亦可一试（`input keyevent` 注入与 AVRCP 路径或有差异）。**取证教训**：dumpsys `actions=` 为十进制 long 且须按 **compat 位表**分解（SKIP_TO_PREVIOUS=16、SKIP_TO_NEXT=32、PLAY_PAUSE=512，非框架 256/512/8192 记法）——位集分解前先取权威常量表；`grep -m1 'metadata:'` 会命中 telecom 会话的 `metadata: null`，取词用 `description=`；锁屏态 shade dump 全是 SystemUI 天气时钟（本机 isShowKeyguard=off），通知取证须解锁态。
 
 **装机坑（2026-10-14）**：`pm revoke POST_NOTIFICATIONS` 后锁屏态 `adb install -r` 报 `INSTALL_FAILED_ABORTED: User rejected permissions`（安装门把已撤销的运行时权限当拒绝态）——绕行：`pm grant` → install → `pm revoke` 重建拒权态测「拒绝不阻断」。
+
+## SCR-BGVOICE（2026-10-14，熄屏语音「会了」，FR-12 v1.33 / FR-25 扩展）
+
+**背景**：v1.6.0 装机实际使用报告——熄屏播放学习会话说「会了」无反应、播放一直继续（词循环不掌握）。定性：**非实现 bug，是 FR-25 v1.31 设计行为**（后台门禁 `isAvailable=false` → CommandWindow 纯倒计时 → 超时 advance 不掌握），该行为曾按 v1.6.0 走查四项之一验收通过；实际使用证伪——熄屏口袋学习场景「会了」是唯一掌握入口（兜里无法点屏内按钮），纯倒计时 = 熄屏模式永远无法掌握任何词，与 FR-25 的目的（揣兜听词）自相矛盾。
+
+**用户裁决（2026-10-14）**：立项 SCR——熄屏语音可用（前台服务加 microphone 类型，命令窗口熄屏仍开麦识别），推翻本人 2026-10-12 批准的后台禁麦红线；风险 = vivo 后台麦可能被 OEM 静默，装机验证 + 取证通道兜底。
+
+**方案（五条冻结语义）**：
+1. **FR-12 红线重述**：「识别只存在于 CommandWindow 态」「TTS 播放期间识别器关闭」「绝无常驻监听」全部不变；废止 v1.31 新增的「绝不在后台持麦」一条——开麦仍只在窗口时长内（默认 4s）。
+2. **前台服务双类型**：manifest `foregroundServiceType="mediaPlayback|microphone"` + `FOREGROUND_SERVICE_MICROPHONE`；`startForeground` 双类型位 + **降级守卫**（双类型异常 → 捕获降级重试 mediaPlayback 单类型 + 记日志——续播优先于熄屏语音）。Android 11+ while-in-use 豁免由 mic 位承载；Android 14「mic 型须前台启动」合规天然满足（会话播放恒屏内发起）。
+3. **wrapper 撤除 + 守护移除**：删 `BackgroundGatedSpeechCommandRecognizer`（装配直连恢复 v2.13 前形态）；`PlaybackForegroundController` ON_STOP 熄屏竞态 `pause()` 守护移除（窗口照常后台听音走完，命中掌握 / 超时 advance 与前台同语义）。`AppForegroundState` 保留改用途。
+4. **Vosk actual 诊断扩展**：构造参 `appForeground: StateFlow<Boolean>`（默认 true），窗口诊断行 `fg=` 前后台标记——OEM 后台静默取证通道（`fg=false` 窗口 RMS 恒零 = 静默实证；届时行为自然退化纯倒计时，无功能损害，机型处置另立项）。系统 actual 不动（GMS 机 while-in-use 豁免；失败走既有 E3/E4 回退）。
+5. **编排器/引擎零改动**：CommandWindow 双形态（D2）由 `recognizer.isAvailable` 驱动的既有语义不变——后台不再有置 false 来源。
+
+**测试**：TC-BG-01 废止（wrapper 删除，用例文件删除）；TC-BG-04 断言翻转（ON_STOP + listening 窗口 → 不再 pause + appForegroundState 流仍翻 false）；新增装机走查 TC-BG-08（熄屏语音掌握换词跨 3 词 + `vosk_diag.log` fg/RMS 取证）。
+
+**文档**：SCR-BGVOICE / PROJECT_SPEC v1.33（FR-12 熄屏语音条款 + FR-25 扩展 + 验收）/ AUDIO_ENGINE_SPEC v2.15（§3/§8/§9）/ ARCHITECTURE v1.2（§1 L40）/ TEST_PLAN v2.37 / PHASE_5 走查清单（铁律 8 再修订）/ DECISION_LOG（本条）。零 schema、零 commonMain 端口改动。
+
+**SCR-BGVOICE 装机走查（2026-10-14 晚，vivo V2436A，v1.7.0 debug 构建）：TC-BG-08 全过。** 三层证据链：
+
+1. **平台层**（dumpsys activity services）：`isForeground=true foregroundId=425 types=0x00000082`（0x02 mediaPlayback | 0x80 microphone 双类型位）——熄屏（Asleep）全程保持前台 + PLAYING 续播；`FOREGROUND_SERVICE_MICROPHONE` granted。本次 install -r 未重置 RECORD_AUDIO（铁律 9 未复发，granted=true USER_SET）。
+2. **识别层**（run-as 导出 vosk_diag.log，清零后取证）：5 个命令窗口全部 `fg=false`（熄屏标记接线正确）；RMS 底噪 40–90 vs 说话能量 3462–4294（**vivo 未静默后台麦**——SCR 最大风险实证未发生）；4 次 `final(forced-flush energy) text=会 了` 命中 + 1 次超时（首窗说话偏晚能量到窗尾，时序正常非缺陷）；窗口预算 3000ms（用户既有设置）。
+3. **掌握层**（exec-out run-as 二进制拉 DB 本地 sqlite3 直查——`adb shell cat` 二进制被 CRLF 破坏须 exec-out，vivo 无 sqlite3）：会话 26（ACTIVE，groupSize=3）组 0 tadpole/nautiloid/chromatic + 组 1 scroll 四行 `SessionWord.MASTERED`，masteredAt 与诊断日志命中时间戳逐一对应（836632→836688 / 858412→858471 / 893108→893163 / 915921→916002，命中→落库 ~50–80ms）；deception PLAYING 续播中。
+
+用户体感：熄屏说「会了」立即换词，原始报告缺陷消除。文档收口：bug list 登记 + TEST_PLAN v2.38（TC-BG-08 结果）。待用户指令 commit（先本地）。

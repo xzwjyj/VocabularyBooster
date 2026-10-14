@@ -49,9 +49,10 @@ import org.vosk.android.StorageService
  *   partial 且 [PARTIAL_STABLE_MS] 无改进（不依赖声学门限：同日诊断文件再证底噪 min/avg
  *   117–142 **持续**贴着门限，能量尾静默永不积累 → 轻声冲刷失效）。任一触发即
  *   `getFinalResult()` 冲刷假设并重置（不依赖模型 VAD 自己下定决心），窗口内可继续听第二句。
- * - **窗口诊断文件**：窗口事件（RMS 摘要/能量武装/终局文本/终态）写入 `filesDir/vosk_diag.log`
- *   ——vivo logd 会间歇性**整进程吞掉应用日志**（2026-09-18 用户测试进程零日志、无法取证），
- *   logcat 之外的持久取证通道（debug 构建 `run-as` 可导出）。
+ * - **窗口诊断文件**：窗口事件（RMS 摘要/能量武装/终局文本/终态/前后台 fg= 标记——SCR-BGVOICE：
+ *   熄屏语音的 OEM 后台静默取证通道，`fg=false` 窗口 RMS 恒零 = 麦被静默实证）写入
+ *   `filesDir/vosk_diag.log`——vivo logd 会间歇性**整进程吞掉应用日志**（2026-09-18 用户测试进程
+ *   零日志、无法取证），logcat 之外的持久取证通道（debug 构建 `run-as` 可导出）。
  * - **生命周期**：每次 `listenOnce` = 一个识别会话（自建 `Recognizer` + `AudioRecord` →
  *   用后即毁 `stop + release + close`，取消同样触发，绝无泄漏录音）；同一时刻至多一个并发
  *   会话（[sessionMutex] tryLock 同步守卫——先于模型加载挂起点，重入 → Unavailable）。
@@ -63,6 +64,8 @@ import org.vosk.android.StorageService
  */
 public class VoskSpeechCommandRecognizer(
     context: Context,
+    /** 前台/后台标志源（SCR-BGVOICE：app 装配注入 `AppForegroundState.flow`，仅作诊断 `fg=` 标记——OEM 后台静默取证；默认恒前台）。 */
+    private val appForeground: StateFlow<Boolean> = MutableStateFlow(true),
 ) : SpeechCommandRecognizer {
 
     private val appContext: Context = context.applicationContext
@@ -86,7 +89,7 @@ public class VoskSpeechCommandRecognizer(
         if (!sessionMutex.tryLock()) return@withContext RecognitionResult.Unavailable // 并发会话守卫（同步，无竞态窗口）
         try {
             refreshAvailability()
-            diag("listenOnce: windowMs=$windowMs available=${_isAvailable.value}")
+            diag("listenOnce: windowMs=$windowMs available=${_isAvailable.value} fg=${appForeground.value}")
             if (!_isAvailable.value) return@withContext RecognitionResult.Unavailable // 前置门：权限/资产/模型
             val model = obtainModelOrNull()
             if (model == null) {
@@ -175,7 +178,7 @@ public class VoskSpeechCommandRecognizer(
         var statMinRms = Double.MAX_VALUE
         var statMaxRms = 0.0
         var statSumRms = 0.0
-        diag("window: start windowMs=$windowMs")
+        diag("window: start windowMs=$windowMs fg=${appForeground.value}")
         while (currentCoroutineContext().isActive && readFrames < budgetFrames) {
             val frames = recorder.read(chunk, 0, chunk.size)
             if (frames <= 0) {

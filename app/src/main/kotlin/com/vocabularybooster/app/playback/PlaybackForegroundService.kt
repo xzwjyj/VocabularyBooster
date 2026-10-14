@@ -36,9 +36,10 @@ import org.koin.core.component.inject
  * 故取 plain Service + 手动 [ServiceCompat.startForeground]，MediaSession 独立构造以满足 Android 14
  * 「mediaPlayback 前台服务须有活跃 MediaSession」合规要求。
  *
- * - **保活作用域**：传输态（Playing/Paused/CommandWindow）→ 升前台 + 4h 有界 PARTIAL_WAKE_LOCK；
- *   终态（Idle/Completed/Stopped）→ 控制器 [PlaybackForegroundController.reflect] 经 gateway.stop()
- *   投递 ACTION_STOP 停服（服务自身 collector **不**自停，避免与 gateway.stop() 投递的 STOP 竞态重启）。
+ * - **保活作用域**：传输态（Playing/Paused/CommandWindow）→ 升前台（**双类型 mediaPlayback|microphone**，
+ *   SCR-BGVOICE——mic 位承载熄屏语音：命令窗口后台照常开麦，降级守卫见 [startForegroundWithMicFallback]）
+ *   + 4h 有界 PARTIAL_WAKE_LOCK；终态（Idle/Completed/Stopped）→ 控制器 [PlaybackForegroundController.reflect]
+ *   经 gateway.stop() 投递 ACTION_STOP 停服（服务自身 collector **不**自停，避免与 gateway.stop() 投递的 STOP 竞态重启）。
  * - **通知更新**：服务自有 [serviceScope] 在进程内采集 `controls.state`，差异签名（wordText /
  *   segmentIndex / listening）变更才 [NotificationManager.notify] + [OrchestratorMirroringPlayer.syncTo]
  *   ——避免每 100ms CommandWindow 倒计时 tick 刷通知（倒计时仅 app 前台 UI 可见）。
@@ -109,13 +110,37 @@ class PlaybackForegroundService : Service(), KoinComponent {
         }
         if (!wakeLock.isHeld) wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
         mirroringPlayer.syncTo(state)
-        ServiceCompat.startForeground(
-            this,
-            NOTIF_ID,
-            buildNotification(state),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-        )
+        startForegroundWithMicFallback(state)
         startCollector()
+    }
+
+    /**
+     * 升前台双类型 + 降级守卫（SCR-BGVOICE）。
+     *
+     * 双类型 `mediaPlayback|microphone` 是熄屏语音的合法性来源（Android 11+ while-in-use 豁免）；
+     * 双类型启动异常（系统限后台启动 mic 型等罕见路径——会话播放恒屏内发起天然满足前台启动，
+     * 此为防御兜底）→ 捕获降级重试 mediaPlayback 单类型：**续播优先于熄屏语音**（该进程内
+     * 熄屏语音退化为纯倒计时，TC-BG-08 装机取证 `fg=` 标记）。
+     */
+    @Suppress("TooGenericExceptionCaught") // ServiceCompat 可能抛 OEM/系统抽象异常——降级路径绝不崩溃（吞记后降级重试）
+    private fun startForegroundWithMicFallback(state: PlaybackState) {
+        try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIF_ID,
+                buildNotification(state),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "双类型升前台失败，降级 mediaPlayback 单类型（熄屏语音本进程内不可用）", e)
+            ServiceCompat.startForeground(
+                this,
+                NOTIF_ID,
+                buildNotification(state),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+        }
     }
 
     private fun startCollector() {

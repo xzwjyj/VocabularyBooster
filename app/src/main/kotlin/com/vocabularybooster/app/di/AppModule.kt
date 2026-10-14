@@ -26,7 +26,6 @@ import com.vocabularybooster.app.playback.OrchestratorPlaybackControls
 import com.vocabularybooster.app.playback.PlaybackControls
 import com.vocabularybooster.app.playback.PlaybackForegroundController
 import com.vocabularybooster.app.playback.PlaybackServiceGateway
-import com.vocabularybooster.app.speech.BackgroundGatedSpeechCommandRecognizer
 import com.vocabularybooster.playback.PlaybackOrchestrator
 import com.vocabularybooster.platform.AndroidDatabaseDriverFactoryProvider
 import com.vocabularybooster.platform.AndroidLogSink
@@ -90,7 +89,9 @@ val appModule = module {
         val ctx = androidContext()
         val systemAvailable = SpeechRecognizer.isRecognitionAvailable(ctx)
         android.util.Log.i("VB-SpeechEngine", "E2 selection: isRecognitionAvailable=$systemAvailable")
-        val vosk = VoskSpeechCommandRecognizer(ctx)
+        // SCR-BGVOICE：appForeground 仅作 Vosk 诊断 fg= 标记（OEM 后台静默取证）——不再作后台门禁
+        //（v1.31 门禁 wrapper 已撤，熄屏/后台 CommandWindow 照常开麦）
+        val vosk = VoskSpeechCommandRecognizer(ctx, get<AppForegroundState>().flow)
         val speechScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         speechScope.launch {
             // 预热异常种类不可穷举（StorageService/模型加载仅声明 IOException，OEM 路径防御）——
@@ -104,7 +105,8 @@ val appModule = module {
             }
             android.util.Log.i("VB-SpeechEngine", "vosk prewarm finished: isAvailable=${vosk.isAvailable.value}")
         }
-        val delegate: SpeechCommandRecognizer = when (SpeechEnginePolicy.select(systemAvailable)) {
+        // SCR-BGVOICE：两条装配路径产出直连 SpeechCommandRecognizer 绑定出口（恢复 v1.31 前形态）
+        when (SpeechEnginePolicy.select(systemAvailable)) {
             SpeechEngineKind.SYSTEM_SERVICE -> FallbackSpeechCommandRecognizer(
                 primary = vosk,                    // Vosk：已预加载、响应瞬时、零盲区（主引擎）
                 secondary = AndroidSpeechCommandRecognizer(ctx),  // 系统引擎：仅主引擎硬失败时回退
@@ -112,10 +114,6 @@ val appModule = module {
             )
             SpeechEngineKind.EMBEDDED_VOSK -> vosk
         }
-        // FR-25（SCR-BGPLAYBACK）：后台语音门禁 wrapper——包住两条装配路径产出，作 SpeechCommandRecognizer
-        // 唯一出口（后台 → isAvailable=false / listenOnce 短路 Unavailable，FR-12 后台持麦红线）。
-        // appForeground 源 = AppForegroundState（DI 无依赖单例，与控制器共享——打破 recognizer→控制器→编排器→recognizer 循环）。
-        BackgroundGatedSpeechCommandRecognizer(delegate, get<AppForegroundState>().flow, speechScope)
     }
     single { CommandParser() }
     // Phase 8.6（FR-18）：复合词典源——精选种子优先（含例句），随包全量词典兜底（无例句）；
@@ -151,8 +149,8 @@ val appModule = module {
         )
     }
 
-    // FR-25（SCR-BGPLAYBACK）：熄屏/后台续播 DI 装配——前台媒体服务 + 控制器 + appForeground 共享源。
-    // AppForegroundState 无依赖单例——打破 recognizer→控制器→编排器→recognizer 循环（recognizer 与控制器共享同一实例）。
+    // FR-25（SCR-BGPLAYBACK + SCR-BGVOICE）：熄屏/后台续播 + 熄屏语音 DI 装配——双类型前台媒体服务
+    // + 控制器 + appForeground 诊断标记源（Vosk fg= 取证；SCR-BGVOICE 后无门禁消费者）。
     single { AppForegroundState() }
     single<PlaybackControls> { OrchestratorPlaybackControls(get<PlaybackOrchestrator>()) }
     single<PlaybackServiceGateway> { AndroidPlaybackServiceGateway(androidContext()) }
